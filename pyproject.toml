@@ -1,0 +1,29 @@
+[project]
+name = "HydroAgent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain==0.3.26",
+    "langchain_community == 0.3.27",
+    "langchain_core == 0.3.70",
+    "langchain-ollama",
+    "streamlit==1.47.0",
+    "faiss-cpu==1.7.4",
+    "openai>=1.97.1",
+    "langchain-openai>=0.3.28",
+    "ipykernel",
+    "numba",
+    "scikit-learn",
+    "deap",
+    "spotpy",
+    "pytest",
+    "bmipy",
+    "pyyaml",
+    "requests",
+    "muskingumcunge",
+    "hydrodatasource",
+    "mcp",
+    "httpx",
+]
