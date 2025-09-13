@@ -14,7 +14,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import logging
 import numpy as np
 
-import faiss
+# import faiss
 from langchain_community.vectorstores import FAISS
 from langchain.schema import Document
 from langchain.embeddings.base import Embeddings

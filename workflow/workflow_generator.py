@@ -380,21 +380,28 @@ class WorkflowGenerator:
         self, tool_name: str, parameters: Dict[str, Any]
     ) -> Dict[str, Any]:
         """补充默认参数"""
+        import os
+        from pathlib import Path
+        
+        # 获取项目根目录
+        project_root = Path(__file__).parent.parent
+        
         defaults = {
             "get_model_params": {"model_name": "gr4j"},
             "prepare_data": {
-                "data_dir": "data/camels_11532500",
+                "data_dir": str(project_root / "data" / "camels_11532500"),
                 "target_data_scale": "D",
             },
             "calibrate_model": {
                 "model_name": "gr4j",
-                "data_dir": "data/camels_11532500",
+                "data_dir": str(project_root / "data" / "camels_11532500"),
                 "data_type": "owndata",
                 "exp_name": "auto_calibration",
-                "result_dir": "result",
+                "result_dir": str(project_root / "result"),
             },
             "evaluate_model": {
-                "result_dir": "result",
+                "model_name": "gr4j",  # 添加默认的model_name
+                "result_dir": str(project_root / "result"),
                 "exp_name": "auto_calibration",
                 "cv_fold": 1,
             },

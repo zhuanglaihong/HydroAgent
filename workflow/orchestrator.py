@@ -11,10 +11,9 @@ from datetime import datetime
 
 from .intent_processor import IntentProcessor
 from .query_expander import QueryExpander
-from .knowledge_retriever import KnowledgeRetriever
 from .context_builder import ContextBuilder
 from .workflow_generator import WorkflowGenerator
-from .workflow_types import WorkflowPlan, IntentAnalysis, KnowledgeFragment
+from .workflow_types import WorkflowPlan, IntentAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +24,7 @@ class WorkflowOrchestrator:
     def __init__(
         self,
         llm,
-        embeddings=None,
-        rag_system=None,
         tools=None,
-        faiss_index_path: str = "./faiss_db",
         enable_debug: bool = False,
     ):
         """
@@ -36,15 +32,10 @@ class WorkflowOrchestrator:
 
         Args:
             llm: 语言模型实例
-            embeddings: 嵌入模型实例
-            rag_system: RAG系统实例
             tools: 可用工具列表
-            faiss_index_path: FAISS索引路径
             enable_debug: 是否启用调试模式
         """
         self.llm = llm
-        self.embeddings = embeddings
-        self.rag_system = rag_system
         self.tools = tools
         self.enable_debug = enable_debug
 
@@ -58,9 +49,9 @@ class WorkflowOrchestrator:
         }
 
         # 初始化各个组件
-        self._initialize_components(faiss_index_path)
+        self._initialize_components()
 
-    def _initialize_components(self, faiss_index_path: str):
+    def _initialize_components(self):
         """初始化各个组件"""
         try:
             logger.info("初始化工作流组件...")
@@ -73,22 +64,13 @@ class WorkflowOrchestrator:
             self.query_expander = QueryExpander(self.llm)
             logger.info("✅ 查询扩展器初始化完成")
 
-            # 第3步：知识检索器
-            self.knowledge_retriever = KnowledgeRetriever(
-                rag_system=self.rag_system,
-                faiss_index_path=faiss_index_path,
-                embeddings=self.embeddings,
-                llm=self.llm,
-            )
-            logger.info("✅ 知识检索器初始化完成")
-
-            # 第4步：上下文构建器
+            # 第3步：上下文构建器
             self.context_builder = ContextBuilder(
                 max_context_length=4000, knowledge_weight=0.7, user_intent_weight=0.3
             )
             logger.info("✅ 上下文构建器初始化完成")
 
-            # 第5步：工作流生成器
+            # 第4步：工作流生成器
             self.workflow_generator = WorkflowGenerator(
                 llm=self.llm,
                 max_steps=10,
@@ -137,26 +119,12 @@ class WorkflowOrchestrator:
                 debug_info["step2_expanded_query"] = expanded_query
             logger.info(f"   扩展查询长度: {len(expanded_query)}")
 
-            # 第3步：知识检索
-            logger.info("🔎 第3步：知识检索...")
-            knowledge_fragments = self.knowledge_retriever.retrieve_knowledge(
-                expanded_query=expanded_query,
-                k=5,
-                score_threshold=0.3,
-                retriever_type="vector",
-            )
-            if debug_info is not None:
-                debug_info["step3_knowledge"] = [
-                    frag.to_dict() for frag in knowledge_fragments
-                ]
-            logger.info(f"   检索到 {len(knowledge_fragments)} 个知识片段")
-
-            # 第4步：上下文构建
-            logger.info("🔧 第4步：上下文构建...")
+            # 第3步：上下文构建
+            logger.info("🔧 第3步：上下文构建...")
             context = self.context_builder.build_context(
                 user_query=user_query,
                 intent_analysis=intent_analysis,
-                knowledge_fragments=knowledge_fragments,
+                knowledge_fragments=[],  # 不使用知识片段
                 include_examples=True,
             )
             if debug_info is not None:
@@ -252,19 +220,8 @@ class WorkflowOrchestrator:
 
             # 第3步
             start_time = time.time()
-            knowledge_fragments = self.knowledge_retriever.retrieve_knowledge(
-                expanded_query
-            )
-            results["steps"]["step3_retrieval"] = {
-                "result": [frag.to_dict() for frag in knowledge_fragments],
-                "execution_time": time.time() - start_time,
-                "status": "success",
-            }
-
-            # 第4步
-            start_time = time.time()
             context = self.context_builder.build_context(
-                user_query, intent_analysis, knowledge_fragments
+                user_query, intent_analysis, []  # 不使用知识片段
             )
             results["steps"]["step4_context"] = {
                 "result": {

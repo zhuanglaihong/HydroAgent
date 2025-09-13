@@ -14,7 +14,7 @@ import sys
 repo_path = Path(os.path.abspath(__file__)).parent.parent
 sys.path.append(str(repo_path))
 
-from RAG import RAGSystem
+# from RAG import RAGSystem
 from .workflow_types import KnowledgeFragment
 
 logger = logging.getLogger(__name__)
@@ -206,8 +206,17 @@ class KnowledgeRetriever:
                 fragments = self._retrieve_from_default_knowledge(
                     expanded_query, k, score_threshold
                 )
-                logger.info(f"从默认知识库检索到 {len(fragments)} 个知识片段")
-                return fragments
+                if fragments:
+                    logger.info(f"从默认知识库检索到 {len(fragments)} 个知识片段")
+                    return fragments
+                
+                # 如果默认知识库也没有结果，使用LLM生成知识片段
+                if self.llm:
+                    logger.info("使用LLM生成知识片段")
+                    fragments = self._generate_knowledge_with_llm(expanded_query)
+                    if fragments:
+                        logger.info(f"LLM生成了 {len(fragments)} 个知识片段")
+                        return fragments
 
             logger.warning("未找到相关知识片段")
             return []
@@ -451,6 +460,86 @@ class KnowledgeRetriever:
         except Exception as e:
             logger.error(f"分数调整失败: {e}")
             return original_score
+
+    def _generate_knowledge_with_llm(self, query: str) -> List[KnowledgeFragment]:
+        """使用LLM生成知识片段"""
+        try:
+            # 构建提示模板
+            prompt = f"""作为一个水文模型专家，请根据以下查询生成3-5个相关的知识片段。
+每个知识片段应该包含具体、准确的信息，并且与查询主题密切相关。
+
+查询: {query}
+
+请生成的知识片段要满足以下要求：
+1. 每个片段应该是独立的、完整的知识点
+2. 包含具体的技术细节和专业信息
+3. 避免重复和冗余信息
+4. 确保信息的准确性和可靠性
+
+请用JSON格式返回结果，格式如下：
+{{
+    "fragments": [
+        {{
+            "content": "知识内容",
+            "category": "知识类别",
+            "confidence": 0.8  # 0-1之间的置信度
+        }},
+        ...
+    ]
+}}
+"""
+            # 调用LLM
+            response = self.llm.invoke(prompt)
+            
+            # 解析LLM响应
+            try:
+                import json
+                if isinstance(response, str):
+                    result = json.loads(response)
+                elif hasattr(response, 'content'):
+                    result = json.loads(response.content)
+                else:
+                    result = json.loads(str(response))
+                
+                # 转换为KnowledgeFragment对象
+                fragments = []
+                for item in result.get("fragments", []):
+                    fragment = KnowledgeFragment(
+                        content=item["content"],
+                        source="LLM生成",
+                        score=item.get("confidence", 0.8),
+                        metadata={
+                            "category": item.get("category", "generated"),
+                            "generated_by": "llm",
+                            "query": query,
+                        }
+                    )
+                    fragments.append(fragment)
+                
+                return fragments
+                
+            except json.JSONDecodeError:
+                # 如果JSON解析失败，尝试直接从文本中提取信息
+                logger.warning("JSON解析失败，尝试直接处理LLM响应")
+                content = str(response)
+                
+                # 创建单个知识片段
+                fragment = KnowledgeFragment(
+                    content=content[:1000],  # 限制长度
+                    source="LLM生成",
+                    score=0.7,  # 较低的置信度
+                    metadata={
+                        "category": "generated",
+                        "generated_by": "llm",
+                        "query": query,
+                        "parsing_failed": True
+                    }
+                )
+                return [fragment]
+                
+        except Exception as e:
+            logger.error(f"LLM生成知识片段失败: {e}")
+            return []
 
     def _deduplicate_fragments(
         self, fragments: List[KnowledgeFragment]

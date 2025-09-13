@@ -221,7 +221,7 @@ class HydroModelTools:
             else:
                 result_dir = os.path.join(result_dir, exp_name)
 
-            where_save = Path(result_dir) / exp_name
+            where_save = Path(result_dir)
             if not where_save.exists():
                 os.makedirs(where_save, exist_ok=True)
 

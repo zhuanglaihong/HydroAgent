@@ -20,7 +20,6 @@ Copyright: Copyright (c) 2021-2024 zhuanglaihong. All rights reserved.
 from .orchestrator import WorkflowOrchestrator
 from .intent_processor import IntentProcessor
 from .query_expander import QueryExpander
-from .knowledge_retriever import KnowledgeRetriever
 from .context_builder import ContextBuilder
 from .workflow_generator import WorkflowGenerator
 from .workflow_types import (
@@ -28,7 +27,6 @@ from .workflow_types import (
     WorkflowPlan,
     ExecutionResult,
     ExecutionStatus,
-    KnowledgeFragment,
     IntentAnalysis,
 )
 
@@ -36,13 +34,11 @@ __all__ = [
     "WorkflowOrchestrator",
     "IntentProcessor",
     "QueryExpander",
-    "KnowledgeRetriever",
     "ContextBuilder",
     "WorkflowGenerator",
     "WorkflowStep",
     "WorkflowPlan",
     "ExecutionResult",
     "ExecutionStatus",
-    "KnowledgeFragment",
     "IntentAnalysis",
 ]
