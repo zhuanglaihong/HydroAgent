@@ -91,6 +91,7 @@ class ExecutionResult:
     start_time: Optional[datetime] = None  # 开始时间
     end_time: Optional[datetime] = None  # 结束时间
     execution_time: Optional[float] = None  # 执行时长(秒)
+    timestamp: Optional[datetime] = field(default_factory=datetime.now)  # 时间戳
     metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
 
     def to_dict(self) -> Dict[str, Any]:
@@ -103,6 +104,7 @@ class ExecutionResult:
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "execution_time": self.execution_time,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "metadata": self.metadata,
         }
 

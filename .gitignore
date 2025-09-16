@@ -188,3 +188,4 @@ faiss_db/
 # 其他临时文件
 chunks_result.txt
 .qodo/
+.log

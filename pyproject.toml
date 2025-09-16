@@ -32,4 +32,6 @@ dependencies = [
     "hydromodel @ git+ssh://git@gitcode.com/dlut-water/hydromodel.git@dev",
     "mcp",
     "httpx",
+    "modelcontextprotocol>=0.1.0",
+    "fastmcp>=2.12.3",
 ]

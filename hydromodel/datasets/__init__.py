@@ -8,7 +8,7 @@ FilePath: \hydromodel\hydromodel\datasets\__init__.py
 Copyright (c) 2023-2024 Wenyu Ouyang. All rights reserved.
 """
 
-from hydrodataset import Camels
+# from hydrodataset import Camels
 from hydrodatasource.reader.data_source import SelfMadeHydroDataset
 
 PRCP_NAME = "prcp(mm/day)"
@@ -70,7 +70,7 @@ def get_unit_from_name(name_with_unit):
 
 
 datasource_dict = {
-    "camels": Camels,
+    # "camels": Camels,
     "selfmadehydrodataset": SelfMadeHydroDataset,
 }
 

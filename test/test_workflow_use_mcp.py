@@ -24,7 +24,9 @@ from workflow import (
 )
 from workflow.workflow_types import WorkflowPlan
 from tool.langchain_tool import get_hydromodel_tools
-from tool.workflow_executor import WorkflowExecutor
+from hydromcp.agent_integration import MCPAgent
+from hydromcp.client import HydroMCPClient
+from hydromcp.task_dispatcher import TaskDispatcher
 
 # 配置日志
 logging.basicConfig(
@@ -189,7 +191,7 @@ def validate_workflow(workflow_plan: WorkflowPlan):
         raise
 
 
-def main():
+async def main():
     """主函数"""
     try:
         # 确保工作目录是项目根目录
@@ -222,43 +224,60 @@ def main():
         # 4. 验证工作流
         validate_workflow(workflow_plan)
 
-        print("最终工作流\n",workflow_plan)
+        logger.info("\n最终工作流计划:")
+        logger.info(f"工作流ID: {workflow_plan.plan_id}")
+        logger.info(f"工作流名称: {workflow_plan.name}")
+        logger.info(f"步骤数量: {len(workflow_plan.steps)}")
 
-        # 5. 执行工作流
-        # logger.info("\n开始执行工作流")
-        # executor = WorkflowExecutor(tools=get_hydromodel_tools(), enable_debug=True)
-
-        # # 先验证工作流是否可执行
-        # validation_result = executor.validate_workflow(workflow_plan)
-        # if not validation_result["is_valid"]:
-        #     logger.error("工作流验证失败:")
-        #     for error in validation_result["errors"]:
-        #         logger.error(f"  - {error}")
-        #     return
-
-        # logger.info("工作流验证通过，开始执行...")
-
-        # # 执行工作流
-        # execution_result = executor.execute_workflow(workflow_plan)
-
-        # # 打印执行结果
-        # logger.info(f"\n工作流执行完成:")
-        # logger.info(f"  状态: {execution_result['status']}")
-        # logger.info(f"  总耗时: {execution_result['total_time']:.2f}秒")
-        # logger.info(f"  成功步骤: {execution_result['success_count']}")
-        # logger.info(f"  失败步骤: {execution_result['failed_count']}")
-
-        # # 打印每个步骤的执行结果
-        # for step_id, step_result in execution_result["steps"].items():
-        #     logger.info(f"\n步骤 {step_id}:")
-        #     logger.info(f"  状态: {step_result['status']}")
-        #     logger.info(f"  耗时: {step_result['execution_time']:.2f}秒")
-        #     if "result" in step_result:
-        #         logger.info(f"  结果: {step_result['result']}")
-        #     if "error" in step_result:
-        #         logger.error(f"  错误: {step_result['error']}")
-
-        # logger.info("\n工作流生成和执行测试完成")
+        # 5. 使用MCP Agent执行工作流
+        logger.info("\n开始使用MCP Agent执行工作流")
+        
+        # 初始化MCP Agent
+        mcp_agent = MCPAgent(
+            llm_model="qwen3:8b",
+            server_command=None,  # 使用直接模式
+            enable_workflow=True,
+            enable_debug=True
+        )
+        
+        # 设置Agent
+        setup_success = await mcp_agent.setup()
+        if not setup_success:
+            raise RuntimeError("MCP Agent设置失败")
+        
+        try:
+            # 执行工作流
+            logger.info("开始智能执行工作流...")
+            execution_result = await mcp_agent._execute_workflow_intelligently(workflow_plan, query)
+            
+            # 打印执行结果
+            logger.info("\n执行结果:")
+            logger.info(f"整体状态: {'成功' if execution_result['overall_success'] else '失败'}")
+            logger.info(f"总步骤数: {execution_result['total_steps']}")
+            logger.info(f"成功步骤: {execution_result['success_steps']}")
+            logger.info(f"失败步骤: {execution_result['failed_steps']}")
+            logger.info("\n执行摘要:")
+            logger.info(execution_result['execution_summary'])
+            
+            # 详细步骤结果
+            logger.info("\n各步骤执行详情:")
+            for step_result in execution_result['step_results']:
+                logger.info(f"\n步骤: {step_result['step_name']}")
+                logger.info(f"复杂度: {step_result['classification']['complexity']}")
+                logger.info(f"执行策略: {step_result['strategy']}")
+                logger.info(f"执行状态: {'成功' if step_result['success'] else '失败'}")
+                if not step_result['success']:
+                    logger.info(f"失败原因: {step_result['result'].get('error', '未知错误')}")
+            
+            # 验证执行结果
+            assert execution_result['overall_success'], "工作流执行失败"
+            assert execution_result['success_steps'] > 0, "没有成功执行的步骤"
+            logger.info("\n工作流执行测试通过!")
+            
+        finally:
+            # 清理资源
+            await mcp_agent.cleanup()
+            logger.info("已清理MCP Agent资源")
 
     except Exception as e:
         logger.error(f"测试失败: {e}")
@@ -266,4 +285,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

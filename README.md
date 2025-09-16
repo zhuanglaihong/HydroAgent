@@ -52,7 +52,7 @@ ollama pull granite3-dense:8b
 **使用方法**:
 
 ```bash
-# 交互模式
+# 交互模式（默认使用兼容模式）
 python Agent.py
 
 # 调试模式（显示详细日志）
@@ -63,6 +63,15 @@ python Agent.py --model qwen3:8b
 
 # 单次查询
 python Agent.py --query "率定并评估GR4J模型"
+
+# MCP服务模式（需要先启动服务器）
+# 1. 启动MCP服务器（在新终端中）
+python hydromcp/run_server.py
+
+# 2. 启动Agent（使用服务模式）
+python Agent.py --mcp-mode service
+
+# 注意：服务器日志会保存在 mcp_server.log 中
 
 # 查看帮助
 python Agent.py --help
@@ -119,6 +128,9 @@ HydroAgent系统
    - 检查 Ollama 服务和模型可用性
    - 加载水文模型工具集
    - 初始化工作流组件
+   - 选择MCP工具执行模式：
+     * 兼容模式（默认）：直接在本地执行工具，简单高效
+     * 服务模式：通过独立的MCP服务器执行工具，支持分布式部署
 
 2. **用户交互**:
    - 支持交互式对话和单次查询两种模式

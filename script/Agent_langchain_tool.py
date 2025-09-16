@@ -25,7 +25,7 @@ from workflow import (
 )
 from workflow.workflow_types import WorkflowPlan
 from tool.langchain_tool import get_hydromodel_tools
-from hydromcp.agent_integration import MCPAgent, create_mcp_agent
+from tool.workflow_executor import WorkflowExecutor
 from tool.ollama_config import ollama_config
 
 # 配置日志
@@ -62,29 +62,26 @@ logger = logging.getLogger(__name__)
 
 
 class HydroAgent:
-    """基于MCP工具的水文模型智能体"""
+    """基于工作流的水文模型智能体"""
 
-    def __init__(self, model_name: str = "qwen3:8b", enable_debug: bool = False, mcp_mode: str = "compatible"):
+    def __init__(self, model_name: str = "qwen3:8b", enable_debug: bool = False):
         """
         初始化智能体
 
         Args:
             model_name: LLM模型名称
             enable_debug: 是否启用调试模式
-            mcp_mode: MCP工具执行模式，可选值：
-                - "compatible": 兼容模式（默认），直接在本地执行工具
-                - "service": 服务模式，通过独立的MCP服务器执行工具
         """
         self.model_name = model_name
         self.enable_debug = enable_debug
-        self.mcp_mode = mcp_mode
         self.llm = None
         self.tools = []
         self.workflow_components = {}
-        self.mcp_agent = None
+        self.workflow_executor = None
         self.session_history = []
 
-        # 注意：_initialize_components 现在是异步的，需要在 main() 中调用
+        # 初始化组件
+        self._initialize_components()
 
     def _check_prerequisites(self):
         """检查系统前置条件"""
@@ -138,10 +135,10 @@ class HydroAgent:
             
         logger.debug("所有前置条件检查通过")
 
-    async def _initialize_components(self):
+    def _initialize_components(self):
         """初始化所有组件"""
         try:
-            logger.info("开始初始化水文模型智能体（MCP模式）")
+            logger.info("开始初始化水文模型智能体")
             
             # 0. 检查前置条件
             self._check_prerequisites()
@@ -172,7 +169,7 @@ class HydroAgent:
             else:
                 logger.debug("模型连接测试通过")
 
-            # 2. 初始化传统工具（用于工作流生成）
+            # 2. 初始化工具
             logger.debug("加载水文模型工具")
             self.tools = get_hydromodel_tools()
             
@@ -194,29 +191,12 @@ class HydroAgent:
                 ),
             }
 
-            # 4. 初始化MCP Agent（用于执行）
-            logger.debug(f"初始化MCP Agent (模式: {self.mcp_mode})")
-            
-            if self.mcp_mode == "service":
-                # 服务模式：通过独立的MCP服务器执行工具
-                server_command = ["python", "-m", "hydromcp.server"]
-                logger.info("使用MCP服务模式，需要先启动服务器: python -m hydromcp.server")
-            else:
-                # 兼容模式：直接在本地执行工具
-                server_command = None
-                logger.info("使用MCP兼容模式，直接执行工具")
-            
-            self.mcp_agent = MCPAgent(
-                llm_model=self.model_name,
-                server_command=server_command,
-                enable_workflow=True,
+            # 4. 初始化工作流执行器
+            logger.debug("初始化工作流执行器")
+            self.workflow_executor = WorkflowExecutor(
+                tools=self.tools, 
                 enable_debug=self.enable_debug
             )
-            
-            # 设置MCP Agent
-            setup_success = await self.mcp_agent.setup()
-            if not setup_success:
-                raise RuntimeError("MCP Agent设置失败")
 
             logger.info("智能体初始化完成")
 
@@ -265,20 +245,29 @@ class HydroAgent:
             logger.error(f"工作流生成失败: {e}")
             raise
 
-    async def _execute_workflow(self, workflow_plan: WorkflowPlan, query: str) -> Dict[str, Any]:
+    def _execute_workflow(self, workflow_plan: WorkflowPlan) -> Dict[str, Any]:
         """执行工作流"""
         try:
             logger.debug("开始执行工作流")
             
+            # 验证工作流
+            validation_result = self.workflow_executor.validate_workflow(workflow_plan)
+            if not validation_result["is_valid"]:
+                error_msg = "工作流验证失败:\n" + "\n".join(validation_result["errors"])
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            logger.debug("工作流验证通过")
+            
             # 显示执行步骤
-            print("\n📋 执行计划:")
+            print("\n执行步骤:")
             for i, step in enumerate(workflow_plan.steps, 1):
-                print(f"   {i}. {step.name}")
+                print(f"  {i}. {step.name}")
             print()
             
-            # 使用MCP Agent智能执行工作流
-            logger.debug("开始MCP智能执行工作流步骤")
-            execution_result = await self.mcp_agent._execute_workflow_intelligently(workflow_plan, query)
+            # 执行工作流
+            logger.debug("开始执行工作流步骤")
+            execution_result = self.workflow_executor.execute_workflow(workflow_plan)
             logger.debug("工作流执行完成")
             
             return execution_result
@@ -293,94 +282,78 @@ class HydroAgent:
         for i, step in enumerate(workflow_plan.steps, 1):
             print(f"   {i}. {step.name} ({step.tool_name})")
 
-    def _display_execution_progress(self, step_name: str, current: int, total: int):
-        """显示执行进度"""
-        print(f"🔄 正在执行步骤 {current}/{total}: {step_name}")
-    
     def _display_execution_results(self, execution_result: Dict[str, Any]):
-        """显示MCP执行结果"""
+        """显示执行结果"""
         print(f"\n🎯 执行完成:")
-        overall_success = execution_result.get('overall_success', False)
-        print(f"   状态: {'✅ 成功' if overall_success else '❌ 失败'}")
-        print(f"   总步骤数: {execution_result.get('total_steps', 0)}")
-        print(f"   成功步骤: {execution_result.get('success_steps', 0)}")
-        print(f"   失败步骤: {execution_result.get('failed_steps', 0)}")
+        print(f"   状态: {'✅ 成功' if execution_result['status'] == 'completed' else '❌ 失败'}")
+        print(f"   总耗时: {execution_result['total_time']:.2f}秒")
+        print(f"   成功步骤: {execution_result['success_count']}")
+        print(f"   失败步骤: {execution_result['failed_count']}")
 
-        # 显示步骤执行详情
-        step_results = execution_result.get('step_results', [])
-        if step_results:
-            print("\n📊 步骤执行详情:")
+        # 显示详细的执行结果
+        if execution_result['success_count'] > 0:
+            print("\n📊 执行结果:")
             
-            # 收集成功和失败的步骤
-            successful_steps = []
-            failed_steps = []
-            evaluation_metrics = {}
+            # 收集所有成功步骤的结果
+            step_results = []
+            evaluation_results = {}
             
-            for step_result in step_results:
-                step_name = step_result.get('step_name', '未知步骤')
-                success = step_result.get('success', False)
-                result_data = step_result.get('result', {})
-                
-                if success:
-                    # 分析结果类型
-                    if isinstance(result_data, dict):
-                        if 'result' in result_data and isinstance(result_data['result'], dict):
-                            # 嵌套结果
-                            inner_result = result_data['result']
-                            if 'evl_info' in inner_result:
-                                evaluation_metrics.update(inner_result['evl_info'])
-                                successful_steps.append(f"✅ {step_name}: 模型评估完成")
-                            elif 'param_names' in inner_result:
-                                param_count = len(inner_result['param_names'])
-                                successful_steps.append(f"✅ {step_name}: 获取到{param_count}个模型参数")
-                            elif 'status' in inner_result and inner_result['status'] == 'success':
-                                message = inner_result.get('message', '执行成功')
-                                successful_steps.append(f"✅ {step_name}: {message}")
-                            else:
-                                successful_steps.append(f"✅ {step_name}: 执行完成")
-                        elif 'demo_output' in result_data:
-                            # Demo结果
-                            successful_steps.append(f"✅ {step_name}: {result_data['demo_output']}")
+            for step_id, step_result in execution_result["steps"].items():
+                if step_result['status'] == 'completed' and 'result' in step_result:
+                    result = step_result['result']
+                    step_name = step_result.get('step_name', step_id)
+                    
+                    if isinstance(result, dict):
+                        # 评估结果
+                        if 'evl_info' in result:
+                            evaluation_results.update(result['evl_info'])
+                            step_results.append(f"✅ {step_name}: 模型评估完成")
+                        # 其他成功结果
+                        elif 'status' in result and result['status'] == 'success':
+                            message = result.get('message', '执行成功')
+                            step_results.append(f"✅ {step_name}: {message}")
+                        # 参数查询结果
+                        elif 'param_names' in result:
+                            param_count = len(result['param_names'])
+                            step_results.append(f"✅ {step_name}: 获取到{param_count}个模型参数")
                         else:
-                            successful_steps.append(f"✅ {step_name}: 执行完成")
+                            step_results.append(f"✅ {step_name}: 执行完成")
+                    elif isinstance(result, str):
+                        step_results.append(f"✅ {step_name}: {result}")
                     else:
-                        successful_steps.append(f"✅ {step_name}: 执行完成")
-                else:
-                    error_msg = result_data.get('error', '未知错误')
-                    failed_steps.append(f"❌ {step_name}: {error_msg}")
+                        step_results.append(f"✅ {step_name}: 执行完成")
             
-            # 显示成功步骤
-            for step_msg in successful_steps:
-                print(f"   {step_msg}")
-            
-            # 显示失败步骤
-            for step_msg in failed_steps:
-                print(f"   {step_msg}")
+            # 显示步骤结果
+            for result_msg in step_results:
+                print(f"   {result_msg}")
             
             # 显示评估指标
-            if evaluation_metrics:
+            if evaluation_results:
                 print(f"\n📈 模型性能指标:")
-                for metric_name, metric_value in evaluation_metrics.items():
+                for metric_name, metric_value in evaluation_results.items():
                     print(f"   {metric_name}: {metric_value}")
+                    
+        # 显示错误信息
+        if execution_result['failed_count'] > 0:
+            print("\n❌ 错误信息:")
+            for step_id, step_result in execution_result["steps"].items():
+                if step_result['status'] == 'failed':
+                    step_name = step_result.get('step_name', step_id)
+                    error_msg = step_result.get('error', '未知错误')
+                    print(f"   ❌ {step_name}: {error_msg}")
         
-        # 显示执行摘要
-        execution_summary = execution_result.get('execution_summary', '')
-        if execution_summary:
-            print(f"\n📝 执行摘要:")
-            print(f"   {execution_summary}")
-        
-        # 总结
-        if overall_success:
-            if execution_result.get('failed_steps', 0) == 0:
-                print(f"\n🎉 任务执行成功！所有{execution_result.get('success_steps', 0)}个步骤均已完成。")
+        # 添加总结
+        if execution_result['status'] == 'completed':
+            if execution_result['failed_count'] == 0:
+                print(f"\n🎉 任务执行成功！所有{execution_result['success_count']}个步骤均已完成。")
             else:
-                print(f"\n⚠️ 任务部分完成。{execution_result.get('success_steps', 0)}个步骤成功，{execution_result.get('failed_steps', 0)}个步骤失败。")
+                print(f"\n⚠️ 任务部分完成。{execution_result['success_count']}个步骤成功，{execution_result['failed_count']}个步骤失败。")
         else:
             print(f"\n❌ 任务执行失败。")
             
         print("=" * 60)
 
-    async def chat(self, query: str) -> Dict[str, Any]:
+    def chat(self, query: str) -> Dict[str, Any]:
         """
         处理用户查询
 
@@ -395,12 +368,13 @@ class HydroAgent:
             print("=" * 60)
 
             # 生成工作流
-            print("⚙️ 正在生成工作流计划...")
             workflow_plan = self._generate_workflow(query)
-            print("✅ 工作流计划生成完成")
             
-            # 执行工作流（包含步骤进度显示）
-            execution_result = await self._execute_workflow(workflow_plan, query)
+            # 显示执行计划
+            self._display_execution_progress(workflow_plan)
+            
+            # 执行工作流
+            execution_result = self._execute_workflow(workflow_plan)
             
             # 显示结果
             self._display_execution_results(execution_result)
@@ -420,7 +394,6 @@ class HydroAgent:
 
         except Exception as e:
             error_msg = f"处理失败: {str(e)}"
-            logger.error(error_msg)
             print(f"\n❌ {error_msg}")
             return {
                 "status": "error",
@@ -444,7 +417,7 @@ def print_banner():
     """打印欢迎横幅"""
     print("""
 ╔══════════════════════════════════════════════════════════════╗
-║                    智能水文模型助手                           ║
+║                    智能水文模型助手                            ║
 ║                 Intelligent Hydro Model Agent                ║
 ║                                                              ║
 ║  🤖 基于工作流的智能任务规划                                   ║
@@ -455,7 +428,7 @@ def print_banner():
     """)
 
 
-async def interactive_mode(agent: HydroAgent):
+def interactive_mode(agent: HydroAgent):
     """交互模式"""
     print("\n🎯 进入对话模式 (输入 'quit' 或 'exit' 退出)")
     print("💡 支持的任务类型:")
@@ -471,9 +444,6 @@ async def interactive_mode(agent: HydroAgent):
 
             if user_input.lower() in ["quit", "exit", "q"]:
                 print("👋 再见！")
-                # 清理MCP Agent资源
-                if agent.mcp_agent:
-                    await agent.mcp_agent.cleanup()
                 break
             elif user_input.lower() == "info":
                 info = agent.get_session_info()
@@ -482,22 +452,18 @@ async def interactive_mode(agent: HydroAgent):
                 print(f"   工具数量: {info['tools_count']}")
                 print(f"   会话数量: {info['session_count']}")
             elif user_input:
-                await agent.chat(user_input)
+                agent.chat(user_input)
             else:
                 print("请输入有效的查询内容")
 
         except KeyboardInterrupt:
             print("\n👋 再见！")
-            # 清理MCP Agent资源
-            if agent.mcp_agent:
-                await agent.mcp_agent.cleanup()
             break
         except Exception as e:
-            logger.error(f"交互模式错误: {e}")
             print(f"❌ 错误: {e}")
 
 
-async def main():
+def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="智能水文模型助手")
     parser.add_argument(
@@ -510,13 +476,6 @@ async def main():
         "--debug", "-d", 
         action="store_true", 
         help="启用调试模式"
-    )
-    parser.add_argument(
-        "--mcp-mode",
-        type=str,
-        choices=["compatible", "service"],
-        default="compatible",
-        help="MCP工具执行模式：compatible(默认)=兼容模式，service=服务模式"
     )
     parser.add_argument(
         "--query", "-q", 
@@ -541,12 +500,8 @@ async def main():
         # 创建智能体
         agent = HydroAgent(
             model_name=args.model,
-            enable_debug=args.debug,
-            mcp_mode=args.mcp_mode
+            enable_debug=args.debug
         )
-        
-        # 异步初始化
-        await agent._initialize_components()
 
         # 显示系统信息
         info = agent.get_session_info()
@@ -556,16 +511,12 @@ async def main():
         # 执行模式
         if args.query:
             # 单次查询模式
-            await agent.chat(args.query)
-            # 清理资源
-            if agent.mcp_agent:
-                await agent.mcp_agent.cleanup()
+            agent.chat(args.query)
         else:
             # 交互模式
-            await interactive_mode(agent)
+            interactive_mode(agent)
 
     except Exception as e:
-        logger.error(f"启动失败: {e}")
         print(f"❌ 启动失败: {e}")
         print("\n💡 解决建议:")
         
@@ -609,5 +560,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import asyncio
-    exit(asyncio.run(main()))
+    exit(main())
