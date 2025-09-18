@@ -64,7 +64,7 @@ class MCPWorkflowExecutor:
         """
         start_time = time.time()
         
-        logger.info(f"开始执行工作流: {workflow_plan.name} (ID: {workflow_plan.plan_id})")
+        logger.info(f"开始执行工作流: {workflow_plan.name} (ID: {getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None)})")
         logger.info(f"工作流包含 {len(workflow_plan.steps)} 个步骤")
         
         execution_results = []
@@ -117,7 +117,7 @@ class MCPWorkflowExecutor:
             overall_status = ExecutionStatus.SUCCESS if failed_count == 0 else ExecutionStatus.FAILED
             
             result = {
-                "workflow_id": workflow_plan.plan_id,
+                "workflow_id": getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None),
                 "workflow_name": workflow_plan.name,
                 "overall_status": overall_status.value,
                 "total_execution_time": round(total_time, 2),
@@ -140,7 +140,7 @@ class MCPWorkflowExecutor:
             error_trace = traceback.format_exc()
             
             return {
-                "workflow_id": workflow_plan.plan_id,
+                "workflow_id": getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None),
                 "workflow_name": workflow_plan.name,
                 "overall_status": ExecutionStatus.FAILED.value,
                 "total_execution_time": round(time.time() - start_time, 2),
@@ -347,7 +347,7 @@ async def execute_workflow_with_mcp(
         # 设置执行器
         if not await executor.setup():
             return {
-                "workflow_id": workflow_plan.plan_id,
+                "workflow_id": getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None),
                 "workflow_name": workflow_plan.name,
                 "overall_status": ExecutionStatus.FAILED.value,
                 "error": "无法设置MCP工作流执行器",

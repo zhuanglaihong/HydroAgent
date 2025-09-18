@@ -9,7 +9,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "langchain==0.3.26",
-    "langchain_community == 0.3.27",
+    "langchain-community>=0.0.20",
     "langchain_core == 0.3.70",
     "langchain-ollama",
     "streamlit==1.47.0",
@@ -34,4 +34,10 @@ dependencies = [
     "httpx",
     "modelcontextprotocol>=0.1.0",
     "fastmcp>=2.12.3",
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+    "langchain-text-splitters>=0.0.1",
+    "pypdf>=3.0.0",
+    "python-docx>=0.8.11",
+    "langchain-huggingface>=0.1.0",
 ]

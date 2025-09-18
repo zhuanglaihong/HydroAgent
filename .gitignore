@@ -189,3 +189,4 @@ faiss_db/
 chunks_result.txt
 .qodo/
 .log
+documents/

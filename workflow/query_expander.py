@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 class ExpandedQuery(BaseModel):
     """扩展后的查询结构"""
 
-    expanded_queries: List[str] = Field(description="扩展后的查询列表")
-    keywords: List[str] = Field(description="关键词列表")
-    synonyms: List[str] = Field(description="同义词列表")
-    related_concepts: List[str] = Field(description="相关概念列表")
-    search_strategies: List[str] = Field(description="搜索策略列表")
+    expanded_queries: List[str] = Field(default_factory=list, description="扩展后的查询列表")
+    keywords: List[str] = Field(default_factory=list, description="关键词列表")
+    synonyms: List[str] = Field(default_factory=list, description="同义词列表")
+    related_concepts: List[str] = Field(default_factory=list, description="相关概念列表")
+    search_strategies: List[str] = Field(default_factory=list, description="搜索策略列表")
 
 
 class QueryExpander:
@@ -56,21 +56,24 @@ class QueryExpander:
 任务类型：{task_type}
 识别实体：{entities}
 
-请为此查询生成扩展的搜索词和策略：
+请为此查询生成扩展的搜索词和策略。你必须严格按照以下JSON格式返回结果：
 
-1. 生成3-5个扩展的查询表述（用不同的词汇和表达方式）
-2. 提取5-10个关键词（包括技术术语、模型名称等）
-3. 列出相关的同义词和别名
-4. 识别相关概念和主题
-5. 建议具体的搜索策略
+{{
+    "expanded_queries": ["查询1", "查询2", "查询3"],  // 3-5个扩展查询表述
+    "keywords": ["关键词1", "关键词2", ...],  // 5-10个关键词
+    "synonyms": ["同义词1", "同义词2", ...],  // 相关同义词和别名
+    "related_concepts": ["概念1", "概念2", ...],  // 相关概念和主题
+    "search_strategies": ["策略1", "策略2", ...]  // 具体搜索策略
+}}
 
-示例：
-原始意图："获取GR4J模型的参数信息"
-扩展查询：["GR4J模型参数配置", "GR4J四参数水文模型", "GR4J参数率定范围", "GR4J模型结构参数"]
-关键词：["GR4J", "参数", "X1", "X2", "X3", "X4", "土壤湿度", "地下水交换"]
-同义词：["四参数模型", "GR4J水文模型", "日径流模型"]
-相关概念：["模型结构", "参数物理意义", "参数敏感性", "率定优化"]
-搜索策略：["精确匹配模型名称", "参数名称联合搜索", "模型文档检索"]
+示例输出：
+{{
+    "expanded_queries": ["GR4J模型参数配置", "GR4J四参数水文模型", "GR4J参数率定范围", "GR4J模型结构参数"],
+    "keywords": ["GR4J", "参数", "X1", "X2", "X3", "X4", "土壤湿度", "地下水交换"],
+    "synonyms": ["四参数模型", "GR4J水文模型", "日径流模型"],
+    "related_concepts": ["模型结构", "参数物理意义", "参数敏感性", "率定优化"],
+    "search_strategies": ["精确匹配模型名称", "参数名称联合搜索", "模型文档检索"]
+}}
 
 {format_instructions}
 """,
@@ -170,16 +173,35 @@ class QueryExpander:
         """使用LLM进行智能查询扩展"""
         try:
             chain = self.expansion_prompt | self.llm | self.parser
-            result = chain.invoke(
+            
+            # 记录输入参数
+            logger.debug("LLM查询扩展输入参数: %s", {
+                "clarified_intent": intent_analysis.clarified_intent,
+                "task_type": intent_analysis.task_type,
+                "entities": str(intent_analysis.entities),
+            })
+            
+            # 获取LLM原始响应
+            llm_response = chain.invoke(
                 {
                     "clarified_intent": intent_analysis.clarified_intent,
                     "task_type": intent_analysis.task_type,
                     "entities": str(intent_analysis.entities),
                 }
             )
-            return result
+            logger.debug("LLM原始响应: %s", llm_response)
+            
+            # 解析响应
+            try:
+                result = self.parser.parse(llm_response)
+                logger.debug("解析后的结果: %s", result)
+                return result
+            except Exception as parse_error:
+                logger.error("LLM响应解析失败: %s\n原始响应: %s", parse_error, llm_response)
+                return self._create_basic_expansion(intent_analysis)
+                
         except Exception as e:
-            logger.warning(f"LLM查询扩展失败: {e}")
+            logger.error("LLM查询扩展失败: %s", e, exc_info=True)
             return self._create_basic_expansion(intent_analysis)
 
     def _rule_based_expand(

@@ -29,7 +29,6 @@ class MCPAgent:
     def __init__(
         self, 
         llm_model: str = "granite3-dense:8b",
-        server_command: Optional[List[str]] = None,
         enable_workflow: bool = True,
         enable_debug: bool = False
     ):
@@ -38,14 +37,12 @@ class MCPAgent:
         
         Args:
             llm_model: Ollama模型名称
-            server_command: MCP服务器启动命令
             enable_workflow: 是否启用工作流功能
             enable_debug: 是否启用调试模式
         """
         self.llm_model = llm_model
         self.enable_workflow = enable_workflow
         self.enable_debug = enable_debug
-        self.server_command = server_command
         
         # 初始化LLM
         self.llm = ChatOllama(
@@ -55,7 +52,7 @@ class MCPAgent:
         )
         
         # 初始化MCP客户端
-        self.mcp_client = HydroMCPClient(server_command)
+        self.mcp_client = HydroMCPClient()
         self.available_tools = []
         
         # 初始化任务分发器
@@ -72,7 +69,7 @@ class MCPAgent:
                 tools=[],  # MCP工具将通过不同方式管理
                 enable_debug=enable_debug
             )
-            self.workflow_executor = MCPWorkflowExecutor(server_command, enable_debug)
+            self.workflow_executor = MCPWorkflowExecutor(enable_debug=enable_debug)
         else:
             self.workflow_orchestrator = None
             self.workflow_executor = None
@@ -101,7 +98,7 @@ class MCPAgent:
             self.task_dispatcher.available_tools = available_tool_names
             
             # 初始化任务处理器
-            self.simple_task_handler = SimpleTaskHandler(self.server_command, self.enable_debug)
+            self.simple_task_handler = SimpleTaskHandler(enable_debug=self.enable_debug)
             await self.simple_task_handler.setup()
             
             self.complex_task_handler = ComplexTaskHandler(self.llm, enable_debug=self.enable_debug)
@@ -207,7 +204,7 @@ class MCPAgent:
             return {
                 "success": execution_result.get("overall_success", False),
                 "workflow_plan": {
-                    "plan_id": workflow_plan.plan_id,
+                    "plan_id": getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None),
                     "name": workflow_plan.name,
                     "description": workflow_plan.description,
                     "steps": [
@@ -336,7 +333,7 @@ class MCPAgent:
         """
         execution_context = {
             "original_query": original_query,
-            "workflow_id": workflow_plan.plan_id,
+            "workflow_id": getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None),
             "step_results": [],
             "accumulated_context": "",
             "failed_steps": [],
@@ -410,7 +407,7 @@ class MCPAgent:
         
         # 汇总执行结果
         final_result = {
-            "workflow_id": workflow_plan.plan_id,
+            "workflow_id": getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None),
             "workflow_name": workflow_plan.name,
             "overall_success": overall_success,
             "total_steps": len(workflow_plan.steps),
@@ -971,7 +968,6 @@ class MCPAgent:
 # 便利函数
 async def create_mcp_agent(
     llm_model: str = "granite3-dense:8b",
-    server_command: Optional[List[str]] = None,
     enable_workflow: bool = True,
     enable_debug: bool = False
 ) -> MCPAgent:
@@ -980,14 +976,13 @@ async def create_mcp_agent(
     
     Args:
         llm_model: Ollama模型名称
-        server_command: MCP服务器启动命令
         enable_workflow: 是否启用工作流功能
         enable_debug: 是否启用调试模式
         
     Returns:
         已设置的MCP Agent
     """
-    agent = MCPAgent(llm_model, server_command, enable_workflow, enable_debug)
+    agent = MCPAgent(llm_model, enable_workflow, enable_debug)
     
     if not await agent.setup():
         raise RuntimeError("无法设置MCP Agent")

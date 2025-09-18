@@ -234,14 +234,25 @@ class KnowledgeRetriever:
     ) -> List[KnowledgeFragment]:
         """从RAG系统检索知识"""
         try:
-            # 使用RAG系统进行检索
-            result = self.rag_system.query(
-                query=query,
-                retriever_name=retriever_type,
-                generator_name="qa",  # 使用问答生成器
-                k=k,
-                score_threshold=score_threshold,
-            )
+            # 检查RAG系统是否有query方法
+            if hasattr(self.rag_system, 'query'):
+                # 使用HydroRAG系统的query方法
+                result = self.rag_system.query(
+                    query_text=query,
+                    top_k=k,
+                    score_threshold=score_threshold,
+                )
+            else:
+                # 回退方法：直接使用向量存储查询
+                if hasattr(self.rag_system, 'vector_store') and self.rag_system.vector_store:
+                    result = self.rag_system.vector_store.query(
+                        query_text=query,
+                        n_results=k,
+                        score_threshold=score_threshold
+                    )
+                else:
+                    logger.error("RAG系统不支持查询操作")
+                    return []
 
             # 解析RAG结果
             fragments = self._parse_rag_result(result, query)
@@ -258,20 +269,48 @@ class KnowledgeRetriever:
         fragments = []
 
         try:
-            # 提取检索到的文档
-            if "documents" in rag_result:
-                for i, doc in enumerate(rag_result["documents"]):
+            # 检查HydroRAG系统的返回格式
+            if rag_result.get("status") == "success" and "results" in rag_result:
+                # HydroRAG系统格式
+                for result in rag_result["results"]:
                     fragment = KnowledgeFragment(
-                        content=doc.page_content,
-                        source=doc.metadata.get("source", "RAG系统"),
+                        content=result.get("content", ""),
+                        source=result.get("metadata", {}).get("source_file", "RAG系统"),
+                        score=result.get("score", 0.8),
+                        metadata={
+                            "retrieved_from": "hydrorag_system",
+                            "original_metadata": result.get("metadata", {}),
+                            "query": query,
+                            "chunk_id": result.get("id", ""),
+                        },
+                    )
+                    fragments.append(fragment)
+            
+            # 兼容传统RAG系统格式
+            elif "documents" in rag_result:
+                for i, doc in enumerate(rag_result["documents"]):
+                    # 处理不同的文档格式
+                    if hasattr(doc, 'page_content'):
+                        content = doc.page_content
+                        metadata = doc.metadata if hasattr(doc, 'metadata') else {}
+                    elif isinstance(doc, dict):
+                        content = doc.get("content", str(doc))
+                        metadata = doc.get("metadata", {})
+                    else:
+                        content = str(doc)
+                        metadata = {}
+                    
+                    fragment = KnowledgeFragment(
+                        content=content,
+                        source=metadata.get("source", "RAG系统"),
                         score=(
                             rag_result.get("scores", [1.0])[i]
-                            if "scores" in rag_result
+                            if "scores" in rag_result and i < len(rag_result.get("scores", []))
                             else 0.8
                         ),
                         metadata={
                             "retrieved_from": "rag_system",
-                            "original_metadata": doc.metadata,
+                            "original_metadata": metadata,
                             "query": query,
                         },
                     )
@@ -290,9 +329,14 @@ class KnowledgeRetriever:
                     },
                 )
                 fragments.append(fragment)
+            
+            # 处理错误情况
+            elif rag_result.get("status") == "error":
+                logger.warning(f"RAG系统返回错误: {rag_result.get('error', '未知错误')}")
 
         except Exception as e:
             logger.error(f"解析RAG结果失败: {e}")
+            logger.debug(f"RAG结果格式: {rag_result}")
 
         return fragments
 

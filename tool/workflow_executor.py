@@ -56,7 +56,7 @@ class WorkflowExecutor:
         logger.info(f"开始执行工作流: {workflow_plan.name}")
 
         execution_results = {
-            "workflow_id": workflow_plan.plan_id,
+            "workflow_id": getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None),
             "workflow_name": workflow_plan.name,
             "start_time": datetime.now().isoformat(),
             "status": "running",

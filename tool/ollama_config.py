@@ -99,17 +99,6 @@ class OllamaConfig:
             "codellama:7b",
             "codellama:13b",
             "codellama:34b",
-            # 其他可能支持的模型
-            "mistral:7b",
-            "mistral:instruct",
-            "mistral:7b-instruct",
-            "qwen2.5:7b",
-            "qwen2.5:14b",
-            "qwen2.5:32b",
-            "phi3",
-            "phi3:mini",
-            "phi3:medium",
-            "phi3:small",
         ]
 
         # 检查基础模型名称

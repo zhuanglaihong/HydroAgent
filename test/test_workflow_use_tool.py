@@ -123,7 +123,7 @@ def process_step_by_step(components: Dict[str, Any], query: str) -> WorkflowPlan
         )
 
         # 打印工作流详情
-        logger.info(f"生成的工作流 ID: {workflow_plan.plan_id}")
+        logger.info(f"生成的工作流 ID: {getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None)}")
         logger.info(f"工作流名称: {workflow_plan.name}")
         logger.info(f"工作流描述: {workflow_plan.description}")
         logger.info(f"步骤数量: {len(workflow_plan.steps)}")
@@ -153,7 +153,8 @@ def validate_workflow(workflow_plan: WorkflowPlan):
         logger.info("\n开始验证工作流")
 
         # 1. 基本属性验证
-        assert workflow_plan.plan_id, "工作流ID不能为空"
+        workflow_id = getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None)
+        assert workflow_id, "工作流ID不能为空"
         assert workflow_plan.name, "工作流名称不能为空"
         assert workflow_plan.description, "工作流描述不能为空"
         assert len(workflow_plan.steps) > 0, "工作流步骤不能为空"

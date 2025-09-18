@@ -245,7 +245,7 @@ def main():
 
         # 显示工作流信息
         logger.info(f"\n工作流信息:")
-        logger.info(f"  ID: {workflow_plan.plan_id}")
+        logger.info(f"  ID: {getattr(workflow_plan, 'plan_id', None) or getattr(workflow_plan, 'workflow_id', None)}")
         logger.info(f"  名称: {workflow_plan.name}")
         logger.info(f"  描述: {workflow_plan.description}")
         logger.info(f"  步骤数量: {len(workflow_plan.steps)}")

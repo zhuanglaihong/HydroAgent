@@ -40,8 +40,9 @@ class WorkflowStep:
     step_id: str  # 步骤ID
     name: str  # 步骤名称
     description: str  # 步骤描述
-    step_type: StepType  # 步骤类型
+    step_type: StepType = StepType.TOOL_CALL  # 步骤类型
     tool_name: Optional[str] = None  # 工具名称
+    tools: List[str] = field(default_factory=list)  # 使用的工具列表
     parameters: Dict[str, Any] = field(default_factory=dict)  # 参数
     dependencies: List[str] = field(default_factory=list)  # 依赖的步骤ID
     conditions: Dict[str, Any] = field(default_factory=dict)  # 执行条件
@@ -56,6 +57,7 @@ class WorkflowStep:
             "description": self.description,
             "step_type": self.step_type.value,
             "tool_name": self.tool_name,
+            "tools": self.tools,
             "parameters": self.parameters,
             "dependencies": self.dependencies,
             "conditions": self.conditions,
@@ -70,8 +72,9 @@ class WorkflowStep:
             step_id=data["step_id"],
             name=data["name"],
             description=data["description"],
-            step_type=StepType(data["step_type"]),
+            step_type=StepType(data.get("step_type", "tool_call")),
             tool_name=data.get("tool_name"),
+            tools=data.get("tools", []),
             parameters=data.get("parameters", {}),
             dependencies=data.get("dependencies", []),
             conditions=data.get("conditions", {}),
@@ -110,23 +113,23 @@ class ExecutionResult:
 
 
 @dataclass
-class WorkflowPlan:
-    """工作流计划"""
+class Workflow:
+    """工作流定义"""
 
-    plan_id: str  # 计划ID
-    name: str  # 计划名称
-    description: str  # 计划描述
+    workflow_id: str  # 工作流ID
+    name: str  # 工作流名称
+    description: str  # 工作流描述
     steps: List[WorkflowStep]  # 执行步骤
-    user_query: str  # 原始用户查询
-    expanded_query: str  # 扩展后的查询
-    context: str  # 检索到的上下文
+    user_query: str = ""  # 原始用户查询
+    expanded_query: str = ""  # 扩展后的查询
+    context: str = ""  # 检索到的上下文
     created_time: datetime = field(default_factory=datetime.now)  # 创建时间
     metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
-            "plan_id": self.plan_id,
+            "workflow_id": self.workflow_id,
             "name": self.name,
             "description": self.description,
             "steps": [step.to_dict() for step in self.steps],
@@ -138,17 +141,17 @@ class WorkflowPlan:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowPlan":
+    def from_dict(cls, data: Dict[str, Any]) -> "Workflow":
         """从字典创建"""
         return cls(
-            plan_id=data["plan_id"],
+            workflow_id=data.get("workflow_id", data.get("plan_id", "")),  # 兼容旧版本
             name=data["name"],
             description=data["description"],
             steps=[WorkflowStep.from_dict(step_data) for step_data in data["steps"]],
-            user_query=data["user_query"],
-            expanded_query=data["expanded_query"],
-            context=data["context"],
-            created_time=datetime.fromisoformat(data["created_time"]),
+            user_query=data.get("user_query", ""),
+            expanded_query=data.get("expanded_query", ""),
+            context=data.get("context", ""),
+            created_time=datetime.fromisoformat(data["created_time"]) if "created_time" in data else datetime.now(),
             metadata=data.get("metadata", {}),
         )
 
@@ -157,10 +160,14 @@ class WorkflowPlan:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
 
     @classmethod
-    def from_json(cls, json_str: str) -> "WorkflowPlan":
+    def from_json(cls, json_str: str) -> "Workflow":
         """从JSON字符串创建"""
         data = json.loads(json_str)
         return cls.from_dict(data)
+
+
+# 向后兼容的类型别名
+WorkflowPlan = Workflow
 
 
 @dataclass
@@ -168,7 +175,7 @@ class WorkflowExecution:
     """工作流执行状态"""
 
     execution_id: str  # 执行ID
-    plan: WorkflowPlan  # 工作流计划
+    plan: Workflow  # 工作流计划
     status: ExecutionStatus  # 整体执行状态
     current_step: Optional[str] = None  # 当前执行步骤ID
     step_results: Dict[str, ExecutionResult] = field(
@@ -256,3 +263,97 @@ class IntentAnalysis:
             "confidence": self.confidence,
             "suggested_tools": self.suggested_tools,
         }
+
+
+@dataclass
+class WorkflowRequest:
+    """工作流请求"""
+
+    query: str  # 用户查询
+    request_id: str = field(default_factory=lambda: f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}")  # 请求ID
+    user_context: Dict[str, Any] = field(default_factory=dict)  # 用户上下文
+    preferences: Dict[str, Any] = field(default_factory=dict)  # 用户偏好设置
+    priority: str = "normal"  # 优先级: low, normal, high, urgent
+    max_execution_time: Optional[int] = None  # 最大执行时间(秒)
+    created_time: datetime = field(default_factory=datetime.now)  # 创建时间
+    metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "request_id": self.request_id,
+            "query": self.query,
+            "user_context": self.user_context,
+            "preferences": self.preferences,
+            "priority": self.priority,
+            "max_execution_time": self.max_execution_time,
+            "created_time": self.created_time.isoformat(),
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowRequest":
+        """从字典创建"""
+        return cls(
+            request_id=data.get("request_id", f"req_{datetime.now().strftime('%Y%m%d_%H%M%S')}"),
+            query=data["query"],
+            user_context=data.get("user_context", {}),
+            preferences=data.get("preferences", {}),
+            priority=data.get("priority", "normal"),
+            max_execution_time=data.get("max_execution_time"),
+            created_time=datetime.fromisoformat(data["created_time"]) if "created_time" in data else datetime.now(),
+            metadata=data.get("metadata", {}),
+        )
+
+    def to_json(self) -> str:
+        """转换为JSON字符串"""
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "WorkflowRequest":
+        """从JSON字符串创建"""
+        data = json.loads(json_str)
+        return cls.from_dict(data)
+
+
+@dataclass
+class WorkflowResponse:
+    """工作流响应"""
+
+    request_id: str  # 对应的请求ID
+    status: str  # 响应状态: success, error, processing
+    workflow: Optional[Workflow] = None  # 生成的工作流
+    execution: Optional[WorkflowExecution] = None  # 执行状态
+    knowledge_fragments: List[KnowledgeFragment] = field(default_factory=list)  # 知识片段
+    intent_analysis: Optional[IntentAnalysis] = None  # 意图分析结果
+    error_message: Optional[str] = None  # 错误信息
+    processing_time: Optional[float] = None  # 处理时间(秒)
+    response_time: datetime = field(default_factory=datetime.now)  # 响应时间
+    metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "request_id": self.request_id,
+            "status": self.status,
+            "workflow": self.workflow.to_dict() if self.workflow else None,
+            "execution": {
+                "execution_id": self.execution.execution_id,
+                "status": self.execution.status.value,
+                "current_step": self.execution.current_step,
+                "completed_steps": self.execution.get_completed_steps(),
+                "failed_steps": self.execution.get_failed_steps(),
+                "is_completed": self.execution.is_completed(),
+                "has_failures": self.execution.has_failures(),
+            } if self.execution else None,
+            "knowledge_fragments": [fragment.to_dict() for fragment in self.knowledge_fragments],
+            "intent_analysis": self.intent_analysis.to_dict() if self.intent_analysis else None,
+            "error_message": self.error_message,
+            "processing_time": self.processing_time,
+            "response_time": self.response_time.isoformat(),
+            "metadata": self.metadata,
+        }
+
+    def to_json(self) -> str:
+        """转换为JSON字符串"""
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)

@@ -279,8 +279,8 @@ class WorkflowGenerator:
         """验证和修正工作流"""
         try:
             # 1. 基本字段验证
-            if "plan_id" not in workflow_data:
-                workflow_data["plan_id"] = f"workflow_{uuid.uuid4().hex[:8]}"
+            if "workflow_id" not in workflow_data:
+                workflow_data["workflow_id"] = f"workflow_{uuid.uuid4().hex[:8]}"
 
             if "name" not in workflow_data:
                 workflow_data["name"] = "自动生成工作流"
@@ -546,7 +546,7 @@ class WorkflowGenerator:
 
             # 构建工作流计划
             workflow_plan = WorkflowPlan(
-                plan_id=workflow_data["plan_id"],
+                workflow_id=workflow_data["workflow_id"],
                 name=workflow_data["name"],
                 description=workflow_data["description"],
                 steps=workflow_steps,
@@ -602,9 +602,9 @@ class WorkflowGenerator:
             )
             steps.append(step)
 
-        # 构建工作流计划
-        workflow_plan = WorkflowPlan(
-            plan_id=f"template_{template_name}_{uuid.uuid4().hex[:8]}",
+            # 构建工作流计划
+            workflow_plan = WorkflowPlan(
+                workflow_id=f"template_{template_name}_{uuid.uuid4().hex[:8]}",
             name=template["name"],
             description=template["description"],
             steps=steps,
@@ -625,7 +625,7 @@ class WorkflowGenerator:
         """验证工作流是否符合LangChain执行要求"""
         try:
             # 检查必需字段
-            if not workflow_plan.plan_id or not workflow_plan.steps:
+            if not workflow_plan.workflow_id or not workflow_plan.steps:
                 return False
 
             # 检查每个步骤

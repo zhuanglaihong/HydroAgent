@@ -119,15 +119,33 @@ class WorkflowOrchestrator:
                 debug_info["step2_expanded_query"] = expanded_query
             logger.info(f"   扩展查询长度: {len(expanded_query)}")
 
-            # 第3步：上下文构建
-            logger.info("🔧 第3步：上下文构建...")
+            # 第3步：知识检索
+            logger.info("🔍 第3步：知识检索...")
+            knowledge_fragments = []
+            if hasattr(self, 'knowledge_retriever') and self.knowledge_retriever:
+                try:
+                    knowledge_fragments = self.knowledge_retriever.retrieve_knowledge(
+                        expanded_query=expanded_query,
+                        k=5,
+                        score_threshold=0.3
+                    )
+                    logger.info(f"   检索到 {len(knowledge_fragments)} 个知识片段")
+                except Exception as e:
+                    logger.warning(f"知识检索失败: {e}")
+            
+            # 第4步：上下文构建
+            logger.info("🔧 第4步：上下文构建...")
             context = self.context_builder.build_context(
                 user_query=user_query,
                 intent_analysis=intent_analysis,
-                knowledge_fragments=[],  # 不使用知识片段
+                knowledge_fragments=knowledge_fragments,
                 include_examples=True,
             )
             if debug_info is not None:
+                debug_info["step3_knowledge"] = {
+                    "fragments_count": len(knowledge_fragments),
+                    "fragments": [f.to_dict() for f in knowledge_fragments[:2]]  # 只显示前两个片段
+                }
                 debug_info["step4_context_length"] = len(context)
                 debug_info["step4_context_preview"] = (
                     context[:500] + "..." if len(context) > 500 else context
@@ -304,7 +322,7 @@ class WorkflowOrchestrator:
         )
 
         return WorkflowPlan(
-            plan_id=f"error_{uuid.uuid4().hex[:8]}",
+            workflow_id=f"error_{uuid.uuid4().hex[:8]}",
             name="错误工作流",
             description="查询处理失败时的错误工作流",
             steps=[error_step],
@@ -411,7 +429,7 @@ class WorkflowOrchestrator:
             Dict: LangChain兼容的工作流定义
         """
         langchain_format = {
-            "workflow_id": workflow_plan.plan_id,
+            "workflow_id": workflow_plan.workflow_id,
             "workflow_name": workflow_plan.name,
             "description": workflow_plan.description,
             "created_time": workflow_plan.created_time.isoformat(),
