@@ -1,0 +1,11 @@
+{
+  "name": "默认工作流",
+  "task_count": 1,
+  "has_dependencies": false,
+  "task_types": [
+    "simple_action"
+  ],
+  "actions": [
+    "manual_configuration"
+  ]
+}
