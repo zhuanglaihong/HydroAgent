@@ -38,19 +38,6 @@ from .workflow_generator_v2 import (
     create_workflow_generator
 )
 
-# 保持向后兼容的旧版模块
-from .orchestrator import WorkflowOrchestrator
-from .intent_processor import IntentProcessor
-from .query_expander import QueryExpander
-from .context_builder import ContextBuilder
-from .workflow_generator import WorkflowGenerator
-from .workflow_types import (
-    WorkflowStep,
-    WorkflowPlan,
-    ExecutionResult,
-    ExecutionStatus,
-    IntentAnalysis,
-)
 
 # 新版模块优先
 __all__ = [
@@ -92,15 +79,4 @@ __all__ = [
     "FeedbackType",
     "create_validation_feedback_system",
     
-    # 向后兼容的旧版模块
-    "WorkflowOrchestrator",
-    "IntentProcessor",
-    "QueryExpander",
-    "ContextBuilder",
-    "WorkflowGenerator",
-    "WorkflowStep",
-    "WorkflowPlan",
-    "ExecutionResult",
-    "ExecutionStatus",
-    "IntentAnalysis",
 ]

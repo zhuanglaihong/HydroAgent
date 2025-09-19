@@ -1,422 +1,227 @@
-# Workflow 智能工作流编排系统
+# 新版工作流生成器 (WorkflowGeneratorV2)
 
 ## 概述
 
-Workflow系统是一个基于LLM和RAG的智能工作流编排系统，能够根据用户输入自动生成详细的、可执行的工作流计划。系统集成了意图理解、查询扩展、知识检索、上下文构建和工作流生成等核心功能。
+这是重新设计和实现的工作流生成器，能够将用户的自然语言指令，通过思维链（CoT）推理和RAG系统的增强，转化为一个结构化的、可执行的工作流计划（DSL）。
+
+## 核心特性
+
+### 🧠 智能理解
+- **自然语言处理**: 支持中文自然语言指令输入
+- **意图识别**: 自动识别用户意图类型（数据获取、分析、建模等）
+- **实体提取**: 提取关键实体（时间、模型名称、参数等）
+
+### 🔗 RAG集成
+- **知识检索**: 自动从向量数据库检索相关知识
+- **上下文增强**: 利用检索到的知识增强LLM推理
+- **回退机制**: 在RAG不可用时提供基础知识
+
+### 🤖 CoT推理
+- **逐步思考**: 引导LLM进行链式推理
+- **结构化输出**: 生成标准化的工作流JSON格式
+- **质量保证**: 多层验证确保输出质量
+
+### 🔧 智能组装
+- **自动验证**: 检查工作流的可行性和完整性
+- **依赖优化**: 自动识别并行执行的任务
+- **错误修复**: 自动修复常见的工作流问题
+
+### 📊 反馈学习
+- **自动记录**: 记录执行成功/失败的情况
+- **模式识别**: 识别常见的错误模式
+- **自我优化**: 将学习结果集成到RAG系统
 
 ## 系统架构
 
 ```
-Workflow系统
-├── 意图处理器 (IntentProcessor) - 第1步
-├── 查询扩展器 (QueryExpander) - 第2步  
-├── 知识检索器 (KnowledgeRetriever) - 第3步
-├── 上下文构建器 (ContextBuilder) - 第4步
-├── 工作流生成器 (WorkflowGenerator) - 第5步
-└── 主编排器 (WorkflowOrchestrator) - 协调器
+用户指令 → 指令解析与意图理解 → CoT+RAG推理引擎 → 工作流组装与优化 → 验证与反馈闭环
+    ↓              ↓                    ↓                ↓                  ↓
+ 自然语言        结构化意图           增强推理计划        优化工作流          学习优化
 ```
 
-## 核心组件
+### 核心模块
 
-### 1. 意图处理器 (IntentProcessor)
-**功能**: 将模糊的用户查询重构为明确的指令
-- 识别任务类型和实体信息
-- 提供置信度评估
-- 建议合适的工具组合
+1. **指令解析与意图理解模块** (`instruction_parser.py`)
+   - 分词和实体识别
+   - 意图分类
+   - 参数和约束提取
 
-**示例**:
+2. **增强推理引擎** (`cot_rag_engine.py`)
+   - RAG知识检索
+   - CoT提示词构建
+   - LLM推理调用
+
+3. **工作流组装与优化模块** (`workflow_assembler.py`)
+   - JSON解析和清洗
+   - 可行性验证
+   - 执行顺序优化
+
+4. **验证与反馈闭环机制** (`validation_feedback.py`)
+   - 执行结果记录
+   - 错误模式分析
+   - 学习案例管理
+
+5. **主工作流生成器** (`workflow_generator_v2.py`)
+   - 统一入口接口
+   - 配置管理
+   - 统计和监控
+
+## 使用方法
+
+### 任务类型
+
+- **simple_action**: 简单操作（文件读写、数据计算等）
+- **complex_reasoning**: 复杂推理（模型训练、参数优化等）
+
+### 支持的操作
+
+- **数据操作**: `load_data`, `save_data`, `read_csv`, `write_csv`
+- **数据分析**: `analyze_data`, `calculate_stats`, `correlation_analysis`
+- **模型操作**: `calibrate_model`, `run_model`, `gr4j_calibration`
+- **可视化**: `plot_data`, `create_chart`, `visualize_results`
+- **评估**: `calculate_nse`, `calculate_rmse`, `evaluate_model`
+
+## 监控和统计
+
+### 获取统计信息
+
 ```python
-from workflow import IntentProcessor
-
-processor = IntentProcessor(llm)
-intent = processor.process_intent("我想率定一个GR4J模型")
-print(f"任务类型: {intent.task_type}")
-print(f"建议工具: {intent.suggested_tools}")
+stats = generator.get_generation_statistics()
+print(f"成功率: {stats['success_rate']:.2%}")
+print(f"系统健康度: {stats['system_health']}")
 ```
 
-### 2. 查询扩展器 (QueryExpander)
-**功能**: 改写和扩展原始意图以获得更丰富的上下文
-- LLM智能扩展
-- 规则基础扩展
-- 水文领域专业术语扩展
+### 触发学习更新
 
-**示例**:
 ```python
-from workflow import QueryExpander
-
-expander = QueryExpander(llm)
-expanded_query = expander.expand_query(intent_analysis)
-print(f"扩展查询: {expanded_query}")
+# 手动触发学习更新
+generator.trigger_learning_update()
 ```
 
-### 3. 知识检索器 (KnowledgeRetriever) ⭐ **RAG集成**
-**功能**: 从本地知识库检索相关文档片段
-- 支持RAG系统集成
-- 向量相似性检索
-- 默认知识库回退机制
-- 内容后处理和去重
+### 健康报告
 
-**RAG集成特性**:
-- 自动检测现有知识库索引
-- 支持多种检索策略（vector, bm25, ensemble）
-- 智能内容清理和评分调整
-- 完整的错误处理和回退机制
-
-**示例**:
 ```python
-from workflow import KnowledgeRetriever
-
-# 使用RAG系统
-retriever = KnowledgeRetriever(
-    rag_system=rag_system,  # 你的RAG系统实例
-    faiss_index_path="./faiss_db",
-    enable_fallback=True
-)
-
-# 检索知识片段
-fragments = retriever.retrieve_knowledge(
-    expanded_query="GR4J模型参数率定",
-    k=5,
-    score_threshold=0.3,
-    retriever_type="vector"
-)
+if generator.feedback_system:
+    health_report = generator.feedback_system.get_system_health_report()
+    print(health_report)
 ```
 
-### 4. 上下文构建器 (ContextBuilder)
-**功能**: 拼接用户输入和检索到的知识片段
-- 构建结构化的LLM提示
-- 包含工具描述和示例
-- 长度控制和优化
+## 错误处理
 
-**示例**:
-```python
-from workflow import ContextBuilder
+系统具备完善的错误处理机制：
 
-builder = ContextBuilder()
-context = builder.build_context(
-    user_query="率定GR4J模型",
-    intent_analysis=intent,
-    knowledge_fragments=fragments
-)
+1. **指令解析错误**: 返回具体的解析失败原因
+2. **LLM调用错误**: 提供回退机制和重试策略
+3. **工作流验证错误**: 自动修复常见问题
+4. **执行错误**: 记录错误模式用于学习
+
+## 性能优化
+
+### 并行执行识别
+
+系统自动识别可以并行执行的任务：
+
+```json
+"execution_order": [
+  ["load_data"],
+  ["preprocess_data"],
+  ["analyze_data", "visualize_data"],  // 这两个任务可以并行
+  ["generate_report"]
+]
 ```
 
-### 5. 工作流生成器 (WorkflowGenerator)
-**功能**: 基于上下文生成详细的工作流计划
-- 输出严格的JSON格式
-- 确保LangChain框架兼容性
-- 包含依赖关系和错误处理
+### 缓存机制
 
-**示例**:
+- **指令解析缓存**: 相似指令复用解析结果
+- **RAG检索缓存**: 避免重复检索
+- **工作流模板**: 常用模式快速生成
+
+## 扩展性
+
+### 自定义工具注册
+
 ```python
-from workflow import WorkflowGenerator
+from workflow.workflow_assembler import ToolRegistry
 
-generator = WorkflowGenerator(llm)
-workflow_plan = generator.generate_workflow(
-    context=context,
-    user_query="率定GR4J模型",
-    intent_analysis=intent
-)
+# 扩展工具注册表
+tool_registry = ToolRegistry()
+tool_registry.available_tools.add("my_custom_tool")
+
+# 使用自定义注册表
+assembler = create_workflow_assembler(tool_registry)
 ```
 
-### 6. 主编排器 (WorkflowOrchestrator)
-**功能**: 整合所有步骤的主要协调器
-- 端到端工作流处理
-- 分步执行和调试
-- 统计信息和系统监控
-
-**示例**:
-```python
-from workflow import WorkflowOrchestrator
-
-orchestrator = WorkflowOrchestrator(
-    llm=llm,
-    rag_system=rag_system,  # 可选：集成RAG系统
-    tools=tools,
-    enable_debug=True
-)
-
-# 处理用户查询
-workflow_plan = orchestrator.process_query("我想率定一个GR4J模型")
-
-# 分步执行
-step_results = orchestrator.process_query_step_by_step("查询GR4J参数")
-```
-
-## RAG系统集成
-
-### 设置RAG系统
-
-1. **初始化RAG系统**:
-```python
-from RAG import RAGSystem
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_ollama import ChatOllama
-
-# 初始化模型
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
-llm = ChatOllama(model="granite3-dense:8b")
-
-# 创建RAG系统
-rag_system = RAGSystem(
-    embeddings=embeddings,
-    llm=llm,
-    index_path="./faiss_db"
-)
-```
-
-2. **构建知识库**:
-```python
-# 加载文档
-doc_count = rag_system.load_documents("./documents")
-
-# 创建索引
-rag_system.create_index()
-```
-
-3. **集成到Workflow**:
-```python
-# 创建知识检索器
-knowledge_retriever = KnowledgeRetriever(
-    rag_system=rag_system,
-    faiss_index_path="./faiss_db"
-)
-
-# 在编排器中使用
-orchestrator = WorkflowOrchestrator(
-    llm=llm,
-    rag_system=rag_system,
-    tools=tools
-)
-```
-
-### 知识库管理
-
-**加载文档到RAG系统**:
-```python
-# 加载文档
-success = knowledge_retriever.load_documents_to_rag(
-    document_path="./documents",
-    file_extensions=[".txt", ".md", ".pdf"]
-)
-```
-
-**测试检索功能**:
-```python
-# 测试检索
-test_result = knowledge_retriever.test_retrieval("GR4J模型参数")
-print(f"检索结果: {test_result}")
-```
-
-## 使用示例
-
-### 基本使用
+### 自定义验证规则
 
 ```python
-from workflow import WorkflowOrchestrator
-from tool.langchain_tool import get_hydromodel_tools
+from workflow.validation_feedback import ValidationFeedbackSystem
 
-# 初始化编排器
-orchestrator = WorkflowOrchestrator(
-    llm=llm,
-    tools=get_hydromodel_tools(),
-    enable_debug=True
-)
-
-# 处理查询
-workflow_plan = orchestrator.process_query("我想率定一个GR4J模型")
-
-# 导出LangChain格式
-langchain_format = orchestrator.export_workflow_to_langchain_format(workflow_plan)
-```
-
-### 带RAG系统的完整示例
-
-```python
-# 1. 设置RAG系统
-from RAG import RAGSystem
-rag_system = RAGSystem(embeddings=embeddings, llm=llm, index_path="./faiss_db")
-
-# 2. 构建知识库
-rag_system.load_documents("./documents")
-rag_system.create_index()
-
-# 3. 创建编排器
-orchestrator = WorkflowOrchestrator(
-    llm=llm,
-    rag_system=rag_system,  # 集成RAG系统
-    tools=get_hydromodel_tools()
-)
-
-# 4. 处理查询（现在会使用知识库）
-workflow_plan = orchestrator.process_query("我想了解GR4J模型参数并进行率定")
-```
-
-### 分步执行
-
-```python
-# 分步执行，查看每步结果
-results = orchestrator.process_query_step_by_step("率定GR4J模型")
-
-for step_name, step_result in results['steps'].items():
-    print(f"{step_name}: {step_result['status']}")
-    print(f"耗时: {step_result['execution_time']:.2f}秒")
-```
-
-## 配置选项
-
-### 知识检索器配置
-
-```python
-knowledge_retriever = KnowledgeRetriever(
-    rag_system=rag_system,           # RAG系统实例
-    faiss_index_path="./faiss_db",   # FAISS索引路径
-    embeddings=embeddings,           # 嵌入模型
-    llm=llm,                        # 语言模型
-    enable_fallback=True             # 启用回退机制
-)
-```
-
-### 编排器配置
-
-```python
-orchestrator = WorkflowOrchestrator(
-    llm=llm,                    # 语言模型
-    embeddings=embeddings,      # 嵌入模型（可选）
-    rag_system=rag_system,      # RAG系统（可选）
-    tools=tools,                # 工具列表
-    enable_debug=True           # 调试模式
-)
+class CustomValidationSystem(ValidationFeedbackSystem):
+    def validate_custom_rules(self, workflow):
+        # 自定义验证逻辑
+        pass
 ```
 
 ## 测试
 
-### 运行基本测试
+运行测试套件：
 
 ```bash
-python workflow/example.py
+python test/test_new_workflow_generator.py
 ```
 
-### 运行RAG集成测试
+运行使用示例：
 
 ```bash
-python workflow/rag_integration_example.py
+python workflow/example_usage.py
 ```
 
-### 单独测试组件
+## 与旧版本兼容性
+
+新版生成器与旧版本完全兼容，可以并存使用：
 
 ```python
-# 测试知识检索器
-from workflow import KnowledgeRetriever
-retriever = KnowledgeRetriever()
-test_result = retriever.test_retrieval("GR4J模型参数")
-print(test_result)
+# 使用新版生成器
+from workflow import WorkflowGeneratorV2, create_workflow_generator
+
+# 使用旧版生成器（仍然可用）
+from workflow import WorkflowOrchestrator, WorkflowGenerator
 ```
 
-## 性能优化
+## 最佳实践
 
-### 1. 知识检索优化
-
-- **调整检索参数**: 修改 `k` 和 `score_threshold`
-- **使用集成检索器**: 结合多种检索策略
-- **内容后处理**: 自动清理和去重
-
-### 2. 上下文长度控制
-
-- **动态截断**: 根据模型限制自动调整
-- **重要性排序**: 保留最重要的内容部分
-- **压缩策略**: 智能压缩长文本
-
-### 3. 缓存机制
-
-- **检索结果缓存**: 避免重复检索
-- **上下文缓存**: 相似查询复用上下文
-- **工作流缓存**: 相似任务复用工作流
-
-## 扩展功能
-
-### 1. 自定义知识检索器
-
-```python
-class CustomKnowledgeRetriever(KnowledgeRetriever):
-    def retrieve_knowledge(self, query, **kwargs):
-        # 自定义检索逻辑
-        pass
-```
-
-### 2. 自定义上下文构建器
-
-```python
-class CustomContextBuilder(ContextBuilder):
-    def build_context(self, **kwargs):
-        # 自定义上下文构建逻辑
-        pass
-```
-
-### 3. 自定义工作流生成器
-
-```python
-class CustomWorkflowGenerator(WorkflowGenerator):
-    def generate_workflow(self, **kwargs):
-        # 自定义工作流生成逻辑
-        pass
-```
+1. **明确指令**: 提供具体、明确的指令以获得更好的结果
+2. **RAG集成**: 建议集成RAG系统以提升生成质量
+3. **反馈学习**: 启用反馈学习以持续改进系统
+4. **定期更新**: 定期触发学习更新以优化性能
+5. **监控统计**: 关注成功率和健康度指标
 
 ## 故障排除
 
 ### 常见问题
 
-1. **RAG系统无法初始化**
-   - 检查依赖包是否正确安装
-   - 确认模型文件是否存在
-   - 检查索引路径权限
+1. **LLM连接失败**
+   - 检查Ollama是否正常运行
+   - 验证模型名称是否正确
 
-2. **知识检索返回空结果**
-   - 检查知识库是否已构建
-   - 调整检索参数（k, score_threshold）
-   - 启用回退机制
+2. **RAG检索失败**
+   - 检查向量数据库是否已构建
+   - 确认文档是否已加载
 
-3. **工作流生成失败**
-   - 检查LLM连接状态
-   - 验证上下文长度是否超限
-   - 查看错误日志
+3. **工作流验证失败**
+   - 查看验证错误详情
+   - 检查工具可用性
+
+4. **JSON解析错误**
+   - LLM输出格式问题，系统会自动尝试修复
+   - 可以调整温度参数降低随机性
 
 ### 调试模式
 
 ```python
-# 启用调试模式
-orchestrator.enable_debug_mode()
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
-# 查看系统信息
-info = orchestrator.get_system_info()
-print(info)
-
-# 验证组件状态
-validation = orchestrator.validate_components()
-print(validation)
+# 创建生成器时启用详细日志
+generator = create_workflow_generator(config=config)
 ```
-
-## 待完成的组件
-
-目前系统已完成前5步的核心功能，第6步（任务执行器）计划在 `tool` 模块中实现：
-
-- ✅ 第1步：意图理解 (IntentProcessor)
-- ✅ 第2步：查询扩展 (QueryExpander)  
-- ✅ 第3步：知识检索 (KnowledgeRetriever) - **已集成RAG系统**
-- ✅ 第4步：上下文构建 (ContextBuilder)
-- ✅ 第5步：工作流生成 (WorkflowGenerator)
-- 🔄 第6步：任务执行 (TaskExecutor) - **计划在tool模块实现**
-
-## 贡献指南
-
-欢迎提交Issue和Pull Request来改进Workflow系统。在提交代码前，请确保：
-
-1. 运行所有测试并确保通过
-2. 添加适当的文档和注释
-3. 遵循项目的代码风格
-4. 更新相关文档
-
-## 许可证
-
-本项目采用MIT许可证。详见LICENSE文件。 

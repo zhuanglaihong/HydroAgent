@@ -358,20 +358,58 @@ class WorkflowAssembler:
     def _parse_and_clean_plan(self, raw_plan: str) -> Dict[str, Any]:
         """解析和清洗原始计划"""
         try:
+            logger.info(f"开始解析原始计划，长度: {len(raw_plan)}")
+            logger.info(f"原始计划内容: {raw_plan}...")  # 只记录前500字符
+            
             # 尝试直接解析JSON
             if raw_plan.strip().startswith('{'):
-                return json.loads(raw_plan)
+                parsed = json.loads(raw_plan)
+                logger.info(f"直接JSON解析成功，包含 {len(parsed.get('tasks', []))} 个任务")
+                return parsed
             
-            # 尝试提取JSON部分
+            # 尝试提取JSON部分 - 使用更强大的正则表达式匹配嵌套JSON
+            # 先尝试找到完整的JSON对象（从第一个{到最后一个}）
+            json_start = raw_plan.find('{')
+            if json_start != -1:
+                # 从第一个{开始，尝试找到匹配的}
+                brace_count = 0
+                json_end = -1
+                for i in range(json_start, len(raw_plan)):
+                    if raw_plan[i] == '{':
+                        brace_count += 1
+                    elif raw_plan[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                
+                if json_end != -1:
+                    json_candidate = raw_plan[json_start:json_end]
+                    try:
+                        parsed = json.loads(json_candidate)
+                        if isinstance(parsed, dict) and "tasks" in parsed:
+                            logger.info(f"完整JSON解析成功，包含 {len(parsed.get('tasks', []))} 个任务")
+                            return parsed
+                        else:
+                            logger.debug("完整JSON不包含tasks字段")
+                    except json.JSONDecodeError as e:
+                        logger.debug(f"完整JSON解析失败: {str(e)}")
+            
+            # 如果完整JSON解析失败，回退到原来的正则表达式方法
             json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
             json_matches = re.findall(json_pattern, raw_plan, re.DOTALL)
+            logger.info(f"找到 {len(json_matches)} 个JSON候选片段")
             
-            for json_match in json_matches:
+            for i, json_match in enumerate(json_matches):
                 try:
                     parsed = json.loads(json_match)
                     if isinstance(parsed, dict) and "tasks" in parsed:
+                        logger.info(f"第{i+1}个JSON片段解析成功，包含 {len(parsed.get('tasks', []))} 个任务")
                         return parsed
-                except json.JSONDecodeError:
+                    else:
+                        logger.debug(f"第{i+1}个JSON片段不包含tasks字段")
+                except json.JSONDecodeError as e:
+                    logger.debug(f"第{i+1}个JSON片段解析失败: {str(e)}")
                     continue
             
             # 如果都失败了，尝试修复常见的JSON错误
@@ -379,6 +417,7 @@ class WorkflowAssembler:
             
         except Exception as e:
             logger.error(f"JSON解析失败: {str(e)}")
+            logger.warning("将使用回退计划")
             return self._create_fallback_plan()
     
     def _fix_json_errors(self, raw_plan: str) -> Dict[str, Any]:

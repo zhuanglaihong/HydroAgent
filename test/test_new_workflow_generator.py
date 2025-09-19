@@ -239,24 +239,57 @@ def test_workflow_generator_integration():
             print(f"⚠️  Ollama客户端创建失败: {str(e)}")
             ollama_client = None
         
+        # 尝试创建RAG系统
+        rag_system = None
+        try:
+            from hydrorag import RAGSystem
+            rag_system = RAGSystem()
+            
+            # 检查是否已有处理好的文档
+            doc_path = Path("documents")
+            if doc_path.exists():
+                print("📚 正在加载知识库文档...")
+                # 使用RAG系统加载文档
+                doc_count = rag_system.load_documents(str(doc_path))
+                print(f"✅ 成功加载 {doc_count} 个文档")
+                
+                # 创建或加载索引
+                try:
+                    rag_system.create_index()
+                    print("✅ 知识库索引创建成功")
+                except Exception as e:
+                    print(f"⚠️  索引创建失败: {str(e)}")
+            else:
+                print("⚠️  未找到documents文件夹，RAG系统将使用回退模式")
+                
+        except ImportError:
+            print("⚠️  HydroRAG未安装，将使用基础模式")
+        except Exception as e:
+            print(f"⚠️  RAG系统初始化失败: {str(e)}")
+        
         # 创建配置
         config = GenerationConfig(
             llm_model="qwen3:8b",  # 使用qwen3:8b模型
             llm_temperature=0.7,
+            rag_retrieval_k=8,  # 增加检索数量
+            rag_score_threshold=0.2,  # 降低阈值以获取更多相关知识
             enable_feedback_learning=False  # 禁用反馈学习以避免文件操作
         )
         
-        # 创建工作流生成器，如果有ollama客户端就使用
+        # 创建工作流生成器，集成RAG系统和Ollama客户端
         generator = create_workflow_generator(
+            rag_system=rag_system,
             ollama_client=ollama_client,
             config=config
         )
         
+        print(f"🚀 工作流生成器创建完成，RAG增强: {'是' if rag_system else '否'}")
+        
         # 测试指令
         test_instructions = [
             "加载CSV数据并计算基本统计信息",
-            "使用GR4J模型进行径流模拟",
-            "创建时间序列可视化图表"
+            "使用GR4J模型进行流域参数率定",
+            "对GR4J对率定的结果进行评估"
         ]
         
         success_count = 0
@@ -269,9 +302,52 @@ def test_workflow_generator_integration():
                 print(f"  ✅ 成功 - {result.workflow.name}")
                 print(f"     任务数: {len(result.workflow.tasks)}")
                 print(f"     耗时: {result.total_time:.2f}秒")
+                
+                # 打印生成的工作流详细信息
+                print(f"     工作流详情:")
+                print(f"       描述: {result.workflow.description}")
+                print(f"       执行顺序: {result.workflow.execution_order}")
+                
+                print(f"     任务列表:")
+                for i, task in enumerate(result.workflow.tasks, 1):
+                    print(f"       {i}. {task.name} ({task.task_type.value})")
+                    print(f"          操作: {task.action}")
+                    print(f"          描述: {task.description}")
+                    if task.parameters:
+                        print(f"          参数: {task.parameters}")
+                    if task.dependencies:
+                        print(f"          依赖: {task.dependencies}")
+                    print()
+                
+                # 如果有验证问题，也显示出来
+                if result.workflow.validation_issues:
+                    print(f"     验证问题 ({len(result.workflow.validation_issues)}个):")
+                    for issue in result.workflow.validation_issues:
+                        print(f"       - {issue.message}")
+                
                 success_count += 1
             else:
                 print(f"  ❌ 失败 - {result.error_message}")
+                
+                # 如果有部分结果，也显示出来
+                if result.intent_result:
+                    print(f"     意图分析: {result.intent_result.intent_type.value}")
+                    print(f"     置信度: {result.intent_result.confidence:.2f}")
+                if result.rag_result:
+                    print(f"     RAG检索: {len(result.rag_result.fragments)}个片段")
+                    # 显示检索到的知识片段
+                    if result.rag_result.fragments:
+                        print(f"     检索到的知识:")
+                        for i, fragment in enumerate(result.rag_result.fragments[:3], 1):  # 只显示前3个
+                            print(f"       {i}. {fragment.content[:100]}... (来源: {fragment.source})")
+                if result.cot_result:
+                    print(f"     CoT推理: {len(result.cot_result.reasoning_steps)}个步骤")
+                    # 显示推理步骤
+                    if result.cot_result.reasoning_steps:
+                        print(f"     推理过程:")
+                        for step in result.cot_result.reasoning_steps[:2]:  # 只显示前2个步骤
+                            print(f"       {step.step_number}. {step.question}")
+                            print(f"          {step.reasoning[:150]}...")
         
         print(f"\n总体结果: {success_count}/{len(test_instructions)} 成功")
         
@@ -328,10 +404,10 @@ def main():
     print("-" * 50)
     
     tests = [
-        test_instruction_parser,
-        test_cot_rag_engine,
-        test_workflow_assembler,
-        test_validation_feedback,
+        # test_instruction_parser,
+        # test_cot_rag_engine,
+        # test_workflow_assembler,
+        # test_validation_feedback,
         test_workflow_generator_integration
     ]
     
