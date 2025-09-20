@@ -28,6 +28,7 @@ class IntentType(Enum):
     DATA_ANALYSIS = "data_analysis"          # 数据分析
     MODEL_CALIBRATION = "model_calibration"  # 模型率定
     MODEL_SIMULATION = "model_simulation"    # 模型模拟
+    MODEL_EVALUATION = "model_evaluation"    # 模型评估
     VISUALIZATION = "visualization"          # 数据可视化
     CONTENT_GENERATION = "content_generation" # 内容生成
     CONTROL_OPERATION = "control_operation"  # 控制操作
@@ -132,7 +133,7 @@ class InstructionParser:
                 "数据", "文件", "数据集"
             ],
             IntentType.DATA_ANALYSIS: [
-                "分析", "统计", "计算", "评估", "检查", "查看",
+                "分析", "统计", "计算", "检查", "查看",
                 "趋势", "相关性", "回归", "聚类"
             ],
             IntentType.MODEL_CALIBRATION: [
@@ -142,6 +143,10 @@ class InstructionParser:
             IntentType.MODEL_SIMULATION: [
                 "模拟", "仿真", "预测", "运行", "执行",
                 "模型运行", "计算", "求解"
+            ],
+            IntentType.MODEL_EVALUATION: [
+                "评估", "验证", "测试", "性能", "精度", "指标",
+                "R2", "NSE", "RMSE", "效果", "评价", "评价指标"
             ],
             IntentType.VISUALIZATION: [
                 "绘制", "画图", "可视化", "图表", "曲线",
@@ -209,6 +214,8 @@ class InstructionParser:
         """初始化工具映射"""
         self.tool_mapping = {
             IntentType.DATA_ACQUISITION: [
+                # 优先使用实际可用的HydroMCP工具
+                "prepare_data",  # HydroMCP实际工具
                 "load_data", "read_csv", "download_data",
                 "fetch_camels_data", "read_netcdf"
             ],
@@ -217,12 +224,20 @@ class InstructionParser:
                 "time_series_analysis", "data_summary"
             ],
             IntentType.MODEL_CALIBRATION: [
-                "calibrate_model", "optimize_parameters", "gr4j_calibration",
+                # 优先使用实际可用的HydroMCP工具
+                "calibrate_model",  # HydroMCP实际工具
+                "optimize_parameters", "gr4j_calibration",
                 "xaj_calibration", "parameter_optimization"
             ],
             IntentType.MODEL_SIMULATION: [
+                "get_model_params",  # HydroMCP实际工具
                 "run_model", "simulate", "predict", "forecast",
                 "gr4j_simulation", "xaj_simulation"
+            ],
+            IntentType.MODEL_EVALUATION: [
+                # 新增模型评估意图类型
+                "evaluate_model",  # HydroMCP实际工具
+                "performance_metrics", "model_assessment"
             ],
             IntentType.VISUALIZATION: [
                 "plot_data", "create_chart", "visualize_results",

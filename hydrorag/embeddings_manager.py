@@ -55,7 +55,7 @@ class EmbeddingsManager:
                     encode_kwargs=encode_kwargs
                 )
                 
-                logger.info("HuggingFace嵌入模型初始化成功（使用新包）")
+                logger.info("HuggingFace嵌入模型初始化成功")
                 
                 # 测试模型
                 test_result = self._test_model()
@@ -64,39 +64,11 @@ class EmbeddingsManager:
                 else:
                     logger.error("嵌入模型测试失败")
                     self.model = None
-                
+
             except ImportError as e:
-                logger.warning(f"无法导入新版HuggingFaceEmbeddings，尝试旧版本: {e}")
-                # 回退到旧版本
-                try:
-                    from langchain_community.embeddings import HuggingFaceEmbeddings
-                    
-                    model_kwargs = {"device": self.device}
-                    encode_kwargs = {"normalize_embeddings": True}
-                    
-                    self.model = HuggingFaceEmbeddings(
-                        model_name=self.model_name,
-                        model_kwargs=model_kwargs,
-                        encode_kwargs=encode_kwargs
-                    )
-                    
-                    logger.info("HuggingFace嵌入模型初始化成功（使用旧版本）")
-                    
-                    # 测试模型
-                    test_result = self._test_model()
-                    if test_result:
-                        logger.info("嵌入模型测试通过")
-                    else:
-                        logger.error("嵌入模型测试失败")
-                        self.model = None
-                        
-                except ImportError as e2:
-                    logger.error(f"无法导入任何版本的HuggingFaceEmbeddings: {e2}")
-                    self._fallback_to_sentence_transformers()
-            except Exception as e:
-                logger.error(f"初始化HuggingFace嵌入模型失败: {e}")
-                self._fallback_to_sentence_transformers()
-                
+                logger.error(f"无法导入HuggingFaceEmbeddings: {e}")
+                self.model = None
+
         except Exception as e:
             logger.error(f"嵌入模型初始化失败: {e}")
             self.model = None
@@ -186,56 +158,6 @@ class EmbeddingsManager:
         except Exception as e:
             logger.warning(f"检查Ollama模型时出错: {e}")
             return []
-    
-    def _fallback_to_sentence_transformers(self):
-        """回退到纯sentence-transformers库"""
-        try:
-            logger.info("尝试使用纯sentence-transformers库作为回退")
-            
-            from sentence_transformers import SentenceTransformer
-            
-            # 创建一个包装器类来兼容LangChain接口
-            class SentenceTransformerWrapper:
-                def __init__(self, model_name, device="cpu"):
-                    self.model = SentenceTransformer(model_name, device=device)
-                
-                def embed_query(self, text):
-                    """嵌入单个查询文本"""
-                    return self.model.encode([text])[0].tolist()
-                
-                def embed_documents(self, texts):
-                    """嵌入多个文档"""
-                    embeddings = self.model.encode(texts)
-                    return [embedding.tolist() for embedding in embeddings]
-            
-            self.model = SentenceTransformerWrapper(self.model_name, self.device)
-            logger.info("Sentence-Transformers嵌入模型初始化成功")
-            
-        except ImportError:
-            logger.error("Sentence-Transformers库不可用")
-            self._fallback_to_openai_embeddings()
-        except Exception as e:
-            logger.error(f"Sentence-Transformers嵌入模型初始化失败: {e}")
-            self._fallback_to_openai_embeddings()
-    
-    def _fallback_to_openai_embeddings(self):
-        """回退到OpenAI嵌入模型"""
-        try:
-            logger.info("尝试使用OpenAI嵌入模型作为回退")
-            
-            from langchain_openai import OpenAIEmbeddings
-            
-            self.model = OpenAIEmbeddings(
-                model="text-embedding-3-small",
-                # 这里需要设置OpenAI API密钥
-            )
-            
-            logger.info("OpenAI嵌入模型初始化成功")
-            
-        except ImportError:
-            logger.error("OpenAI嵌入模型不可用")
-        except Exception as e:
-            logger.error(f"OpenAI嵌入模型初始化失败: {e}")
     
     def _test_model(self) -> bool:
         """测试嵌入模型"""

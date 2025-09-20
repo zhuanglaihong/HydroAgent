@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 class TaskComplexity(Enum):
     """任务复杂度枚举"""
-    SIMPLE = "simple"      # 简单任务：现有工具可以解决
-    COMPLEX = "complex"    # 复杂任务：需要新的代码工具
-    UNKNOWN = "unknown"    # 未知复杂度
+    SIMPLE_ACTION = "simple_action"           # 简单操作：现有工具可以直接解决
+    COMPLEX_REASONING = "complex_reasoning"   # 复杂推理：需要新的代码工具或复杂逻辑
+    UNKNOWN = "unknown"                       # 未知复杂度
 
 
 class TaskCategory(Enum):

@@ -16,10 +16,17 @@ import logging
 import json
 import re
 import uuid
+import os
+import sys
+from pathlib import Path
 from typing import Dict, List, Any, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+# 导入路径处理工具
+sys.path.append(str(Path(__file__).parent.parent))
+from utils.filepath import correct_path, normalize_path, path_exists
 
 logger = logging.getLogger(__name__)
 
@@ -148,11 +155,41 @@ class ToolRegistry:
         """初始化工具注册表"""
         self.available_tools = self._init_available_tools()
         self.tool_categories = self._init_tool_categories()
+        # 导入工具字典
+        self._load_hydro_tools()
+    
+    def _load_hydro_tools(self):
+        """加载HydroMCP工具字典"""
+        try:
+            import sys
+            from pathlib import Path
+            # 添加hydromcp路径
+            hydromcp_path = Path(__file__).parent.parent / "hydromcp"
+            sys.path.append(str(hydromcp_path))
+            
+            from tools_dict import (
+                HYDRO_TOOLS, get_all_tool_names, 
+                map_workflow_action_to_tool, get_unsupported_actions
+            )
+            
+            self.hydro_tools = HYDRO_TOOLS
+            self.get_all_tool_names = get_all_tool_names
+            self.map_workflow_action_to_tool = map_workflow_action_to_tool
+            self.get_unsupported_actions = get_unsupported_actions
+            
+            # 添加实际可用的HydroMCP工具
+            self.actual_available_tools = set(get_all_tool_names())
+            logger.info(f"加载了 {len(self.actual_available_tools)} 个HydroMCP工具: {', '.join(self.actual_available_tools)}")
+            
+        except ImportError as e:
+            logger.warning(f"无法加载HydroMCP工具字典: {e}")
+            self.hydro_tools = {}
+            self.actual_available_tools = set()
     
     def _init_available_tools(self) -> Set[str]:
-        """初始化可用工具列表"""
+        """初始化可用工具列表（保持兼容性的通用工具）"""
         return {
-            # 数据操作
+            # 数据操作 - 通用概念
             "load_data", "save_data", "read_csv", "write_csv", "read_netcdf", "write_netcdf",
             "load_camels_data", "fetch_data", "download_data", "export_data",
             
@@ -160,7 +197,7 @@ class ToolRegistry:
             "analyze_data", "calculate_stats", "correlation_analysis", "time_series_analysis",
             "data_summary", "data_quality_check", "missing_value_analysis",
             
-            # 模型相关
+            # 模型相关 - 通用概念
             "calibrate_model", "run_model", "simulate", "predict", "forecast",
             "gr4j_calibration", "gr4j_simulation", "xaj_calibration", "xaj_simulation",
             "lstm_training", "lstm_prediction", "optimize_parameters",
@@ -234,6 +271,10 @@ class ToolRegistry:
     
     def is_tool_available(self, tool_name: str) -> bool:
         """检查工具是否可用"""
+        # 首先检查实际可用的HydroMCP工具
+        if hasattr(self, 'actual_available_tools') and tool_name in self.actual_available_tools:
+            return True
+        # 然后检查通用工具列表（向后兼容）
         return tool_name in self.available_tools
     
     def get_tool_category(self, tool_name: str) -> Optional[str]:
@@ -245,11 +286,29 @@ class ToolRegistry:
     
     def suggest_alternative_tools(self, tool_name: str) -> List[str]:
         """建议替代工具"""
-        # 简单的相似性匹配
         suggestions = []
-        for available_tool in self.available_tools:
-            if self._calculate_similarity(tool_name, available_tool) > 0.6:
-                suggestions.append(available_tool)
+        
+        # 首先尝试使用HydroMCP工具映射
+        if hasattr(self, 'map_workflow_action_to_tool'):
+            mapped_tool = self.map_workflow_action_to_tool(tool_name)
+            if mapped_tool and mapped_tool in self.actual_available_tools:
+                suggestions.append(mapped_tool)
+                logger.info(f"为动作 '{tool_name}' 找到映射工具: {mapped_tool}")
+        
+        # 如果没有直接映射，进行相似性匹配
+        if not suggestions:
+            # 在实际可用的HydroMCP工具中查找
+            if hasattr(self, 'actual_available_tools'):
+                for available_tool in self.actual_available_tools:
+                    if self._calculate_similarity(tool_name, available_tool) > 0.6:
+                        suggestions.append(available_tool)
+            
+            # 如果仍然没有找到，在通用工具中查找
+            if not suggestions:
+                for available_tool in self.available_tools:
+                    if self._calculate_similarity(tool_name, available_tool) > 0.6:
+                        suggestions.append(available_tool)
+        
         return suggestions[:3]  # 返回前3个建议
     
     def _calculate_similarity(self, str1: str, str2: str) -> float:
@@ -359,7 +418,7 @@ class WorkflowAssembler:
         """解析和清洗原始计划"""
         try:
             logger.info(f"开始解析原始计划，长度: {len(raw_plan)}")
-            logger.info(f"原始计划内容: {raw_plan}...")  # 只记录前500字符
+            logger.info(f"原始计划内容: {raw_plan}...")  
             
             # 尝试直接解析JSON
             if raw_plan.strip().startswith('{'):
@@ -481,6 +540,9 @@ class WorkflowAssembler:
                 if task_type_str not in ["simple_action", "complex_reasoning"]:
                     task_type_str = "simple_action"
                 
+                # 规范化任务参数中的路径
+                task_data = self._normalize_task_paths(task_data)
+                
                 task = WorkflowTask.from_dict(task_data)
                 tasks.append(task)
                 
@@ -497,6 +559,162 @@ class WorkflowAssembler:
                 tasks.append(fallback_task)
         
         return tasks
+    
+    def _normalize_task_paths(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        规范化任务参数中的路径
+        
+        Args:
+            task_data: 任务数据
+            
+        Returns:
+            路径规范化后的任务数据
+        """
+        try:
+            action = task_data.get("action", "")
+            parameters = task_data.get("parameters", {}).copy()
+            
+            # 根据不同的工具类型处理路径参数
+            if action == "prepare_data":
+                # 处理数据目录路径
+                if "data_dir" in parameters:
+                    original_path = parameters["data_dir"]
+                    normalized_path = self._normalize_data_path(original_path)
+                    parameters["data_dir"] = normalized_path
+                    logger.info(f"路径规范化: {original_path} -> {normalized_path}")
+                    
+            elif action == "calibrate_model":
+                # 处理数据目录路径
+                if "data_dir" in parameters:
+                    original_path = parameters["data_dir"]
+                    normalized_path = self._normalize_data_path(original_path)
+                    parameters["data_dir"] = normalized_path
+                    logger.info(f"路径规范化: {original_path} -> {normalized_path}")
+                
+                # 处理结果目录路径
+                if "result_dir" in parameters:
+                    original_path = parameters["result_dir"]
+                    normalized_path = self._normalize_result_path(original_path)
+                    parameters["result_dir"] = normalized_path
+                    logger.info(f"路径规范化: {original_path} -> {normalized_path}")
+                    
+            elif action == "evaluate_model":
+                # 处理结果目录路径
+                if "result_dir" in parameters:
+                    original_path = parameters["result_dir"]
+                    normalized_path = self._normalize_result_path(original_path)
+                    parameters["result_dir"] = normalized_path
+                    logger.info(f"路径规范化: {original_path} -> {normalized_path}")
+            
+            # 更新任务数据
+            task_data = task_data.copy()
+            task_data["parameters"] = parameters
+            
+            return task_data
+            
+        except Exception as e:
+            logger.warning(f"路径规范化失败: {e}")
+            return task_data
+    
+
+    def _normalize_data_path(self, path: str) -> str:
+        """
+        规范化数据路径
+        
+        Args:
+            path: 原始路径
+                
+        Returns:
+            规范化后的绝对路径
+        """
+        try:
+            # 项目根目录
+            project_root = Path(__file__).parent.parent
+            
+            # 1. 清理路径：移除多余空格和引号
+            clean_path = path.strip().strip('"').strip("'")
+            
+            # 2. 处理特殊标识符（如CAMELS站点ID）
+            if re.search(r'\b11532500\b', clean_path) or re.search(r'\bcamels_dataset\b', clean_path, re.IGNORECASE):
+                return str(project_root / "data" / "camels_11532500")
+            
+            # 3. 处理Windows风格的路径分隔符
+            if '\\' in clean_path:
+                clean_path = clean_path.replace('\\', '/')
+            
+            # 4. 处理相对路径
+            if not os.path.isabs(clean_path):
+                # 移除开头的./或.\\
+                clean_path = re.sub(r'^\./|^\.\\', '', clean_path)
+                
+                # 如果路径以data开头，基于项目根目录
+                if clean_path.startswith("data/"):
+                    return str(project_root / clean_path)
+                else:
+                    # 默认在项目的data目录下
+                    return str(project_root / "data" / clean_path)
+            
+            # 5. 处理绝对路径
+            # 尝试将路径转换为相对于项目根目录的路径
+            try:
+                # 检查路径是否在项目目录下
+                abs_path = Path(clean_path).resolve()
+                project_path = project_root.resolve()
+                
+                # 如果路径在项目目录下，直接返回
+                if abs_path.is_relative_to(project_path):
+                    return str(abs_path)
+                
+                # 如果路径在系统数据目录下，尝试映射到项目数据目录
+                common_data_dirs = [
+                    '/data', '/var/data', '/usr/share/data',
+                    'C:/data', 'D:/data', 'E:/data'
+                ]
+                
+                for data_dir in common_data_dirs:
+                    if clean_path.startswith(data_dir):
+                        # 提取数据目录后的部分
+                        rel_path = clean_path[len(data_dir):].lstrip('/\\')
+                        # 映射到项目数据目录
+                        return str(project_root / "data" / rel_path)
+                
+                # 无法映射，直接返回绝对路径
+                return str(abs_path)
+            except Exception:
+                # 如果路径解析失败，使用原始路径
+                return clean_path
+            
+        except Exception as e:
+            logger.error(f"数据路径规范化失败 [{path}]: {str(e)}")
+            # 回退到项目默认数据目录
+            return str(project_root / "data" / "camels_11532500")
+    
+    def _normalize_result_path(self, path: str) -> str:
+        """
+        规范化结果路径
+        
+        Args:
+            path: 原始路径
+            
+        Returns:
+            规范化后的绝对路径
+        """
+        try:
+            # 项目根目录
+            project_root = Path(__file__).parent.parent
+            
+            # 处理相对路径
+            if not os.path.isabs(path):
+                # 默认在项目的result目录下
+                return str(project_root / "result" / path)
+            
+            # 使用工具进行路径规范化
+            return correct_path(path, project_root)
+            
+        except Exception as e:
+            logger.warning(f"结果路径规范化失败 {path}: {e}")
+            # 回退到项目默认结果目录
+            return str(Path(__file__).parent.parent / "result")
     
     def _validate_workflow(self, tasks: List[WorkflowTask]) -> List[ValidationIssue]:
         """验证工作流"""
@@ -523,9 +741,20 @@ class WorkflowAssembler:
                         suggestion=f"移除不存在的依赖 {dep_id} 或创建对应的任务"
                     ))
         
-        # 验证工具可用性
+        # 验证工具可用性并自动映射
         for task in tasks:
             if not self.tool_registry.is_tool_available(task.action):
+                # 尝试自动映射工具
+                if hasattr(self.tool_registry, 'map_workflow_action_to_tool'):
+                    mapped_tool = self.tool_registry.map_workflow_action_to_tool(task.action)
+                    if mapped_tool and self.tool_registry.is_tool_available(mapped_tool):
+                        # 自动更新任务的工具名称
+                        old_action = task.action
+                        task.action = mapped_tool
+                        logger.info(f"自动将任务 {task.task_id} 的工具从 '{old_action}' 映射为 '{mapped_tool}'")
+                        continue
+                
+                # 如果无法自动映射，添加警告
                 alternatives = self.tool_registry.suggest_alternative_tools(task.action)
                 issues.append(ValidationIssue(
                     issue_type=ValidationStatus.WARNING,

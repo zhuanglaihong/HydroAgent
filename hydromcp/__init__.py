@@ -17,8 +17,15 @@ from .client import HydroMCPClient
 from .tools import HydroModelMCPTools
 from .task_dispatcher import TaskDispatcher, TaskClassification, TaskComplexity, TaskCategory
 from .task_handlers import SimpleTaskHandler, ComplexTaskHandler, ManualReviewHandler, create_task_handler
-from .agent_integration import MCPAgent, create_mcp_agent
-from .workflow_executor import MCPWorkflowExecutor, execute_workflow_with_mcp
+# from .agent_integration import MCPAgent, create_mcp_agent
+# from .workflow_executor import MCPWorkflowExecutor, execute_workflow_with_mcp
+from .enhanced_workflow_executor import EnhancedWorkflowExecutor, create_enhanced_workflow_executor
+from .agent_interface import (
+    HydroAgentInterface, 
+    SyncHydroAgentInterface,
+    create_hydro_agent_interface,
+    create_sync_hydro_agent_interface
+)
 
 __all__ = [
     "HydroMCPServer",
@@ -35,5 +42,12 @@ __all__ = [
     "MCPAgent",
     "create_mcp_agent",
     "MCPWorkflowExecutor",
-    "execute_workflow_with_mcp"
+    "execute_workflow_with_mcp",
+    # 新增的增强功能
+    "EnhancedWorkflowExecutor",
+    "create_enhanced_workflow_executor",
+    "HydroAgentInterface",
+    "SyncHydroAgentInterface", 
+    "create_hydro_agent_interface",
+    "create_sync_hydro_agent_interface",
 ]

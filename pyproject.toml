@@ -35,7 +35,7 @@ dependencies = [
     "modelcontextprotocol>=0.1.0",
     "fastmcp>=2.12.3",
     "chromadb>=0.4.0",
-    "sentence-transformers>=2.2.0",
+    
     "langchain-text-splitters>=0.0.1",
     "pypdf>=3.0.0",
     "python-docx>=0.8.11",

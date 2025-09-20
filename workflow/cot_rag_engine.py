@@ -133,6 +133,12 @@ class CoTRAGEngine:
 - 模型率定和模拟
 - 自动化工作流设计
 
+🎯 核心任务：
+生成的工作流必须能够在HydroMCP系统中直接执行，这意味着：
+1. 只能使用系统提供的4个工具：get_model_params, prepare_data, calibrate_model, evaluate_model
+2. 每个工具的参数必须严格遵循工具定义，不能添加不存在的参数
+3. 必须包含所有必需参数，可选参数可以省略或使用默认值
+
 你需要运用逐步推理（Chain of Thought）的方法，系统性地分析用户需求，并生成详细的工作流计划。"""
 
         # CoT推理指引模板
@@ -181,7 +187,7 @@ class CoTRAGEngine:
       "task_id": "唯一的任务ID",
       "name": "任务名称",
       "description": "任务描述",
-      "action": "具体的操作或函数名",
+      "action": "具体的操作或函数名(必须来自可用工具列表)",
       "task_type": "simple_action 或 complex_reasoning",
       "parameters": {
         "参数名": "参数值"
@@ -202,12 +208,16 @@ class CoTRAGEngine:
   }
 }
 
-重要说明：
-1. 每个task_id必须唯一
-2. dependencies中引用的task_id必须存在
-3. action字段应该对应系统中已有的工具/函数
-4. task_type必须是 "simple_action" 或 "complex_reasoning" 之一
-5. 确保JSON格式完全正确，可以被直接解析
+🚨 关键约束：
+1. action字段只能使用：get_model_params, prepare_data, calibrate_model, evaluate_model
+2. parameters字段只能包含对应工具定义中存在的参数
+3. 必需参数必须包含，可选参数可以省略
+4. 参数值必须符合类型要求(string, integer, array等)
+5. 枚举参数必须使用指定的可选值
+6. 每个task_id必须唯一
+7. dependencies中引用的task_id必须存在
+8. task_type必须是 "simple_action" 或 "complex_reasoning" 之一
+9. 确保JSON格式完全正确，可以被直接解析
 """
 
     def generate_reasoning_plan(
@@ -480,6 +490,9 @@ class CoTRAGEngine:
 - 建议工具: {intent_result.suggested_tools}
 """
 
+        # 构建可用工具和参数约束
+        tools_constraints = self._build_tools_constraints()
+
         # 组装完整提示词
         prompt = f"""{self.system_role}
 
@@ -488,11 +501,20 @@ class CoTRAGEngine:
 相关背景知识:
 {knowledge_context}
 
+可用工具及参数约束:
+{tools_constraints}
+
 {self.cot_reasoning_guide}
 
 {self.output_format_template}
 
 现在，请基于上述信息，运用逐步推理的方法，为用户生成一个详细的工作流计划。
+
+❗️重要提醒：
+1. 工作流中的action字段必须是可用工具列表中的工具名称
+2. 每个任务的parameters必须严格遵循对应工具的参数定义
+3. 不要添加工具定义中不存在的参数
+4. 必需参数必须包含，可选参数可以省略或使用默认值
 
 请先进行逐步思考，然后输出最终的JSON格式工作流计划。
 """
@@ -510,6 +532,47 @@ class CoTRAGEngine:
 
         return "\n".join(context_parts)
 
+    def _build_tools_constraints(self) -> str:
+        """构建工具约束信息"""
+        try:
+            # 导入工具定义
+            from hydromcp.tools_dict import HYDRO_TOOLS
+            
+            constraints_text = "## 可用工具及其参数定义\n\n"
+            constraints_text += f"系统提供以下 {len(HYDRO_TOOLS)} 个工具，请严格按照参数定义使用：\n\n"
+            
+            for tool_name, tool_def in HYDRO_TOOLS.items():
+                constraints_text += f"### {tool_name}\n"
+                constraints_text += f"**描述**: {tool_def.description}\n"
+                constraints_text += f"**类别**: {tool_def.category}\n\n"
+                
+                if tool_def.parameters:
+                    constraints_text += "**参数列表**:\n"
+                    for param in tool_def.parameters:
+                        status = "必需" if param.required else f"可选(默认: {param.default})"
+                        constraints_text += f"- `{param.name}` ({param.type}, {status}): {param.description}\n"
+                        
+                        if param.enum:
+                            constraints_text += f"  - 可选值: {', '.join(param.enum)}\n"
+                    constraints_text += "\n"
+                
+                if tool_def.usage_examples:
+                    constraints_text += "**使用场景**:\n"
+                    for example in tool_def.usage_examples:
+                        constraints_text += f"- {example}\n"
+                    constraints_text += "\n"
+                
+                constraints_text += "---\n\n"
+            
+            return constraints_text
+            
+        except ImportError as e:
+            logger.warning(f"无法导入工具定义: {e}")
+            return "工具约束信息不可用，请参考系统文档。\n"
+        except Exception as e:
+            logger.error(f"构建工具约束失败: {e}")
+            return "工具约束信息构建失败。\n"
+
     def _perform_cot_reasoning(self, prompt: str) -> CoTReasoningResult:
         """执行CoT推理"""
         start_time = time.time()
@@ -522,13 +585,13 @@ class CoTRAGEngine:
             # 调用LLM
             logger.info("正在调用LLM进行CoT推理...")
             response = self._call_llm(prompt)
-
+            
             if not response:
                 logger.warning("LLM调用失败，使用默认计划")
                 return self._create_default_reasoning_result(start_time)
             
             logger.info(f"LLM响应长度: {len(response)}")
-            logger.debug(f"LLM响应内容: {response[:500]}...")  # 只记录前500字符
+            logger.info(f"LLM响应内容: {response}") 
 
             # 解析推理步骤和最终计划
             reasoning_steps, final_plan = self._parse_cot_response(response)

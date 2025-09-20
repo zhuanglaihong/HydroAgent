@@ -75,14 +75,23 @@ class SimpleTaskHandler(BaseTaskHandler):
         super().__init__(enable_debug)
         self.mcp_client = HydroMCPClient(server_command)
         self.connected = False
+        self.available_tools = {}
     
     async def setup(self) -> bool:
         """设置处理器"""
         try:
             self.connected = await self.mcp_client.connect()
             if self.connected:
-                tools = self.mcp_client.get_available_tools()
-                logger.info(f"简单任务处理器设置成功，可用工具: {[t['name'] for t in tools]}")
+                # 获取并缓存可用工具信息
+                tools = self.mcp_client.get_available_tools()  # 移除await，这是同步方法
+                if tools:
+                    self.available_tools = {
+                        tool.get("name", f"tool_{i}"): tool for i, tool in enumerate(tools)
+                    }
+                    logger.info(f"简单任务处理器设置成功，可用工具: {list(self.available_tools.keys())}")
+                else:
+                    logger.warning("未获取到可用工具")
+                    self.available_tools = {}
             return self.connected
         except Exception as e:
             logger.error(f"简单任务处理器设置失败: {e}")
@@ -92,6 +101,78 @@ class SimpleTaskHandler(BaseTaskHandler):
         """清理资源"""
         await self.mcp_client.disconnect()
         self.connected = False
+        self.available_tools = {}
+    
+    async def execute_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        执行指定的工具
+        
+        Args:
+            tool_name: 工具名称
+            parameters: 工具参数
+            
+        Returns:
+            执行结果
+        """
+        if not self.connected:
+            raise RuntimeError("MCP客户端未连接")
+        
+        if tool_name not in self.available_tools:
+            raise ValueError(f"未知的工具: {tool_name}")
+        
+        try:
+            # 验证参数
+            tool_info = self.available_tools[tool_name]
+            validated_params = self._validate_parameters(tool_info, parameters)
+            
+            # 调用工具
+            result = await self.mcp_client.call_tool(tool_name, validated_params)  # call_tool是异步方法
+            
+            if isinstance(result, dict):
+                result["tool_name"] = tool_name
+                result["parameters_used"] = validated_params
+            else:
+                result = {
+                    "success": True,
+                    "tool_name": tool_name,
+                    "parameters_used": validated_params,
+                    "result": result
+                }
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"工具 {tool_name} 执行失败: {e}")
+            return {
+                "success": False,
+                "tool_name": tool_name,
+                "error": str(e),
+                "parameters_used": parameters
+            }
+    
+    def _validate_parameters(self, tool_info: Dict[str, Any], parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """验证并处理工具参数"""
+        validated = parameters.copy()  # 先复制所有参数
+        
+        # 获取工具的输入模式
+        input_schema = tool_info.get("inputSchema", {})
+        if isinstance(input_schema, dict):
+            required_params = input_schema.get("required", [])
+            properties = input_schema.get("properties", {})
+            
+            # 检查必需参数
+            for param in required_params:
+                if param not in parameters:
+                    raise ValueError(f"缺少必需参数: {param}")
+            
+            # 验证参数类型（如果定义了properties）
+            for param, value in parameters.items():
+                if param in properties:
+                    prop_info = properties[param]
+                    # 这里可以添加更详细的类型验证
+                    # 目前只是简单的存在性检查
+        
+        return validated
     
     async def handle_task(
         self, 
@@ -119,33 +200,36 @@ class SimpleTaskHandler(BaseTaskHandler):
             logger.info(f"开始处理简单任务: {task_description}")
             
             results = []
+            tool_parameters = kwargs.get('tool_parameters', {})
             
             # 依次执行需要的工具
             for tool_name in classification.required_tools:
                 logger.info(f"执行工具: {tool_name}")
                 
-                # 获取工具参数
-                tool_parameters = self._get_tool_parameters(
-                    tool_name, 
-                    task_description, 
-                    kwargs.get('tool_parameters', {})
-                )
+                # 获取工具特定参数
+                params = tool_parameters.get(tool_name, {})
+                if not params:
+                    # 使用默认参数
+                    params = self._get_tool_parameters(tool_name, task_description, {})
                 
-                # 调用工具
-                tool_result = await self.mcp_client.call_tool(tool_name, tool_parameters)
-                results.append({
-                    "tool_name": tool_name,
-                    "parameters": tool_parameters,
-                    "result": tool_result
-                })
+                # 执行工具
+                tool_result = await self.execute_tool(tool_name, params)
+                results.append(tool_result)
                 
                 if self.enable_debug:
                     logger.debug(f"工具 {tool_name} 执行结果: {tool_result}")
+                
+                # 如果工具执行失败，记录错误并继续
+                if not tool_result.get("success", True):
+                    logger.warning(f"工具 {tool_name} 执行失败: {tool_result.get('error')}")
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
+            # 检查是否所有工具都执行成功
+            all_success = all(r.get("success", True) for r in results)
+            
             result = {
-                "success": True,
+                "success": all_success,
                 "handler": "SimpleTaskHandler",
                 "task_description": task_description,
                 "execution_time": execution_time,
@@ -155,7 +239,11 @@ class SimpleTaskHandler(BaseTaskHandler):
             }
             
             self._log_execution(task_description, result)
-            logger.info(f"简单任务处理完成，执行时间: {execution_time:.2f}s")
+            
+            if all_success:
+                logger.info(f"简单任务处理完成，执行时间: {execution_time:.2f}s")
+            else:
+                logger.warning(f"简单任务部分失败，执行时间: {execution_time:.2f}s")
             
             return result
             
@@ -169,7 +257,7 @@ class SimpleTaskHandler(BaseTaskHandler):
                 "task_description": task_description,
                 "execution_time": execution_time,
                 "error": str(e),
-                "results": []
+                "results": results if 'results' in locals() else []
             }
             
             self._log_execution(task_description, result)
@@ -198,23 +286,85 @@ class SimpleTaskHandler(BaseTaskHandler):
         
         # 否则使用默认参数
         default_parameters = {
-            "get_model_params": {"model_name": "gr4j"},
-            "prepare_data": {
-                "data_dir": "data/camels_11532500",
-                "target_data_scale": "D"
+            # 数据读取工具
+            "read_camels_data": {
+                "basin_id": "11532500",
+                "data_type": "daily"
             },
-            "calibrate_model": {
-                "model_name": "gr4j",
-                "data_dir": "data/camels_11532500",
-                "exp_name": "simple_task_calibration"
+            "read_netcdf": {
+                "file_path": "data/camels_11532500/attributes.nc"
             },
-            "evaluate_model": {
-                "result_dir": "result",
-                "exp_name": "simple_task_calibration"
+            "read_csv": {
+                "file_path": "data/camels_11532500/basin_11532500.csv"
+            },
+            
+            # 数据处理工具
+            "process_and_save_data_as_nc": {
+                "input_dir": "data/camels_11532500",
+                "output_dir": "data/processed",
+                "basin_id": "11532500"
+            },
+            "calculate_statistics": {
+                "data_file": "data/camels_11532500/basin_11532500.csv",
+                "variables": ["prcp", "pet", "flow"]
+            },
+            
+            # 模型工具
+            "gr4j_calibration": {
+                "data_dir": "data/camels_11532500",
+                "output_dir": "result/model_calibration",
+                "algorithm": "sceua",
+                "objective": "nse",
+                "max_iterations": 1000
+            },
+            "gr4j_simulation": {
+                "parameters": None,  # 需要从率定结果获取
+                "data_file": "data/camels_11532500/basin_11532500.csv"
+            },
+            "model_evaluation": {
+                "obs_data": None,  # 需要从数据文件获取
+                "sim_data": None,  # 需要从模拟结果获取
+                "metrics": ["nse", "rmse", "kge", "bias"]
+            },
+            
+            # 可视化工具
+            "plot_hydrograph": {
+                "data_file": "data/camels_11532500/basin_11532500.csv",
+                "output_dir": "result/figures",
+                "show_statistics": True
+            },
+            "plot_evaluation_results": {
+                "evaluation_file": "result/model_calibration/evaluation_metrics.json",
+                "output_dir": "result/figures"
             }
         }
         
-        return default_parameters.get(tool_name, {})
+        # 获取工具默认参数
+        params = default_parameters.get(tool_name, {}).copy()
+        
+        # 如果工具信息可用，添加必需参数的默认值
+        if tool_name in self.available_tools:
+            tool_info = self.available_tools[tool_name]
+            input_schema = tool_info.get("inputSchema", {})
+            required_params = input_schema.get("required", [])
+            
+            # 确保所有必需参数都有值
+            for param in required_params:
+                if param not in params:
+                    # 使用一些启发式规则设置默认值
+                    if "file" in param or "path" in param:
+                        params[param] = f"data/camels_11532500/basin_11532500.csv"
+                    elif "dir" in param:
+                        params[param] = "data/camels_11532500"
+                    elif "name" in param:
+                        params[param] = "gr4j"
+                    elif "id" in param:
+                        params[param] = "11532500"
+                    else:
+                        # 对于其他参数，设置None或空字符串
+                        params[param] = None
+        
+        return params
     
     def _generate_summary(self, results: List[Dict[str, Any]]) -> str:
         """生成执行结果摘要"""
@@ -245,7 +395,7 @@ class SimpleTaskHandler(BaseTaskHandler):
 class ComplexTaskHandler(BaseTaskHandler):
     """复杂任务处理器 - 结合知识库和LLM生成新工具（Demo版本）"""
     
-    def __init__(self, llm, knowledge_base=None, enable_debug: bool = False):
+    def __init__(self, llm=None, knowledge_base=None, enable_debug: bool = False):
         """
         初始化复杂任务处理器
         
@@ -258,6 +408,223 @@ class ComplexTaskHandler(BaseTaskHandler):
         self.llm = llm
         self.knowledge_base = knowledge_base
         self.code_generation_count = 0
+        self.is_setup = False
+    
+    async def setup(self) -> bool:
+        """设置复杂任务处理器"""
+        try:
+            # 这里可以添加LLM连接检查等初始化逻辑
+            self.is_setup = True
+            logger.info("复杂任务处理器设置成功")
+            return True
+        except Exception as e:
+            logger.error(f"复杂任务处理器设置失败: {e}")
+            return False
+    
+    async def cleanup(self):
+        """清理资源"""
+        self.is_setup = False
+        logger.info("复杂任务处理器清理完成")
+    
+    async def handle_complex_task(self, task_description: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        处理复杂任务的新接口（适配新工作流格式）
+        
+        Args:
+            task_description: 任务描述
+            parameters: 任务参数
+            
+        Returns:
+            处理结果
+        """
+        if not self.is_setup:
+            raise RuntimeError("复杂任务处理器未设置")
+        
+        return await self._demo_complex_task_processing_v2(task_description, parameters)
+    
+    async def _demo_complex_task_processing_v2(self, task_description: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        新版本的复杂任务处理demo（适配新工作流格式）
+        
+        Args:
+            task_description: 任务描述
+            parameters: 任务参数
+            
+        Returns:
+            处理结果
+        """
+        logger.info(f"开始处理复杂任务V2: {task_description}")
+        
+        # 模拟复杂任务处理过程
+        start_time = datetime.now()
+        
+        # 根据任务描述判断复杂任务类型
+        if any(keyword in task_description.lower() for keyword in ["率定", "calibration", "parameter", "optimization"]):
+            return await self._simulate_model_calibration(parameters)
+        elif any(keyword in task_description.lower() for keyword in ["评估", "evaluation", "assess"]):
+            return await self._simulate_model_evaluation(parameters)
+        elif any(keyword in task_description.lower() for keyword in ["分析", "analysis", "compute"]):
+            return await self._simulate_complex_analysis(parameters)
+        else:
+            return await self._simulate_generic_complex_task(task_description, parameters)
+    
+    async def _simulate_model_calibration(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """模拟模型率定复杂任务"""
+        logger.info("执行模型率定复杂任务（示例）")
+        
+        # 模拟率定过程
+        await asyncio.sleep(1)  # 模拟计算时间
+        
+        return {
+            "success": True,
+            "task_type": "model_calibration",
+            "result": {
+                "calibrated_parameters": {
+                    "X1": 342.5,  # 产流系数
+                    "X2": -0.12,  # 地下水交换系数
+                    "X3": 68.3,   # 汇流水库容量
+                    "X4": 1.39    # 单位线时间常数
+                },
+                "objective_function": "NSE",
+                "objective_value": 0.823,
+                "optimization_info": {
+                    "algorithm": "SCE-UA",
+                    "iterations": 150,
+                    "convergence": True,
+                    "function_evaluations": 2250
+                },
+                "calibration_period": "2010-2015",
+                "performance_metrics": {
+                    "NSE": 0.823,
+                    "RMSE": 12.45,
+                    "BIAS": 0.08,
+                    "R2": 0.851
+                }
+            },
+            "message": "GR4J模型率定完成（示例结果）",
+            "generated_code": "# 示例：生成的模型率定代码\ndef calibrate_gr4j_model(data, bounds):\n    # 使用SCE-UA算法进行参数优化\n    pass",
+            "execution_time": 1.0,
+            "metadata": {
+                "is_mock": True,
+                "complex_task_type": "calibration",
+                "generated_tool": "gr4j_calibration_enhanced"
+            }
+        }
+    
+    async def _simulate_model_evaluation(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """模拟模型评估复杂任务"""
+        logger.info("执行模型评估复杂任务（示例）")
+        
+        await asyncio.sleep(0.8)  # 模拟计算时间
+        
+        return {
+            "success": True,
+            "task_type": "model_evaluation",
+            "result": {
+                "evaluation_metrics": {
+                    "NSE": 0.789,
+                    "KGE": 0.812,
+                    "RMSE": 15.32,
+                    "MAE": 11.67,
+                    "BIAS": -0.05,
+                    "R2": 0.834,
+                    "PBIAS": -4.8
+                },
+                "time_series_analysis": {
+                    "peak_flow_accuracy": 0.85,
+                    "low_flow_accuracy": 0.78,
+                    "seasonal_performance": {
+                        "spring": 0.82,
+                        "summer": 0.75,
+                        "autumn": 0.81,
+                        "winter": 0.79
+                    }
+                },
+                "validation_period": "2016-2020",
+                "model_reliability": "Good"
+            },
+            "message": "模型评估分析完成（示例结果）",
+            "generated_code": "# 示例：生成的模型评估代码\ndef evaluate_model_performance(obs, sim):\n    # 计算多种评估指标\n    pass",
+            "execution_time": 0.8,
+            "metadata": {
+                "is_mock": True,
+                "complex_task_type": "evaluation",
+                "generated_tool": "model_evaluation_enhanced"
+            }
+        }
+    
+    async def _simulate_complex_analysis(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """模拟复杂分析任务"""
+        logger.info("执行复杂分析任务（示例）")
+        
+        await asyncio.sleep(0.6)  # 模拟计算时间
+        
+        return {
+            "success": True,
+            "task_type": "complex_analysis",
+            "result": {
+                "analysis_results": {
+                    "statistical_summary": {
+                        "mean": 45.67,
+                        "std": 23.45,
+                        "skewness": 1.23,
+                        "kurtosis": 0.87
+                    },
+                    "trend_analysis": {
+                        "trend": "increasing",
+                        "slope": 0.12,
+                        "p_value": 0.03,
+                        "significance": "significant"
+                    },
+                    "correlation_matrix": [
+                        [1.0, 0.78, -0.45],
+                        [0.78, 1.0, -0.32],
+                        [-0.45, -0.32, 1.0]
+                    ]
+                },
+                "computed_indices": [
+                    {"name": "Aridity Index", "value": 1.25},
+                    {"name": "Seasonality Index", "value": 0.67},
+                    {"name": "Flow Variability", "value": 0.89}
+                ]
+            },
+            "message": "复杂数据分析完成（示例结果）",
+            "generated_code": "# 示例：生成的复杂分析代码\ndef perform_advanced_analysis(data):\n    # 执行高级统计分析\n    pass",
+            "execution_time": 0.6,
+            "metadata": {
+                "is_mock": True,
+                "complex_task_type": "analysis",
+                "generated_tool": "advanced_analysis_tool"
+            }
+        }
+    
+    async def _simulate_generic_complex_task(self, task_description: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """模拟通用复杂任务"""
+        logger.info(f"执行通用复杂任务（示例）: {task_description}")
+        
+        await asyncio.sleep(0.5)  # 模拟计算时间
+        
+        return {
+            "success": True,
+            "task_type": "generic_complex",
+            "result": {
+                "task_description": task_description,
+                "processing_status": "completed",
+                "output_data": {
+                    "processed_parameters": parameters,
+                    "computation_results": [1.23, 4.56, 7.89],
+                    "status_code": 200
+                }
+            },
+            "message": f"复杂任务处理完成: {task_description}（示例结果）",
+            "generated_code": f"# 示例：为任务生成的代码\ndef handle_{task_description.replace(' ', '_').lower()}():\n    # 自动生成的处理逻辑\n    pass",
+            "execution_time": 0.5,
+            "metadata": {
+                "is_mock": True,
+                "complex_task_type": "generic",
+                "generated_tool": f"auto_generated_tool_{int(datetime.now().timestamp())}"
+            }
+        }
     
     async def handle_task(
         self, 
