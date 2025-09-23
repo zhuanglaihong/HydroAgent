@@ -1,0 +1,81 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>工作流执行报告 - test_visualization</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .status-success { color: #28a745; }
+        .status-failed { color: #dc3545; }
+        .status-running { color: #ffc107; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .summary-card { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; }
+        .chart-section { margin: 30px 0; }
+        .chart-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
+        .chart-link { display: block; padding: 15px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; text-align: center; }
+        .chart-link:hover { background: #0056b3; }
+        .placeholder { background: #e9ecef; color: #6c757d; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>工作流执行报告</h1>
+            <h2>test_visualization</h2>
+            <p class="status-failed">执行状态: failed</p>
+        </div>
+
+        <div class="summary-grid">
+            <div class="summary-card">
+                <h4>执行ID</h4>
+                <p>react_test_visualization_1758636044</p>
+            </div>
+            <div class="summary-card">
+                <h4>执行模式</h4>
+                <p>react</p>
+            </div>
+            <div class="summary-card">
+                <h4>任务数量</h4>
+                <p>2</p>
+            </div>
+            <div class="summary-card">
+                <h4>成功率</h4>
+                <p>0.0%</p>
+            </div>
+            <div class="summary-card">
+                <h4>总耗时</h4>
+                <p>0.00秒</p>
+            </div>
+        
+            <div class="summary-card">
+                <h4>React迭代</h4>
+                <p>2次</p>
+            </div>
+            <div class="summary-card">
+                <h4>目标达成</h4>
+                <p class="status-failed">
+                    否
+                </p>
+            </div>
+            
+        </div>
+
+        <div class="chart-section">
+            <h3>可视化图表</h3>
+            <div class="chart-links">
+        <a href="success_rate_react_test_visualization_1758636044.html" class="chart-link" target="_blank">成功率分布</a><a href="react_iterations_react_test_visualization_1758636044.html" class="chart-link" target="_blank">React迭代过程</a>
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <h3>说明</h3>
+            <p>点击上方链接可查看详细的可视化图表。所有图表文件保存在同一目录下。</p>
+            <p>带有"待实现"标记的图表是占位符，将在后续版本中根据具体的数据格式进行完善。</p>
+        </div>
+    </div>
+</body>
+</html>
+        

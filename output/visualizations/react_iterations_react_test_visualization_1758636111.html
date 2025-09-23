@@ -1,0 +1,114 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>React模式迭代过程 - test_visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .chart-container { position: relative; height: 400px; margin: 20px 0; }
+        .info { background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>React模式迭代过程 - test_visualization</h1>
+
+        <div class="info">
+            <p><strong>目标:</strong> accuracy >= 0.8</p>
+            <p><strong>最大迭代次数:</strong> 2</p>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="reactChart"></canvas>
+        </div>
+
+        <h3>迭代详情</h3>
+        <table border="1" cellpadding="5" cellspacing="0" style="width:100%; border-collapse: collapse;">
+            <tr style="background-color: #f8f9fa;">
+                <th>迭代</th>
+                <th>当前指标值</th>
+                <th>目标值</th>
+                <th>目标达成</th>
+                <th>开始时间</th>
+                <th>结束时间</th>
+            </tr>
+            
+            <tr>
+                <td>1</td>
+                <td>None</td>
+                <td>0.8</td>
+                <td style="color: #dc3545; font-weight: bold;">否</td>
+                <td>2025-09-23T22:01:51.705034</td>
+                <td>2025-09-23T22:01:51.707049</td>
+            </tr>
+                
+            <tr>
+                <td>2</td>
+                <td>None</td>
+                <td>0.8</td>
+                <td style="color: #dc3545; font-weight: bold;">否</td>
+                <td>2025-09-23T22:01:51.708034</td>
+                <td>2025-09-23T22:01:51.709551</td>
+            </tr>
+                
+        </table>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('reactChart').getContext('2d');
+
+        const datasets = [{
+            label: '当前指标值',
+            data: [null, null],
+            borderColor: '#007bff',
+            backgroundColor: 'rgba(0, 123, 255, 0.1)',
+            fill: true,
+            tension: 0.4
+        }];
+
+        // 添加目标线
+        if (0.8 !== null) {
+            datasets.push({
+                label: '目标值',
+                data: Array(2).fill(0.8),
+                borderColor: '#28a745',
+                backgroundColor: 'transparent',
+                borderDash: [5, 5],
+                fill: false,
+                pointRadius: 0
+            });
+        }
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ["\u8fed\u4ee31", "\u8fed\u4ee32"],
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'React模式指标变化趋势'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: {
+                            display: true,
+                            text: '指标值'
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+            

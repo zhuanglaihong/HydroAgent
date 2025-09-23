@@ -1,0 +1,49 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>任务执行时间线 - test_visualization</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .timeline { margin: 20px 0; }
+        .timeline-item { display: flex; align-items: center; margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .timeline-success { background-color: #d4edda; border-left: 4px solid #28a745; }
+        .timeline-failed { background-color: #f8d7da; border-left: 4px solid #dc3545; }
+        .timeline-running { background-color: #fff3cd; border-left: 4px solid #ffc107; }
+        .task-id { font-weight: bold; min-width: 120px; }
+        .task-time { flex: 1; margin: 0 20px; }
+        .task-duration { min-width: 100px; text-align: right; }
+        .placeholder { background: #e9ecef; color: #6c757d; font-style: italic; text-align: center; padding: 40px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>任务执行时间线 - test_visualization</h1>
+
+        <div class="timeline">
+            
+            <div class="timeline-item timeline-failed">
+                <div class="task-id">prepare</div>
+                <div class="task-time">
+                    <div>开始: 2025-09-23T22:01:51.708539</div>
+                    <div>结束: 2025-09-23T22:01:51.708539</div>
+                </div>
+                <div class="task-duration">0.00秒</div>
+            </div>
+                    
+            <div class="timeline-item timeline-failed">
+                <div class="task-id">analysis</div>
+                <div class="task-time">
+                    <div>开始: 2025-09-23T22:01:51.709551</div>
+                    <div>结束: 2025-09-23T22:01:51.709551</div>
+                </div>
+                <div class="task-duration">0.00秒</div>
+            </div>
+                    
+        </div>
+    </div>
+</body>
+</html>
+            
