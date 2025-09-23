@@ -8,7 +8,7 @@
 3. 输出一个结构化的意图对象（包含 intent_type, entities, parameters, constraints）
 
 Author: Assistant
-Date: 2025-01-20
+Date: 2025-08-20
 """
 
 import logging

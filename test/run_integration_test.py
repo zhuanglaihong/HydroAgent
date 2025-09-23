@@ -58,7 +58,7 @@ async def run_test():
     from test_complete_workflow_integration import main
     
     print("🚀 启动HydroAgent完整系统集成测试")
-    print("测试场景：整理数据camels_11532500流域，用其率定GR4J模型，并评估模型")
+    print("测试场景：整理路径D:\MCP\HydroAgent\data\camels_11532500下的流域camels_11532500数据，用其率定GR4J模型，并评估模型")
     print("=" * 70)
     
     # 1. 设置Ollama客户端

@@ -616,7 +616,7 @@ async def main(ollama_client=None):
     print("=" * 60)
     
     # 测试用户查询
-    user_query = "整理数据camels_11532500流域，用其率定GR4J模型，并评估模型"
+    user_query = "数据在路径D:\MCP\HydroAgent\data\camels_11532500下，这个数据率定GR4J模型，并评估模型"
     
     print(f"测试查询: {user_query}")
     print(f"测试目标: 验证 ollama + 知识库 + 工作流 + MCP工具 的完整集成")
