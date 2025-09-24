@@ -53,7 +53,7 @@ class ComplexTaskSolver:
             enable_debug: 是否启用调试模式
         """
         self.simple_executor = simple_executor
-        self.llm_client = llm_client or LLMClientFactory.create_default_client()
+        self.llm_client = llm_client or LLMClientFactory.create_complex_task_client()
         self.rag_system = rag_system
         self.enable_debug = enable_debug
         self.logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class ComplexTaskSolver:
             # 步骤1: 查询知识库
             knowledge_chunks = self._query_knowledge_base(task)
 
-            # 步骤2: 生成解决方案
+            # 步骤2: 使用推理模型生成解决方案
             solution_plan = self._generate_solution_plan(task, knowledge_chunks)
 
             if not solution_plan:
@@ -173,7 +173,8 @@ class ComplexTaskSolver:
                 LLMMessage(role="user", content=prompt)
             ]
 
-            response = self.llm_client.chat(messages, temperature=0.3, max_tokens=2000)
+            # 使用推理模式生成解决方案
+            response = self.llm_client.chat(messages, task_type="reasoning", temperature=0.3, max_tokens=2000)
 
             if not response.success:
                 self.logger.error(f"LLM调用失败: {response.error}")
@@ -211,8 +212,13 @@ class ComplexTaskSolver:
                 # 解析参数中的引用
                 resolved_params = self._resolve_step_parameters(step.parameters, current_context)
 
-                # 调用简单任务执行器执行工具
-                tool_result = self.simple_executor.tool_registry.call_tool(step.tool_name, resolved_params)
+                # 判断是否需要代码生成
+                if self._is_code_generation_step(step):
+                    # 使用代码生成模式
+                    tool_result = self._execute_code_generation_step(step, resolved_params, current_context)
+                else:
+                    # 调用简单任务执行器执行工具
+                    tool_result = self.simple_executor.tool_registry.call_tool(step.tool_name, resolved_params)
 
                 step_result = {
                     "step_id": step.step_id,
@@ -446,6 +452,107 @@ class ComplexTaskSolver:
             return True
         except:
             return False
+
+    def _is_code_generation_step(self, step: ToolCall) -> bool:
+        """判断是否为代码生成步骤"""
+        # 根据工具名称或描述判断是否需要代码生成
+        code_generation_tools = [
+            "generate_code", "write_script", "create_function",
+            "modify_code", "code_optimization"
+        ]
+
+        code_keywords = [
+            "生成代码", "编写脚本", "创建函数",
+            "修改代码", "代码优化", "code", "script"
+        ]
+
+        return (
+            step.tool_name in code_generation_tools or
+            any(keyword in step.description.lower() for keyword in code_keywords)
+        )
+
+    def _execute_code_generation_step(self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any]) -> Any:
+        """执行代码生成步骤"""
+        try:
+            # 构建代码生成提示
+            code_prompt = self._build_code_generation_prompt(step, resolved_params, context)
+
+            # 使用代码生成模式调用LLM
+            messages = [
+                LLMMessage(role="system", content="你是一个专业的Python代码生成助手。请生成符合要求的高质量代码。"),
+                LLMMessage(role="user", content=code_prompt)
+            ]
+
+            response = self.llm_client.chat(messages, task_type="coding", temperature=0.1, max_tokens=2000)
+
+            if response.success:
+                # 模拟工具调用结果格式
+                return type('ToolResult', (), {
+                    'success': True,
+                    'output': {
+                        'generated_code': response.content,
+                        'step_description': step.description,
+                        'model_used': response.metadata.get('model_used', 'unknown')
+                    },
+                    'error': None
+                })()
+            else:
+                return type('ToolResult', (), {
+                    'success': False,
+                    'output': {},
+                    'error': f"代码生成失败: {response.error}"
+                })()
+
+        except Exception as e:
+            return type('ToolResult', (), {
+                'success': False,
+                'output': {},
+                'error': f"代码生成异常: {str(e)}"
+            })()
+
+    def _build_code_generation_prompt(self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any]) -> str:
+        """构建代码生成提示词"""
+        prompt = f"""任务描述: {step.description}
+
+参数信息:
+{self._format_parameters(resolved_params)}
+
+上下文信息:
+{self._format_context(context)}
+
+请根据以上信息生成相应的Python代码。要求:
+1. 代码要清晰、可读、高效
+2. 包含必要的注释
+3. 处理可能的异常情况
+4. 遵循水文建模领域的最佳实践
+
+代码:"""
+        return prompt
+
+    def _format_parameters(self, params: Dict[str, Any]) -> str:
+        """格式化参数信息"""
+        if not params:
+            return "无参数"
+
+        formatted = []
+        for key, value in params.items():
+            formatted.append(f"- {key}: {value}")
+
+        return "\n".join(formatted)
+
+    def _format_context(self, context: Dict[str, Any]) -> str:
+        """格式化上下文信息"""
+        if not context:
+            return "无上下文信息"
+
+        formatted = []
+        for key, value in context.items():
+            if isinstance(value, dict) and 'output' in value:
+                formatted.append(f"- {key}: {value['output']}")
+            else:
+                formatted.append(f"- {key}: {value}")
+
+        return "\n".join(formatted)
 
     def _create_error_result(self, task_id: str, error_msg: str) -> TaskResult:
         """创建错误结果"""

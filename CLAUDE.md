@@ -185,3 +185,140 @@ Key external dependencies:
 - Data preparation and preprocessing
 - Parameter querying and analysis
 - Workflow planning and execution
+
+## Global Development Standards and Configuration Management
+
+### Configuration File Structure
+
+**IMPORTANT**: Always follow this configuration hierarchy for maintainability and user-friendliness:
+
+1. **definitions.py** - Public configuration template and fallback values
+   - Contains default project paths and configuration structure
+   - Imports from definitions_private.py if available
+   - Serves as template for users to understand what needs to be configured
+
+2. **definitions_private.py** - Private user-specific configuration
+   - Contains actual API keys, local paths, and sensitive information
+   - Should be created by users based on definitions.py template
+   - Never committed to version control (.gitignore)
+   - Used for:
+     - API keys (OPENAI_API_KEY, etc.)
+     - Local file paths (PROJECT_DIR, DATASET_DIR, RESULT_DIR)
+     - Database connections and other sensitive configs
+
+3. **config.py** (root level) - Global parameter configuration
+   - Centralized location for all adjustable parameters
+   - Model parameters, thresholds, and algorithm settings
+   - Easy for users to modify without touching code files
+   - Examples: chunk_size, top_k, temperature settings, etc.
+
+### File Organization Overview
+
+```
+HydroAgent/
+├── definitions.py              # Public config template
+├── definitions_private.py      # Private user config (not in git)
+├── config.py                  # Global parameters (create if needed)
+├── test/                      # All test files
+│   ├── test_*.py             # Unit and integration tests
+│   └── __init__.py
+├── script/                   # All executable scripts
+│   ├── *.py                  # Utility and processing scripts
+│   └── README.md            # Script documentation
+├── hydrorag/                # RAG system package
+├── workflow/               # Workflow orchestration
+├── hydromcp/              # MCP integration
+└── [other packages]/      # Additional modules
+```
+
+### File Header Requirements
+
+**MANDATORY**: Every new Python file must include a standardized header following the project convention:
+
+```python
+"""
+Author: [Your Name]
+Date: [Creation Date YYYY-MM-DD HH:MM:SS]
+LastEditTime: [Last Edit YYYY-MM-DD HH:MM:SS]
+LastEditors: [Editor Name]
+Description: [Brief description of file purpose]
+FilePath: [Relative path from project root]
+Copyright (c) 2023-2024 [Project Name]. All rights reserved.
+"""
+```
+
+### Directory Structure Standards
+
+**CRITICAL**: Always place files in the correct directories:
+
+- **test/** - All test files go here
+  - Unit tests: test_[component_name].py
+  - Integration tests: test_[system]_integration.py
+  - All test files should be executable with proper shebang if needed
+  - Test files should import from parent directory using sys.path manipulation
+
+- **script/** - All executable scripts and utilities
+  - Standalone scripts for specific tasks
+  - Utility scripts for data processing, setup, etc.
+  - Should be executable and include proper argument parsing
+  - Include comprehensive README.md for script descriptions
+
+### Configuration Loading Pattern
+
+**STANDARD PATTERN**: Always use this pattern for configuration loading:
+
+```python
+try:
+    import definitions_private
+    # Load from private configuration
+    API_KEY = definitions_private.API_KEY
+    PROJECT_DIR = definitions_private.PROJECT_DIR
+except ImportError:
+    # Fallback to defaults or environment variables
+    API_KEY = os.getenv('API_KEY', 'default_or_placeholder')
+    PROJECT_DIR = os.getcwd()
+```
+
+### Configuration Management Examples
+
+```python
+# Standard File Header Example
+"""
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2024-09-24 15:30:00
+LastEditors: zhuanglaihong
+Description: Enhanced RAG system for hydrological knowledge retrieval
+FilePath: \HydroAgent\hydrorag\rag_system.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
+"""
+
+# Correct Configuration Loading
+try:
+    import definitions_private as config
+    API_KEY = config.OPENAI_API_KEY
+    PROJECT_DIR = config.PROJECT_DIR
+except ImportError:
+    import definitions as config
+    API_KEY = config.OPENAI_API_KEY  # Will be placeholder
+    PROJECT_DIR = config.PROJECT_DIR
+```
+
+## File Organization Rules for Claude Code
+
+**MANDATORY**: When creating or moving files, always follow these rules:
+
+1. **Test files** → test/ directory
+2. **Scripts and utilities** → script/ directory
+3. **Configuration templates** → root directory (definitions.py)
+4. **Private configs** → root directory (definitions_private.py)
+5. **Global parameters** → root directory (config.py)
+6. **Include standard headers** in all new Python files
+7. **Use proper imports** and path management
+
+**Configuration Priority Order**:
+1. definitions_private.py (user-specific, not in git)
+2. definitions.py (project defaults and templates)
+3. config.py (adjustable parameters)
+4. Environment variables (fallback)
+5. Hard-coded defaults (last resort)

@@ -13,6 +13,7 @@ from .config import Config, default_config
 from .document_processor import DocumentProcessor
 from .embeddings_manager import EmbeddingsManager
 from .vector_store import VectorStore
+from .query_processor import QueryProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class RAGSystem:
         self.embeddings_manager = None
         self.vector_store = None
         self.document_processor = None
+        self.query_processor = None
         
         # 系统状态
         self.is_initialized = False
@@ -93,6 +95,15 @@ class RAGSystem:
                 error_msg = f"文档处理器初始化失败: {e}"
                 self.initialization_errors.append(error_msg)
                 logger.error(error_msg)
+
+            # 4. 初始化查询处理器
+            try:
+                self.query_processor = QueryProcessor(self.config, self.embeddings_manager)
+                logger.info("查询处理器初始化成功")
+            except Exception as e:
+                error_msg = f"查询处理器初始化失败: {e}"
+                self.initialization_errors.append(error_msg)
+                logger.error(error_msg)
             
             # 检查初始化状态
             self.is_initialized = (
@@ -100,7 +111,8 @@ class RAGSystem:
                 self.embeddings_manager.is_available() and
                 self.vector_store is not None and
                 self.vector_store.is_available() and
-                self.document_processor is not None
+                self.document_processor is not None and
+                self.query_processor is not None
             )
             
             if self.is_initialized:
@@ -239,57 +251,203 @@ class RAGSystem:
             return {"status": "error", "error": str(e)}
     
     def query(
-        self, 
-        query_text: str, 
-        top_k: int = None, 
+        self,
+        query_text: str,
+        top_k: int = None,
         score_threshold: float = None,
-        include_metadata: bool = True
+        include_metadata: bool = True,
+        enable_rerank: bool = None,
+        enable_expansion: bool = True
     ) -> Dict[str, Any]:
         """
-        查询相关文档
-        
+        查询相关文档（增强版）
+
         Args:
             query_text: 查询文本
             top_k: 返回结果数量
             score_threshold: 分数阈值
             include_metadata: 是否包含元数据
-            
+            enable_rerank: 是否启用重排序
+            enable_expansion: 是否启用查询扩展
+
         Returns:
             Dict[str, Any]: 查询结果
         """
         try:
             if not self.vector_store:
                 return {"status": "error", "error": "向量数据库未初始化"}
-            
+
             # 使用配置中的默认值
             if top_k is None:
                 top_k = self.config.top_k
             if score_threshold is None:
                 score_threshold = self.config.score_threshold
-            
+            if enable_rerank is None:
+                enable_rerank = getattr(self.config, 'rerank_enabled', True)
+
             logger.info(f"查询: {query_text[:100]}..., top_k={top_k}, threshold={score_threshold}")
-            
-            # 执行查询
-            raw_result = self.vector_store.query(
-                query_text=query_text,
-                n_results=top_k,
-                score_threshold=score_threshold
-            )
-            
-            if raw_result.get("status") != "success":
-                return raw_result
-            
-            # 处理查询结果
-            processed_result = self._process_query_result(raw_result, include_metadata)
-            
-            logger.info(f"查询完成，返回 {len(processed_result.get('results', []))} 个结果")
-            
+
+            # 查询预处理
+            if self.query_processor:
+                processed_query = self.query_processor.preprocess_query(query_text)
+                logger.debug(f"查询预处理: '{query_text}' -> '{processed_query}'")
+            else:
+                processed_query = query_text
+
+            # 查询扩展
+            queries_to_search = [processed_query]
+            if enable_expansion and self.query_processor:
+                expanded_queries = self.query_processor.expand_query(processed_query)
+                queries_to_search = expanded_queries[:3]  # 限制扩展查询数量
+
+            # 执行多查询检索
+            all_results = []
+            for query in queries_to_search:
+                raw_result = self.vector_store.query(
+                    query_text=query,
+                    n_results=top_k * 2 if enable_rerank else top_k,  # 重排序时获取更多结果
+                    score_threshold=score_threshold * 0.8  # 降低阈值以获取更多候选
+                )
+
+                if raw_result.get("status") == "success":
+                    results = self._convert_vector_results(raw_result)
+                    all_results.extend(results)
+
+            if not all_results:
+                return {"status": "no_results", "query": query_text, "results": []}
+
+            # 去重（基于内容相似性）
+            unique_results = self._deduplicate_results(all_results)
+
+            # 重排序
+            if enable_rerank and self.query_processor:
+                reranked_results = self.query_processor.rerank_results(query_text, unique_results)
+            else:
+                reranked_results = unique_results
+
+            # 结果过滤和限制
+            if self.query_processor:
+                filtered_results = self.query_processor.filter_results(
+                    reranked_results,
+                    min_score=score_threshold,
+                    max_results=top_k,
+                    source_diversity=True
+                )
+            else:
+                filtered_results = reranked_results[:top_k]
+
+            # 结果后处理
+            if self.query_processor:
+                final_results = self.query_processor.post_process_results(filtered_results)
+            else:
+                final_results = filtered_results
+
+            # 构建最终结果
+            processed_result = {
+                "status": "success",
+                "query": query_text,
+                "processed_query": processed_query,
+                "expanded_queries": queries_to_search if enable_expansion else [processed_query],
+                "total_found": len(all_results),
+                "after_dedup": len(unique_results),
+                "final_count": len(final_results),
+                "rerank_enabled": enable_rerank,
+                "results": final_results
+            }
+
+            logger.info(f"查询完成，返回 {len(final_results)} 个结果")
+
             return processed_result
-            
+
         except Exception as e:
             logger.error(f"查询失败: {e}")
             return {"status": "error", "error": str(e)}
+
+    def get_query_suggestions(self, query_text: str) -> List[str]:
+        """获取查询建议"""
+        if self.query_processor:
+            return self.query_processor.get_query_suggestions(query_text)
+        return []
+
+    def get_knowledge_fragments(self, query_text: str, top_k: int = 5) -> List[str]:
+        """
+        获取知识片段（为与COT系统集成而设计）
+
+        Args:
+            query_text: 查询文本
+            top_k: 返回结果数量
+
+        Returns:
+            List[str]: 知识片段列表，直接用于提示词构建
+        """
+        try:
+            result = self.query(
+                query_text=query_text,
+                top_k=top_k,
+                include_metadata=False,
+                enable_rerank=True,
+                enable_expansion=True
+            )
+
+            if result.get("status") == "success":
+                return [item["content"] for item in result.get("results", [])]
+            else:
+                logger.warning(f"获取知识片段失败: {result}")
+                return []
+
+        except Exception as e:
+            logger.error(f"获取知识片段失败: {e}")
+            return []
     
+    def _convert_vector_results(self, raw_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """转换向量数据库结果为标准格式"""
+        try:
+            results = []
+            documents = raw_result.get("documents", [])
+            distances = raw_result.get("distances", [])
+            metadatas = raw_result.get("metadatas", [])
+
+            for i, doc in enumerate(documents):
+                distance = distances[i] if i < len(distances) else 1.0
+                metadata = metadatas[i] if i < len(metadatas) else {}
+
+                result_item = {
+                    "content": doc,
+                    "distance": distance,
+                    "score": 1.0 - distance,  # 转换为相似度分数
+                    "metadata": metadata
+                }
+
+                results.append(result_item)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"转换向量结果失败: {e}")
+            return []
+
+    def _deduplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """去除重复结果"""
+        try:
+            seen_contents = set()
+            unique_results = []
+
+            for result in results:
+                content = result.get("content", "")
+                # 使用内容的前100个字符作为去重标准
+                content_key = content[:100] if content else ""
+
+                if content_key not in seen_contents:
+                    seen_contents.add(content_key)
+                    unique_results.append(result)
+
+            logger.debug(f"去重后保留 {len(unique_results)}/{len(results)} 个结果")
+            return unique_results
+
+        except Exception as e:
+            logger.error(f"去重处理失败: {e}")
+            return results
+
     def _process_query_result(self, raw_result: Dict[str, Any], include_metadata: bool) -> Dict[str, Any]:
         """处理查询结果"""
         try:

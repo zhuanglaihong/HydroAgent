@@ -12,7 +12,7 @@ import logging
 repo_path = Path(os.path.abspath(__file__)).parent.parent.parent.parent
 sys.path.append(str(repo_path))
 
-from ..base_tool import BaseTool, ToolResult
+from .base_tool import BaseTool, ToolResult
 
 # 尝试导入相关模块
 try:

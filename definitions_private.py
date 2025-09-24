@@ -10,7 +10,9 @@ PARAM_RANGE_FILE = "hydromodel/models/param.yaml"
 # 大模型API密钥
 OPENAI_API_KEY = "sk-50be7aaa64564360bb2a6dbd2e2db325"
 # 大模型平台链接
-OPENAI_BASE_URL="对应平台的BASE_URL"
+OPENAI_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+# 知识库路径
+KNOWLEDGE_BASE_DIR = "documents"
 
 '''对于window系统
 打开powershell,永久设置环境变量

@@ -9,7 +9,7 @@ from datetime import datetime
 from ..models.task import Task, TaskType
 from ..models.result import TaskResult, ExecutionStatus
 from ..tools.registry import HydroToolRegistry
-from ..tools.hydro_tools import *
+from ..tools import GetModelParamsTool, PrepareDataTool
 
 
 class SimpleTaskExecutor:

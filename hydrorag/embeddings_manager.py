@@ -7,8 +7,85 @@ import logging
 from typing import List, Optional, Dict, Any
 import numpy as np
 from pathlib import Path
+import time
 
 logger = logging.getLogger(__name__)
+
+
+class QwenAPIEmbeddings:
+    """
+    Qwen API嵌入模型包装器
+    兼容LangChain嵌入接口
+    """
+
+    def __init__(self, client, model: str = "text-embedding-v1", max_retries: int = 3, retry_delay: float = 1.0):
+        """
+        初始化Qwen API嵌入模型
+
+        Args:
+            client: OpenAI客户端实例
+            model: 嵌入模型名称
+            max_retries: 最大重试次数
+            retry_delay: 重试延迟（秒）
+        """
+        self.client = client
+        self.model = model
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    def embed_query(self, text: str) -> List[float]:
+        """
+        对查询文本进行嵌入
+
+        Args:
+            text: 输入文本
+
+        Returns:
+            List[float]: 嵌入向量
+        """
+        return self._get_embedding(text)
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """
+        对多个文档进行嵌入
+
+        Args:
+            texts: 文本列表
+
+        Returns:
+            List[List[float]]: 嵌入向量列表
+        """
+        embeddings = []
+        for text in texts:
+            embedding = self._get_embedding(text)
+            embeddings.append(embedding)
+        return embeddings
+
+    def _get_embedding(self, text: str) -> List[float]:
+        """
+        获取单个文本的嵌入向量，包含重试逻辑
+
+        Args:
+            text: 输入文本
+
+        Returns:
+            List[float]: 嵌入向量
+        """
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.client.embeddings.create(
+                    input=text,
+                    model=self.model
+                )
+                return response.data[0].embedding
+
+            except Exception as e:
+                if attempt < self.max_retries:
+                    logger.warning(f"API调用失败 (尝试 {attempt + 1}/{self.max_retries + 1}): {e}")
+                    time.sleep(self.retry_delay * (2 ** attempt))  # 指数退避
+                else:
+                    logger.error(f"API调用最终失败: {e}")
+                    raise
 
 
 class EmbeddingsManager:
@@ -24,7 +101,12 @@ class EmbeddingsManager:
         self.config = config
         self.model = None
         self.model_name = config.embedding_model_name
-        self.device = config.embedding_device
+        self.device = getattr(config, 'embedding_device', 'cpu')
+
+        # API配置
+        self.api_key = getattr(config, 'openai_api_key', None)
+        self.api_base_url = getattr(config, 'openai_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
+        self.api_model = getattr(config, 'api_embedding_model', 'text-embedding-v1')
         
         # 初始化嵌入模型
         self._initialize_model()
@@ -34,45 +116,76 @@ class EmbeddingsManager:
         logger.info(f"设备: {self.device}")
     
     def _initialize_model(self):
-        """初始化嵌入模型"""
+        """初始化嵌入模型 - 优先使用Qwen API，失败时切换到本地Ollama"""
         try:
             logger.info(f"正在初始化嵌入模型: {self.model_name}")
-            
-            # 优先尝试使用本地Ollama嵌入模型
-            if self._try_ollama_embeddings():
-                return
-            
-            # 然后尝试使用新的langchain-huggingface包
-            try:
-                from langchain_huggingface import HuggingFaceEmbeddings
-                
-                model_kwargs = {"device": self.device}
-                encode_kwargs = {"normalize_embeddings": True}
-                
-                self.model = HuggingFaceEmbeddings(
-                    model_name=self.model_name,
-                    model_kwargs=model_kwargs,
-                    encode_kwargs=encode_kwargs
-                )
-                
-                logger.info("HuggingFace嵌入模型初始化成功")
-                
-                # 测试模型
-                test_result = self._test_model()
-                if test_result:
-                    logger.info("嵌入模型测试通过")
-                else:
-                    logger.error("嵌入模型测试失败")
-                    self.model = None
 
-            except ImportError as e:
-                logger.error(f"无法导入HuggingFaceEmbeddings: {e}")
-                self.model = None
+            # 优先级1: 尝试使用Qwen API嵌入模型
+            if self._try_qwen_api_embeddings():
+                logger.info("成功使用Qwen API嵌入模型")
+                return
+
+            logger.warning("Qwen API不可用，尝试本地Ollama模型")
+
+            # 优先级2: 尝试使用本地Ollama嵌入模型
+            if self._try_ollama_embeddings():
+                logger.info("成功使用本地Ollama嵌入模型")
+                return
+
+            logger.error("所有嵌入模型都不可用")
+            self.model = None
 
         except Exception as e:
             logger.error(f"嵌入模型初始化失败: {e}")
             self.model = None
     
+    def _try_qwen_api_embeddings(self) -> bool:
+        """尝试使用Qwen API嵌入模型"""
+        try:
+            logger.info("尝试连接Qwen API嵌入模型...")
+
+            # 检查是否有必要的配置
+            if not self.api_key:
+                logger.warning("未配置Qwen API密钥，跳过API模式")
+                return False
+
+            # 导入OpenAI客户端
+            try:
+                from openai import OpenAI
+            except ImportError:
+                logger.warning("无法导入OpenAI客户端，跳过API模式")
+                return False
+
+            # 创建OpenAI客户端（用于Qwen API）
+            client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.api_base_url
+            )
+
+            # 创建API嵌入包装器
+            self.model = QwenAPIEmbeddings(
+                client=client,
+                model=self.api_model
+            )
+
+            logger.info("Qwen API嵌入模型初始化成功")
+
+            # 测试模型
+            test_result = self._test_model()
+            if test_result:
+                logger.info("Qwen API嵌入模型测试通过")
+                self.model_name = f"qwen-api-{self.api_model}"
+                return True
+            else:
+                logger.error("Qwen API嵌入模型测试失败")
+                self.model = None
+                return False
+
+        except Exception as e:
+            logger.warning(f"Qwen API嵌入模型初始化失败: {e}")
+            self.model = None
+            return False
+
     def _try_ollama_embeddings(self) -> bool:
         """尝试使用本地Ollama嵌入模型"""
         try:
@@ -89,20 +202,30 @@ class EmbeddingsManager:
                     logger.warning("无法导入OllamaEmbeddings，跳过Ollama嵌入模型")
                     return False
             
-            # 检查是否有bge-large:335m模型
+            # 检查可用的嵌入模型
             available_models = self._check_ollama_models()
-            
+
             embedding_model = None
-            # 优先使用bge-large:335m
-            if "bge-large:335m" in available_models:
-                embedding_model = "bge-large:335m"
-                logger.info("找到bge-large:335m模型")
-            elif "bge-large" in available_models:
-                embedding_model = "bge-large"
-                logger.info("找到bge-large模型")
-            else:
+            # 按优先级查找嵌入模型
+            preferred_models = [
+                "nomic-embed-text",  # 优先使用nomic-embed-text
+                "mxbai-embed-large",  # 次选mxbai-embed-large
+                "bge-large:335m",
+                "bge-large",
+                "all-minilm",
+                "sentence-transformers"
+            ]
+
+            for preferred in preferred_models:
+                matching_models = [model for model in available_models if preferred.lower() in model.lower()]
+                if matching_models:
+                    embedding_model = matching_models[0]
+                    logger.info(f"找到优选嵌入模型: {embedding_model}")
+                    break
+
+            if not embedding_model:
                 # 查找其他可用的嵌入模型
-                embedding_models = [model for model in available_models if any(name in model.lower() for name in ['bge', 'embed', 'sentence', 'gte'])]
+                embedding_models = [model for model in available_models if any(name in model.lower() for name in ['embed', 'bge', 'sentence', 'gte', 'nomic'])]
                 if embedding_models:
                     embedding_model = embedding_models[0]
                     logger.info(f"找到其他嵌入模型: {embedding_model}")
@@ -122,6 +245,7 @@ class EmbeddingsManager:
             test_result = self._test_model()
             if test_result:
                 logger.info("Ollama嵌入模型测试通过")
+                self.model_name = f"ollama-{embedding_model}"
                 return True
             else:
                 logger.error("Ollama嵌入模型测试失败")

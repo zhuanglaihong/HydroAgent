@@ -1,0 +1,43 @@
+{
+  "workflow_id": "fallback_1758714090",
+  "name": "回退工作流",
+  "description": "针对查询 '率定并评估GR4J模型...' 的回退工作流",
+  "execution_mode": "linear",
+  "tasks": [
+    {
+      "task_id": "fallback_task",
+      "name": "手动处理",
+      "description": "需要手动处理的任务",
+      "action": "manual_processing",
+      "task_type": "simple_action",
+      "parameters": {
+        "query": "率定并评估GR4J模型"
+      },
+      "dependencies": [],
+      "conditions": {},
+      "expected_output": "手动处理结果"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-24T19:41:30.902364",
+    "estimated_duration": "未知",
+    "complexity": "未知",
+    "is_fallback": true,
+    "optimization": "linear_optimized",
+    "build_timestamp": "2025-09-24T19:41:30.902364",
+    "complexity_score": 0.1,
+    "execution_mode": "linear",
+    "mode_confidence": 0.8,
+    "features_detected": {
+      "has_loops": false,
+      "has_conditions": false,
+      "has_complex_tasks": false,
+      "has_parallel_branches": false,
+      "has_error_handling": false,
+      "has_dynamic_params": false,
+      "requires_feedback": false,
+      "has_model_calibration": false
+    },
+    "builder_version": "1.0"
+  }
+}

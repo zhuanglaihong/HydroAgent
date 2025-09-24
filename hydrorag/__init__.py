@@ -1,21 +1,48 @@
 """
-HydroRAG - 水文模型RAG知识库系统
-基于Chroma构建的本地向量数据库系统，用于水文模型相关知识检索
+HydroRAG - 智能水文知识检索增强生成系统
+
+支持Qwen API和本地Ollama嵌入模型的混合RAG系统，
+为水文智能体提供高质量的知识检索和增强生成服务。
+
+主要特性:
+- 混合嵌入模型支持（Qwen API + 本地Ollama）
+- 智能查询处理和重排序
+- 高性能向量检索（ChromaDB）
+- 水文领域专用优化
 """
 
-from .config import Config
+from .config import Config, create_default_config, default_config
 from .document_processor import DocumentProcessor
 from .vector_store import VectorStore
 from .embeddings_manager import EmbeddingsManager
-from .rag_system import RAGSystem
+from .query_processor import QueryProcessor
+from .rag_system import RAGSystem, create_rag_system, quick_setup, simple_query, batch_query, get_system_info
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "HydroAgent Team"
+__title__ = "HydroRAG"
+__description__ = "智能水文知识检索增强生成系统"
+__url__ = "https://github.com/hydroagent/hydrorag"
+__license__ = "MIT"
+__copyright__ = "Copyright 2024 HydroAgent Team"
 
 __all__ = [
+    # 核心类
     "Config",
-    "DocumentProcessor", 
+    "DocumentProcessor",
     "VectorStore",
     "EmbeddingsManager",
-    "RAGSystem"
+    "QueryProcessor",
+    "RAGSystem",
+
+    # 配置函数
+    "create_default_config",
+    "default_config",
+
+    # 便利函数
+    "create_rag_system",
+    "quick_setup",
+    "simple_query",
+    "batch_query",
+    "get_system_info"
 ]
