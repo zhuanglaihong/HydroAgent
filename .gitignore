@@ -191,7 +191,7 @@ chunks_result.txt
 .log
 documents/
 output/
-.claude/
+/.claude/
 __pycache__/
 *.pyc
 definitions_private.py
