@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HydroAgent is an intelligent hydrological model calibration system built with LangChain and Ollama. It uses workflow-based AI agents to automatically calibrate hydrological model parameters based on existing models and data. The system integrates RAG (Retrieval-Augmented Generation) for knowledge-enhanced workflow generation.
+HydroAgent is an intelligent hydrological model calibration system built with LangChain. It uses workflow-based AI agents to automatically calibrate hydrological model parameters based on existing models and data. The system integrates RAG (Retrieval-Augmented Generation) for knowledge-enhanced workflow generation.
 
 ## Development Environment Setup
 

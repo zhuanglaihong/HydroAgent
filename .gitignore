@@ -190,3 +190,7 @@ chunks_result.txt
 .qodo/
 .log
 documents/
+output/
+.claude/
+__pycache__/
+*.pyc

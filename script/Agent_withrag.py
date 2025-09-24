@@ -1,7 +1,10 @@
 """
 Author: zhuanglaihong
-Date: 2025-09-14
-Description: 智能体主程序 - 基于工作流的水文模型智能助手
+Date: 2025-07-28 16:24:08
+LastEditTime: 2025-08-28 16:24:08
+Description: 智能体主界面 - 用户调用本地Ollama模型配合水文工具进行自动率定
+FilePath: script/Agent.py
+Copyright: Copyright (c) 2021-2024 zhuanglaihong. All rights reserved.
 """
 
 import sys

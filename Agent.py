@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 Author: zhuanglaihong
-Date: 2025-01-20
-Description: 智能体主程序 - 基于新版工作流的水文模型智能助手
-
+Date: 2025-07-28 16:24:08
+LastEditTime: 2025-07-28 16:24:08
+Description: 智能体主界面 - 用户调用本地Ollama模型配合水文工具进行自动率定
+FilePath: script/Agent.py
+Copyright: Copyright (c) 2021-2024 zhuanglaihong. All rights reserved.
+--- IGNORE ---
 新版特性：
 - 集成新版工作流生成器 (CoT + RAG)
 - 支持RAG系统开关控制
