@@ -46,15 +46,15 @@ OPENAI_API_KEY = "your-qwen-api-key"  # 通义千问 API Key
 OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 # 项目路径配置
-PROJECT_DIR = r"D:\MCP\HydroAgent"
-DATASET_DIR = r"D:\MCP\HydroAgent\data"
-RESULT_DIR = r"D:\MCP\HydroAgent\results"
+PROJECT_DIR = r"D:\HydroAgent"
+DATASET_DIR = r"D:\HydroAgent\data"
+RESULT_DIR = r"D:\HydroAgent\results"
 
 # 知识库配置
-KNOWLEDGE_BASE_DIR = r"D:\MCP\HydroAgent\documents"
+KNOWLEDGE_BASE_DIR = r"D:\HydroAgent\documents"
 ```
 
-#### 本地模型配置 (降级备用)
+#### 本地模型配置 (备用)
 
 ```bash
 # 安装 Ollama
@@ -79,7 +79,7 @@ ollama list
 
 ```python
 # 推理模型 (Builder 阶段使用)
-REASONING_API_MODEL = "qwen-turbo"          # API 推理模型
+REASONING_API_MODEL = "qwen3-max"          # API 推理模型
 REASONING_FALLBACK_MODEL = "qwen3:8b"       # 本地推理模型
 
 # 代码模型 (Executor 阶段使用)
@@ -195,7 +195,7 @@ HydroAgent 采用专业化模型架构，每种任务使用最适合的模型：
 
 | 模型类型 | 使用场景 | API模型 | 本地模型 | 特点 |
 |---------|---------|---------|----------|------|
-| **推理模型** | Builder阶段工作流规划 | qwen-turbo | qwen3:8b | 逻辑推理能力强 |
+| **推理模型** | Builder阶段工作流规划 | qwen3-max | qwen3:8b | 逻辑推理能力强 |
 | **代码模型** | Executor阶段工具调用 | qwen3-coder-plus | deepseek-coder:6.7b | 代码生成专业 |
 | **嵌入模型** | RAG系统知识检索 | text-embedding-v1 | bge-large:335m | 语义理解精准 |
 
@@ -265,12 +265,6 @@ HydroAgent 采用专业化模型架构，每种任务使用最适合的模型：
 
 ### 🚧 开发中功能
 
-**🌐 系统集成**
-- [ ] MCP (Model Context Protocol) 服务模式
-- [ ] 分布式执行引擎
-- [ ] 更多水文模型集成
-- [ ] GPU加速计算支持
-
 **🔍 智能增强**
 - [ ] 多模态文档处理 (图表、公式识别)
 - [ ] 自适应模型选择
@@ -318,8 +312,9 @@ python test/test_enhanced_rag.py           # RAG系统测试
 python test/test_executor_simple.py        # 简单任务测试
 python test/test_executor_complex.py       # 复杂任务测试
 
-# 系统集成测试
-python test/run_integration_test.py        # 端到端集成测试
+# 大模型调用测试
+python test/test_intelligent_llm_client.py # 测试优先API和次选Ollama机制
+python test/test_qwen.py                   # 千问大模型API测试
 ```
 
 ## 🤝 贡献

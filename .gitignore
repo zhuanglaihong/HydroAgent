@@ -195,3 +195,4 @@ output/
 __pycache__/
 *.pyc
 definitions_private.py
+/workflow/generated/
