@@ -16,7 +16,7 @@ from .document_processor import DocumentProcessor
 from .vector_store import VectorStore
 from .embeddings_manager import EmbeddingsManager
 from .query_processor import QueryProcessor
-from .rag_system import RAGSystem, create_rag_system, quick_setup, simple_query, batch_query, get_system_info
+from .rag_system import RAGSystem, create_rag_system, quick_setup
 
 __version__ = "2.0.0"
 __author__ = "HydroAgent Team"
@@ -41,8 +41,5 @@ __all__ = [
 
     # 便利函数
     "create_rag_system",
-    "quick_setup",
-    "simple_query",
-    "batch_query",
-    "get_system_info"
+    "quick_setup"
 ]

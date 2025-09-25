@@ -112,7 +112,7 @@ class PrepareDataTool(BaseTool):
 
             # 调用数据处理函数
             success = process_and_save_data_as_nc(
-                data_dir=data_dir,
+                folder_path=data_dir,
                 target_data_scale=target_data_scale,
                 save_folder=data_dir
             )

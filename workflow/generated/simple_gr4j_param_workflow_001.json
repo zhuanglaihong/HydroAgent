@@ -1,0 +1,104 @@
+{
+  "workflow_id": "gr4j_param_workflow_001",
+  "name": "GR4J模型参数获取工作流",
+  "description": "通过数据准备、模型率定、评估和参数提取，获取GR4J水文模型的率定参数",
+  "execution_mode": "react",
+  "tasks": [
+    {
+      "task_id": "task_01",
+      "name": "准备水文输入数据",
+      "description": "处理降雨、潜在蒸散发和实测径流数据，确保格式和时间一致性",
+      "action": "prepare_data",
+      "task_type": "simple_action",
+      "parameters": {
+        "model": "GR4J"
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 300
+      },
+      "expected_output": "结构化输入数据集（降雨、PET、径流）"
+    },
+    {
+      "task_id": "task_02",
+      "name": "GR4J模型率定",
+      "description": "使用准备好的数据对GR4J模型进行参数优化",
+      "action": "calibrate_model",
+      "task_type": "simple_action",
+      "parameters": {
+        "model": "GR4J"
+      },
+      "dependencies": [
+        "task_01"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 600
+      },
+      "expected_output": "率定后的GR4J模型实例及初步参数",
+      "feedback_enabled": true
+    },
+    {
+      "task_id": "task_03",
+      "name": "模型性能评估",
+      "description": "计算模型模拟效果的评估指标（如NSE、KGE）",
+      "action": "evaluate_model",
+      "task_type": "simple_action",
+      "parameters": {
+        "model": "GR4J"
+      },
+      "dependencies": [
+        "task_02"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 120
+      },
+      "expected_output": "模型评估报告和性能指标"
+    },
+    {
+      "task_id": "task_04",
+      "name": "获取GR4J模型参数",
+      "description": "从率定结果中提取最终的GR4J参数（X1, X2, X3, X4）",
+      "action": "get_model_params",
+      "task_type": "simple_action",
+      "parameters": {
+        "model": "GR4J"
+      },
+      "dependencies": [
+        "task_03"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 60
+      },
+      "expected_output": "GR4J模型参数字典，包含X1, X2, X3, X4"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-26T00:57:35.521821",
+    "estimated_duration": "15分钟",
+    "complexity": "中等",
+    "optimization": "react_optimized",
+    "build_timestamp": "2025-09-26T00:58:10.816504",
+    "complexity_score": 0.37500000000000006,
+    "execution_mode": "react",
+    "mode_confidence": 0.9,
+    "features_detected": {
+      "has_loops": true,
+      "has_conditions": false,
+      "has_complex_tasks": false,
+      "has_parallel_branches": false,
+      "has_error_handling": true,
+      "has_dynamic_params": false,
+      "requires_feedback": true,
+      "has_model_calibration": true
+    },
+    "intent_type": "model_calibration",
+    "intent_confidence": 0.7999999999999999,
+    "clarified_intent": "用户希望获取GR4J水文模型的率定参数（如X1、X2、X3、X4）用于模型校准或应用。",
+    "entities_detected": 2,
+    "builder_version": "1.1"
+  }
+}

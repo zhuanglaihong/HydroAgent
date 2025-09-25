@@ -1,0 +1,124 @@
+{
+  "workflow_id": "hydro_calibration_validation_2010_2020",
+  "name": "水文模型率定与验证工作流",
+  "description": "使用2010-2015年数据率定水文模型，2016-2020年数据验证模型性能",
+  "execution_mode": "react",
+  "tasks": [
+    {
+      "task_id": "task_1",
+      "name": "获取模型参数",
+      "description": "获取水文模型的可调参数结构和默认值",
+      "action": "get_model_params",
+      "task_type": "simple_action",
+      "parameters": {},
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 300
+      },
+      "expected_output": "模型参数字典，包含参数名称、默认值和取值范围"
+    },
+    {
+      "task_id": "task_2",
+      "name": "准备率定期数据",
+      "description": "处理2010-2015年气象和径流观测数据，用于模型率定",
+      "action": "prepare_data",
+      "task_type": "simple_action",
+      "parameters": {
+        "start_year": 2010,
+        "end_year": 2015,
+        "data_type": "calibration"
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 600
+      },
+      "expected_output": "格式化后的率定期输入输出数据集"
+    },
+    {
+      "task_id": "task_3",
+      "name": "准备验证期数据",
+      "description": "处理2016-2020年气象和径流观测数据，用于模型验证",
+      "action": "prepare_data",
+      "task_type": "simple_action",
+      "parameters": {
+        "start_year": 2016,
+        "end_year": 2020,
+        "data_type": "validation"
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 600
+      },
+      "expected_output": "格式化后的验证期输入输出数据集"
+    },
+    {
+      "task_id": "task_4",
+      "name": "模型率定",
+      "description": "基于2010-2015年数据和模型参数进行自动率定",
+      "action": "calibrate_model",
+      "task_type": "simple_action",
+      "parameters": {
+        "calibration_data_ref": "task_2",
+        "model_params_ref": "task_1"
+      },
+      "dependencies": [
+        "task_1",
+        "task_2"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 3600
+      },
+      "expected_output": "率定后的最优参数集及率定期模拟结果",
+      "feedback_enabled": true
+    },
+    {
+      "task_id": "task_5",
+      "name": "模型评估",
+      "description": "使用2016-2020年验证数据评估率定后模型性能",
+      "action": "evaluate_model",
+      "task_type": "simple_action",
+      "parameters": {
+        "validation_data_ref": "task_3",
+        "calibrated_model_ref": "task_4"
+      },
+      "dependencies": [
+        "task_3",
+        "task_4"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 600
+      },
+      "expected_output": "验证期评估指标（如NSE, RMSE, R²等）及模拟-观测对比图"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-26T01:02:56.939272",
+    "estimated_duration": "2小时",
+    "complexity": "中等",
+    "optimization": "react_optimized",
+    "build_timestamp": "2025-09-26T01:03:42.481500",
+    "complexity_score": 0.57,
+    "execution_mode": "react",
+    "mode_confidence": 0.9,
+    "features_detected": {
+      "has_loops": true,
+      "has_conditions": false,
+      "has_complex_tasks": false,
+      "has_parallel_branches": true,
+      "has_error_handling": true,
+      "has_dynamic_params": false,
+      "requires_feedback": true,
+      "has_model_calibration": true
+    },
+    "intent_type": "model_calibration",
+    "intent_confidence": 0.75,
+    "clarified_intent": "使用2010-2015年的观测数据对水文模型进行率定，并利用2016-2020年的独立数据集对率定后的模型进行验证评估。",
+    "entities_detected": 1,
+    "builder_version": "1.1"
+  }
+}

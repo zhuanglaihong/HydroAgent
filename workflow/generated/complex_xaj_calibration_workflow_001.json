@@ -1,0 +1,106 @@
+{
+  "workflow_id": "xaj_calibration_workflow_001",
+  "name": "XAJ模型率定与评估工作流",
+  "description": "基于用户需求，完成XAJ水文模型的数据准备、参数率定和性能评估全流程。",
+  "execution_mode": "react",
+  "tasks": [
+    {
+      "task_id": "task_01",
+      "name": "获取XAJ模型参数结构",
+      "description": "查询XAJ水文模型所需的参数列表、默认值及取值范围，为后续率定提供基础信息。",
+      "action": "get_model_params",
+      "task_type": "simple_action",
+      "parameters": {
+        "model_name": "XAJ"
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 30
+      },
+      "expected_output": "XAJ模型参数定义JSON对象，包含参数名、类型、范围等"
+    },
+    {
+      "task_id": "task_02",
+      "name": "准备XAJ模型输入输出数据",
+      "description": "处理降雨、蒸发、实测径流等数据，确保时间序列对齐、格式符合XAJ模型要求。",
+      "action": "prepare_data",
+      "task_type": "simple_action",
+      "parameters": {
+        "model_name": "XAJ"
+      },
+      "dependencies": [
+        "task_01"
+      ],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 120
+      },
+      "expected_output": "结构化数据集，包含训练期和验证期的输入输出时间序列"
+    },
+    {
+      "task_id": "task_03",
+      "name": "率定XAJ模型参数",
+      "description": "利用准备好的数据，通过优化算法自动调整XAJ模型参数，最小化模拟与实测径流的误差。",
+      "action": "calibrate_model",
+      "task_type": "complex_reasoning",
+      "parameters": {
+        "model_name": "XAJ"
+      },
+      "dependencies": [
+        "task_02"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 600,
+        "on_error": "retry_or_skip"
+      },
+      "expected_output": "率定后的最优参数集及训练期模拟结果",
+      "feedback_enabled": true
+    },
+    {
+      "task_id": "task_04",
+      "name": "评估XAJ模型性能",
+      "description": "使用验证期数据评估率定后模型的泛化能力，计算Nash-Sutcliffe效率、RMSE等指标。",
+      "action": "evaluate_model",
+      "task_type": "complex_reasoning",
+      "parameters": {
+        "model_name": "XAJ"
+      },
+      "dependencies": [
+        "task_03"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 60,
+        "on_error": "retry_or_skip"
+      },
+      "expected_output": "模型性能评估报告，包含定量指标和可视化建议"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-26T01:02:08.604715",
+    "estimated_duration": "720秒",
+    "complexity": "中等",
+    "optimization": "react_optimized",
+    "build_timestamp": "2025-09-26T01:02:44.491463",
+    "complexity_score": 0.575,
+    "execution_mode": "react",
+    "mode_confidence": 0.9,
+    "features_detected": {
+      "has_loops": true,
+      "has_conditions": false,
+      "has_complex_tasks": true,
+      "has_parallel_branches": false,
+      "has_error_handling": true,
+      "has_dynamic_params": false,
+      "requires_feedback": true,
+      "has_model_calibration": true
+    },
+    "intent_type": "model_calibration",
+    "intent_confidence": 0.5,
+    "clarified_intent": "用户希望完成XAJ水文模型的率定流程，包括准备所需数据、进行参数率定，并对模型性能进行评估。",
+    "entities_detected": 1,
+    "builder_version": "1.1"
+  }
+}

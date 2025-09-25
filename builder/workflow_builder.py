@@ -72,16 +72,40 @@ class WorkflowBuilder:
     结合RAG知识库和思维链推理，生成可执行的工作流
     """
 
-    def __init__(self, rag_system=None, llm_client: LLMClient = None):
+    def __init__(self, rag_system=None, llm_client: LLMClient = None, enable_rag: bool = True):
         """
         初始化工作流构建器
 
         Args:
             rag_system: RAG系统实例
             llm_client: LLM客户端实例
+            enable_rag: 是否启用RAG系统，测试时可设为False
         """
-        self.rag_system = rag_system
         self.llm_client = llm_client or get_llm_client()
+
+        # 初始化RAG系统
+        if rag_system is None and enable_rag:
+            try:
+                from hydrorag import RAGSystem, Config
+                # 创建本地优先的配置，避免网络依赖
+                local_config = Config(
+                    # 禁用API嵌入，优先使用本地Ollama
+                    openai_api_key=None,
+                    embedding_model_name="bge-large:335m",  # 使用本地模型
+                    local_embedding_model="bge-large:335m"
+                )
+                self.rag_system = RAGSystem(local_config)
+                logger.info("自动初始化RAG系统成功")
+            except Exception as e:
+                logger.warning(f"自动初始化RAG系统失败: {e}，将以None模式运行")
+                self.rag_system = None
+        elif rag_system is not None:
+            self.rag_system = rag_system
+        else:
+            # enable_rag=False 或者测试模式
+            self.rag_system = None
+            if not enable_rag:
+                logger.info("RAG系统被禁用，运行在简化模式")
 
         # 初始化子组件
         self.intent_parser = get_intent_parser(llm_client=self.llm_client)
@@ -440,12 +464,17 @@ class WorkflowBuilder:
             "rag_planner_ready": self.rag_planner is not None
         }
 
+        # RAG系统虽然重要，但在某些情况下可以不依赖RAG系统运行
+        # 因此overall_ready不强制要求rag_system_ready，但会记录状态
         status["overall_ready"] = all([
             status["llm_client_ready"],
             status["intent_parser_ready"],
             status["mode_analyzer_ready"],
             status["rag_planner_ready"]
         ])
+
+        # 如果RAG系统未就绪，记录为降级模式
+        status["degraded_mode"] = not status["rag_system_ready"]
 
         return status
 

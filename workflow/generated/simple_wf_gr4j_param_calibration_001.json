@@ -1,0 +1,110 @@
+{
+  "workflow_id": "wf_gr4j_param_calibration_001",
+  "name": "GR4J Model Parameter Calibration Workflow",
+  "description": "A linear workflow to obtain calibrated GR4J model parameters through data preparation, model calibration, evaluation, and parameter extraction.",
+  "execution_mode": "react",
+  "tasks": [
+    {
+      "task_id": "t1",
+      "name": "Prepare Hydrological Input Data",
+      "description": "Prepare and preprocess precipitation, potential evapotranspiration, and observed streamflow data for GR4J model calibration.",
+      "action": "prepare_data",
+      "task_type": "simple_action",
+      "parameters": {
+        "model": "GR4J",
+        "data_type": [
+          "precipitation",
+          "pet",
+          "streamflow"
+        ]
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 300
+      },
+      "expected_output": "Cleaned and aligned time series data ready for model calibration"
+    },
+    {
+      "task_id": "t2",
+      "name": "Calibrate GR4J Model",
+      "description": "Perform automatic calibration of GR4J model parameters using prepared hydrological data.",
+      "action": "calibrate_model",
+      "task_type": "simple_action",
+      "parameters": {
+        "model": "GR4J"
+      },
+      "dependencies": [
+        "t1"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 3600
+      },
+      "expected_output": "Calibrated GR4J model with optimized parameters and simulated streamflow",
+      "feedback_enabled": true
+    },
+    {
+      "task_id": "t3",
+      "name": "Evaluate Model Performance",
+      "description": "Assess the calibrated model's performance using statistical metrics (e.g., NSE, KGE) to ensure reliability.",
+      "action": "evaluate_model",
+      "task_type": "complex_reasoning",
+      "parameters": {
+        "model": "GR4J"
+      },
+      "dependencies": [
+        "t2"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 600,
+        "on_error": "retry_or_skip"
+      },
+      "expected_output": "Model evaluation report with performance metrics and acceptability judgment"
+    },
+    {
+      "task_id": "t4",
+      "name": "Extract GR4J Parameters",
+      "description": "Retrieve the final calibrated GR4J parameters (X1, X2, X3, X4) from the evaluated model.",
+      "action": "get_model_params",
+      "task_type": "simple_action",
+      "parameters": {
+        "model": "GR4J"
+      },
+      "dependencies": [
+        "t3"
+      ],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 300
+      },
+      "expected_output": "Final calibrated GR4J parameters as a dictionary: {\"X1\": value, \"X2\": value, \"X3\": value, \"X4\": value}"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-25T21:16:10.263128",
+    "estimated_duration": "7200 seconds",
+    "complexity": "medium",
+    "optimization": "react_optimized",
+    "build_timestamp": "2025-09-25T21:16:47.155664",
+    "complexity_score": 0.41250000000000003,
+    "execution_mode": "react",
+    "mode_confidence": 0.9,
+    "features_detected": {
+      "has_loops": true,
+      "has_conditions": false,
+      "has_complex_tasks": true,
+      "has_parallel_branches": false,
+      "has_error_handling": true,
+      "has_dynamic_params": false,
+      "requires_feedback": true,
+      "has_model_calibration": true
+    },
+    "intent_type": "model_calibration",
+    "intent_confidence": 0.7999999999999999,
+    "clarified_intent": "用户希望获取GR4J水文模型的率定参数（如X1、X2、X3、X4）用于模型校准或应用。",
+    "entities_detected": 2,
+    "builder_version": "1.1"
+  }
+}

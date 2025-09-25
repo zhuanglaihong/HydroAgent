@@ -93,55 +93,52 @@ class GracefulKiller:
         self.cleanup_in_progress = True
 
 
-class HydroIntelligentAgent:
-    """水文智能体主接口 - 新版架构"""
+class HydroAgent:
+    """水文智能体主接口 - 基于Builder+HydroRAG+Executor三层架构"""
 
     def __init__(
         self,
-        model_name: str = "qwen3:8b",
+        reasoning_model: str = "qwen-turbo",
         enable_debug: bool = False,
         enable_rag: bool = True,
-        use_mcp_tools: bool = True,
+        mode: str = "auto",
     ):
         """
         初始化水文智能体
 
         Args:
-            model_name: LLM模型名称
+            reasoning_model: 推理模型名称 (用于Builder阶段)
             enable_debug: 是否启用调试模式
             enable_rag: 是否启用RAG系统
-            use_mcp_tools: 是否使用MCP工具（False则使用本地工具）
+            mode: 执行模式 ('auto'|'sequential'|'react')
         """
-        self.model_name = model_name
+        self.reasoning_model = reasoning_model
         self.enable_debug = enable_debug
         self.enable_rag = enable_rag
-        self.use_mcp_tools = use_mcp_tools
+        self.mode = mode
         self.start_time = datetime.now()
 
-        # 系统组件
-        self.ollama_client = None
-        self.rag_system = None
-        self.workflow_generator = None
-        self.mcp_tools = None
-        self.local_tools = []
+        # 三层系统组件
+        self.builder = None  # Builder系统
+        self.hydrorag = None  # HydroRAG系统
+        self.executor = None  # Executor系统
 
         # 系统状态
         self.system_ready = False
         self.system_checks = {
-            "ollama_service": False,
-            "model_available": False,
+            "api_models": False,
+            "builder_system": False,
             "rag_system": False,
-            "workflow_system": False,
-            "tools_system": False,
+            "executor_system": False,
         }
 
         # 会话状态
         self.session_history = []
         self.current_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-        logger.info(f"=== 水文智能体启动 (会话ID: {self.current_session_id}) ===")
+        logger.info(f"=== HydroAgent启动 (会话ID: {self.current_session_id}) ===")
         logger.info(
-            f"配置: RAG={enable_rag}, MCP工具={use_mcp_tools}, 调试={enable_debug}"
+            f"配置: 推理模型={reasoning_model}, RAG={enable_rag}, 模式={mode}, 调试={enable_debug}"
         )
 
     async def initialize(self) -> bool:
@@ -156,31 +153,31 @@ class HydroIntelligentAgent:
             print("🚀 水文智能体启动中...")
             print("=" * 60)
             print(
-                f"🔧 配置: RAG系统={'启用' if self.enable_rag else '禁用'}, "
-                f"工具类型={'MCP工具' if self.use_mcp_tools else '本地工具'}"
+                f"🔧 配置: HydroRAG系统={'启用' if self.enable_rag else '禁用'}, "
+                f"执行模式={self.mode}"
             )
             print()
 
-            # 1. 检查Ollama服务
+            # 1. 检查API模型可用性
             print("🔍 检查系统组件...")
-            if not await self._check_ollama_service():
+            if not await self._check_api_models():
                 return False
 
-            # 2. 初始化RAG系统（可选）
+            # 2. 初始化HydroRAG系统（可选）
             if self.enable_rag:
-                rag_success = await self._initialize_rag_system()
+                rag_success = await self._initialize_hydrorag_system()
                 if not rag_success:
-                    logger.warning("RAG系统初始化失败，将禁用RAG功能")
+                    logger.warning("HydroRAG系统初始化失败，将禁用RAG功能")
                     self.enable_rag = False
             else:
-                print("   📚 RAG系统已禁用")
+                print("   📚 HydroRAG系统已禁用")
 
-            # 3. 初始化工作流生成器
-            if not await self._initialize_workflow_generator():
+            # 3. 初始化Builder系统
+            if not await self._initialize_builder_system():
                 return False
 
-            # 4. 初始化工具系统
-            if not await self._initialize_tools():
+            # 4. 初始化Executor系统
+            if not await self._initialize_executor_system():
                 return False
 
             # 5. 最终系统检查
@@ -204,60 +201,64 @@ class HydroIntelligentAgent:
             print(f"❌ 系统初始化异常: {e}")
             return False
 
-    async def _check_ollama_service(self) -> bool:
-        """检查Ollama服务"""
+    async def _check_api_models(self) -> bool:
+        """检查API模型可用性"""
         try:
-            logger.info("检查Ollama服务状态...")
-            print("   🔧 检查Ollama服务...")
+            logger.info("检查API模型配置...")
+            print("   🤖 检查API模型配置...")
 
-            import ollama
+            # 导入配置
+            import config
 
-            self.ollama_client = ollama.Client()
+            # 检查API Key配置
+            try:
+                import definitions_private
+                api_key = getattr(definitions_private, 'OPENAI_API_KEY', None)
+                base_url = getattr(definitions_private, 'OPENAI_BASE_URL', None)
+            except ImportError:
+                logger.warning("未找到definitions_private.py，将使用环境变量")
+                api_key = os.getenv('OPENAI_API_KEY')
+                base_url = os.getenv('OPENAI_BASE_URL')
 
-            # 测试qwen3:8b模型
-            response = self.ollama_client.chat(
-                model=self.model_name,
-                messages=[{"role": "user", "content": "test connection"}],
-            )
-
-            if response and response.get("message"):
-                print(f"   ✅ Ollama服务正常，模型 {self.model_name} 可用")
-                self.system_checks["ollama_service"] = True
-                self.system_checks["model_available"] = True
+            if api_key and api_key != 'your-api-key':
+                print(f"   ✅ API密钥已配置")
+                print(f"   🌐 API地址: {base_url or 'default'}")
+                print(f"   🧠 推理模型: {config.REASONING_API_MODEL}")
+                print(f"   💻 代码模型: {config.CODER_API_MODEL}")
+                print(f"   📝 嵌入模型: {config.EMBEDDING_API_MODEL}")
+                self.system_checks["api_models"] = True
                 return True
             else:
-                logger.error(f"模型 {self.model_name} 响应异常")
-                print(f"   ❌ 模型 {self.model_name} 响应异常")
-                return False
+                print("   ⚠️  API密钥未正确配置，将使用本地模型降级")
+                logger.warning("API密钥未配置，将使用本地模型")
+                # 可以选择继续使用本地模型
+                self.system_checks["api_models"] = True
+                return True
 
-        except ImportError:
-            logger.error("ollama库未安装")
-            print("   ❌ ollama库未安装")
-            print("   💡 请安装: pip install ollama")
-            return False
         except Exception as e:
-            logger.error(f"Ollama服务检查失败: {e}")
-            print(f"   ❌ Ollama服务检查失败: {e}")
+            logger.error(f"API模型检查失败: {e}")
+            print(f"   ❌ API模型检查失败: {e}")
             print("   💡 请检查:")
-            print("      1. Ollama服务是否启动: ollama serve")
-            print(f"      2. 模型是否已下载: ollama pull {self.model_name}")
+            print("      1. definitions_private.py是否正确配置")
+            print("      2. API密钥是否有效")
+            print("      3. 网络连接是否正常")
             return False
 
-    async def _initialize_rag_system(self) -> bool:
-        """初始化RAG系统"""
+    async def _initialize_hydrorag_system(self) -> bool:
+        """初始化HydroRAG系统"""
         try:
-            logger.info("初始化RAG系统...")
-            print("   📚 初始化RAG系统...")
+            logger.info("初始化HydroRAG系统...")
+            print("   📚 初始化HydroRAG系统...")
 
-            from hydrorag import RAGSystem
+            from hydrorag import HydroRAG
 
-            self.rag_system = RAGSystem()
+            self.hydrorag = HydroRAG()
 
-            # 首先检查RAG系统核心组件是否初始化成功
-            if not self.rag_system.is_initialized:
-                error_msgs = self.rag_system.initialization_errors
-                logger.error(f"RAG系统核心组件初始化失败: {error_msgs}")
-                print(f"   ❌ RAG系统核心组件初始化失败")
+            # 检查HydroRAG系统核心组件是否初始化成功
+            if not self.hydrorag.is_ready():
+                error_msgs = self.hydrorag.get_errors()
+                logger.error(f"HydroRAG系统核心组件初始化失败: {error_msgs}")
+                print(f"   ❌ HydroRAG系统核心组件初始化失败")
                 for error in error_msgs:
                     print(f"      - {error}")
                 return False
@@ -266,12 +267,12 @@ class HydroIntelligentAgent:
             doc_path = repo_path / "documents"
             if doc_path.exists():
                 logger.info("正在设置知识库...")
-                setup_result = self.rag_system.setup_from_raw_documents()
+                setup_result = await self.hydrorag.initialize_knowledge_base()
 
-                if setup_result.get("status") == "success":
+                if setup_result.get("success", False):
                     self.system_checks["rag_system"] = True
-                    print("   ✅ RAG系统初始化成功")
-                    logger.info("RAG系统初始化成功")
+                    print("   ✅ HydroRAG系统初始化成功")
+                    logger.info("HydroRAG系统初始化成功")
                     return True
                 else:
                     logger.error(f"知识库设置失败: {setup_result}")
@@ -279,89 +280,71 @@ class HydroIntelligentAgent:
                     return False
             else:
                 logger.warning("未找到documents文件夹")
-                print("   ⚠️  未找到documents文件夹，RAG系统将无法使用")
+                print("   ⚠️  未找到documents文件夹，HydroRAG系统将无法使用")
                 return False
 
         except Exception as e:
-            logger.error(f"RAG系统初始化失败: {e}")
-            print(f"   ❌ RAG系统初始化失败: {e}")
+            logger.error(f"HydroRAG系统初始化失败: {e}")
+            print(f"   ❌ HydroRAG系统初始化失败: {e}")
             return False
 
-    async def _initialize_workflow_generator(self) -> bool:
-        """初始化工作流生成器"""
+    async def _initialize_builder_system(self) -> bool:
+        """初始化Builder系统"""
         try:
-            logger.info("初始化工作流生成器...")
-            print("   ⚙️  初始化工作流生成器...")
+            logger.info("初始化Builder系统...")
+            print("   🏗️  初始化Builder系统...")
 
-            from workflow import create_workflow_generator, GenerationConfig
+            from builder import WorkflowBuilder
 
-            config = GenerationConfig(
-                llm_model=self.model_name,
-                enable_validation=True,
-                enable_feedback_learning=False,
-                rag_retrieval_k=8,  # 增加检索数量
-                rag_score_threshold=0.2,  # 降低阈值以获取更多相关知识
+            self.builder = WorkflowBuilder(
+                reasoning_model=self.reasoning_model,
+                enable_debug=self.enable_debug
             )
 
-            self.workflow_generator = create_workflow_generator(
-                rag_system=self.rag_system if self.enable_rag else None,
-                ollama_client=self.ollama_client,
-                config=config,
-            )
-
-            if self.workflow_generator:
-                print("   ✅ 工作流生成器初始化成功")
-                logger.info("工作流生成器初始化成功")
+            # 检查Builder就绪状态
+            readiness = self.builder.check_readiness()
+            if readiness["ready"]:
+                self.system_checks["builder_system"] = True
+                print("   ✅ Builder系统初始化成功")
+                logger.info("Builder系统初始化成功")
                 return True
             else:
-                logger.error("工作流生成器创建失败")
-                print("   ❌ 工作流生成器创建失败")
+                logger.error(f"Builder系统未就绪: {readiness['errors']}")
+                print(f"   ❌ Builder系统未就绪")
+                for error in readiness["errors"]:
+                    print(f"      - {error}")
                 return False
 
         except Exception as e:
-            logger.error(f"工作流生成器初始化失败: {e}")
-            print(f"   ❌ 工作流生成器初始化失败: {e}")
+            logger.error(f"Builder系统初始化失败: {e}")
+            print(f"   ❌ Builder系统初始化失败: {e}")
             return False
 
-    async def _initialize_tools(self) -> bool:
-        """初始化工具系统"""
+    async def _initialize_executor_system(self) -> bool:
+        """初始化Executor系统"""
         try:
-            if self.use_mcp_tools:
-                logger.info("初始化MCP工具...")
-                print("   🔌 初始化MCP工具...")
+            logger.info("初始化Executor系统...")
+            print("   ⚡ 初始化Executor系统...")
 
-                from hydromcp.tools import HydroModelMCPTools
+            from executor.main import ExecutorEngine
 
-                self.mcp_tools = HydroModelMCPTools()
+            self.executor = ExecutorEngine(
+                enable_debug=self.enable_debug
+            )
 
-                if self.mcp_tools:
-                    print("   ✅ MCP工具实例创建成功")
-                    logger.info("MCP工具实例创建成功")
-                    return True
-                else:
-                    logger.error("MCP工具实例创建失败")
-                    print("   ❌ MCP工具实例创建失败")
-                    return False
+            if self.executor:
+                self.system_checks["executor_system"] = True
+                print("   ✅ Executor系统初始化成功")
+                logger.info("Executor系统初始化成功")
+                return True
             else:
-                logger.info("加载本地工具...")
-                print("   🔧 加载本地工具...")
-
-                from tool.langchain_tool import get_hydromodel_tools
-
-                self.local_tools = get_hydromodel_tools()
-
-                if self.local_tools and len(self.local_tools) > 0:
-                    print(f"   ✅ 本地工具加载成功 (共{len(self.local_tools)}个工具)")
-                    logger.info(f"本地工具加载成功: {len(self.local_tools)}个")
-                    return True
-                else:
-                    logger.error("本地工具加载失败")
-                    print("   ❌ 本地工具加载失败")
-                    return False
+                logger.error("Executor系统创建失败")
+                print("   ❌ Executor系统创建失败")
+                return False
 
         except Exception as e:
-            logger.error(f"工具系统初始化失败: {e}")
-            print(f"   ❌ 工具系统初始化失败: {e}")
+            logger.error(f"Executor系统初始化失败: {e}")
+            print(f"   ❌ Executor系统初始化失败: {e}")
             return False
 
     async def _validate_system_readiness(self) -> bool:
@@ -369,8 +352,9 @@ class HydroIntelligentAgent:
         try:
             # 1. 检查必需组件是否已初始化
             required_components = [
-                "ollama_service",
-                "model_available",
+                "api_models",
+                "builder_system",
+                "executor_system",
             ]
 
             missing_components = [
@@ -383,40 +367,32 @@ class HydroIntelligentAgent:
                 logger.error(f"缺少必需组件: {missing_components}")
                 return False
 
-            # 2. 检查工作流生成器是否已初始化
-            if self.workflow_generator:
-                self.system_checks["workflow_system"] = True
-                print("   ✅ 工作流生成器就绪")
-                logger.info("工作流生成器就绪")
+            # 2. 检查Builder系统是否已初始化
+            if self.builder:
+                print("   ✅ Builder系统就绪")
+                logger.info("Builder系统就绪")
             else:
-                logger.error("工作流生成器未初始化")
-                print("   ❌ 工作流生成器未初始化")
+                logger.error("Builder系统未初始化")
+                print("   ❌ Builder系统未初始化")
                 return False
 
-            # 3. 检查工具系统是否已初始化
-            if self.use_mcp_tools and self.mcp_tools:
-                self.system_checks["tools_system"] = True
-                print("   ✅ MCP工具系统就绪")
-                logger.info("MCP工具系统就绪")
-            elif not self.use_mcp_tools and self.local_tools:
-                if len(self.local_tools) > 0:
-                    self.system_checks["tools_system"] = True
-                    print(f"   ✅ 本地工具系统就绪 (共{len(self.local_tools)}个工具)")
-                    logger.info(f"本地工具系统就绪: {len(self.local_tools)}个工具")
-                else:
-                    logger.error("本地工具列表为空")
-                    print("   ❌ 本地工具列表为空")
-                    return False
+            # 3. 检查Executor系统是否已初始化
+            if self.executor:
+                print("   ✅ Executor系统就绪")
+                logger.info("Executor系统就绪")
             else:
-                logger.error("工具系统未初始化")
-                print("   ❌ 工具系统未初始化")
+                logger.error("Executor系统未初始化")
+                print("   ❌ Executor系统未初始化")
                 return False
 
-            # 4. 检查RAG系统（如果启用）
+            # 4. 检查HydroRAG系统（如果启用）
             if self.enable_rag:
-                if not self.system_checks.get("rag_system", False):
-                    logger.warning("RAG系统未就绪，将以基础模式运行")
-                    print("   ⚠️  RAG系统未就绪，将以基础模式运行")
+                if self.hydrorag and self.system_checks.get("rag_system", False):
+                    print("   ✅ HydroRAG系统就绪")
+                    logger.info("HydroRAG系统就绪")
+                else:
+                    logger.warning("HydroRAG系统未就绪，将以基础模式运行")
+                    print("   ⚠️  HydroRAG系统未就绪，将以基础模式运行")
 
             return True
 
@@ -429,14 +405,13 @@ class HydroIntelligentAgent:
         """打印系统状态"""
         print("\n📊 系统组件状态:")
         status_items = [
-            ("Ollama服务", self.system_checks["ollama_service"]),
-            ("模型可用", self.system_checks["model_available"]),
+            ("API模型", self.system_checks["api_models"]),
+            ("Builder系统", self.system_checks["builder_system"]),
             (
-                "RAG系统",
+                "HydroRAG系统",
                 self.system_checks["rag_system"] if self.enable_rag else "已禁用",
             ),
-            ("工作流系统", self.system_checks["workflow_system"]),
-            ("工具系统", self.system_checks["tools_system"]),
+            ("Executor系统", self.system_checks["executor_system"]),
         ]
 
         for name, status in status_items:
@@ -452,9 +427,9 @@ class HydroIntelligentAgent:
 
         # 显示配置信息
         print(f"\n⚙️  系统配置:")
-        print(f"   🤖 LLM模型: {self.model_name}")
-        print(f"   📚 RAG系统: {'启用' if self.enable_rag else '禁用'}")
-        print(f"   🔧 工具类型: {'MCP工具' if self.use_mcp_tools else '本地工具'}")
+        print(f"   🧠 推理模型: {self.reasoning_model}")
+        print(f"   📚 HydroRAG系统: {'启用' if self.enable_rag else '禁用'}")
+        print(f"   🔄 执行模式: {self.mode}")
         print(f"   🐛 调试模式: {'启用' if self.enable_debug else '禁用'}")
 
         print(f"\n🎯 系统状态: {'🟢 就绪' if self.system_ready else '🔴 未就绪'}")
@@ -485,18 +460,18 @@ class HydroIntelligentAgent:
         print("=" * 80)
 
         try:
-            # 1. 生成工作流
-            print("🧠 正在生成智能工作流...")
-            workflow_result = await self._generate_workflow(user_query)
+            # 1. 使用Builder系统生成工作流
+            print("🏗️  正在使用Builder系统生成工作流...")
+            workflow_result = await self._build_workflow(user_query)
 
             if workflow_result["status"] != "success":
                 return workflow_result
 
             workflow = workflow_result["workflow"]
 
-            # 2. 执行工作流
-            print("\n⚡ 开始执行工作流...")
-            execution_result = await self._execute_workflow(workflow, user_query)
+            # 2. 使用Executor系统执行工作流
+            print("\n⚡ 使用Executor系统执行工作流...")
+            execution_result = await self._execute_workflow_with_executor(workflow, user_query)
 
             # 3. 生成回答
             print("\n📝 生成完整回答...")
@@ -554,188 +529,142 @@ class HydroIntelligentAgent:
                 "processing_time": processing_time,
             }
 
-    async def _generate_workflow(self, user_query: str) -> Dict[str, Any]:
-        """生成工作流"""
+    async def _build_workflow(self, user_query: str) -> Dict[str, Any]:
+        """使用Builder系统生成工作流"""
         try:
-            logger.info("开始工作流生成...")
+            logger.info("开始Builder工作流生成...")
 
             # 显示生成策略
             if self.enable_rag:
-                print("   📚 使用RAG增强工作流生成...")
+                print("   📚 使用HydroRAG增强工作流生成...")
             else:
                 print("   🔧 使用基础工作流生成...")
 
-            # 生成工作流
-            generation_result = self.workflow_generator.generate_workflow(user_query)
+            # 使用Builder系统生成工作流
+            build_result = self.builder.build_workflow(
+                user_query,
+                {"enable_rag": self.enable_rag, "mode": self.mode}
+            )
 
-            if generation_result.success and generation_result.workflow:
-                workflow = generation_result.workflow
+            if build_result.success and build_result.workflow:
+                workflow = build_result.workflow
 
-                print(f"   ✅ 工作流生成成功")
-                print(f"      工作流ID: {workflow.workflow_id}")
-                print(f"      任务数量: {len(workflow.tasks)}")
-                print(f"      生成时间: {generation_result.total_time:.2f}秒")
+                print(f"   ✅ 工作流构建成功")
+                print(f"      工作流ID: {workflow.get('workflow_id', 'unknown')}")
+                print(f"      名称: {workflow.get('name', 'Unknown Workflow')}")
+                print(f"      任务数量: {len(workflow.get('tasks', []))}")
+                print(f"      构建时间: {build_result.build_time:.2f}秒")
 
                 # 显示任务详情
                 print("   📋 任务列表:")
-                for i, task in enumerate(workflow.tasks, 1):
-                    print(f"      {i}. {task.name} (工具: {task.action})")
+                tasks = workflow.get("tasks", [])
+                for i, task in enumerate(tasks, 1):
+                    task_name = task.get("name", f"Task {i}")
+                    action = task.get("action", "unknown")
+                    print(f"      {i}. {task_name} (动作: {action})")
 
                 return {"status": "success", "workflow": workflow}
             else:
-                error_msg = generation_result.error_message or "工作流生成失败"
-                logger.error(f"工作流生成失败: {error_msg}")
-                print(f"   ❌ 工作流生成失败: {error_msg}")
+                error_msg = build_result.error_message or "工作流构建失败"
+                logger.error(f"工作流构建失败: {error_msg}")
+                print(f"   ❌ 工作流构建失败: {error_msg}")
                 return {"status": "error", "error": error_msg}
 
         except Exception as e:
-            logger.error(f"工作流生成异常: {e}")
-            print(f"   ❌ 工作流生成异常: {e}")
+            logger.error(f"Builder工作流生成异常: {e}")
+            print(f"   ❌ Builder工作流生成异常: {e}")
             return {"status": "error", "error": str(e)}
 
-    async def _execute_workflow(self, workflow, user_query: str) -> Dict[str, Any]:
-        """执行工作流"""
+    async def _execute_workflow_with_executor(self, workflow, user_query: str) -> Dict[str, Any]:
+        """使用Executor系统执行工作流"""
         try:
-            logger.info(f"开始执行工作流: {workflow.name}")
+            workflow_name = workflow.get("name", "Unknown Workflow")
+            logger.info(f"开始使用Executor系统执行工作流: {workflow_name}")
 
             # 显示执行计划
-            print(f"📋 工作流: {workflow.name}")
-            print(f"📝 描述: {workflow.description}")
+            print(f"📋 工作流: {workflow_name}")
+            print(f"📝 描述: {workflow.get('description', '无描述')}")
+            tasks = workflow.get("tasks", [])
             print("🔄 执行步骤:")
-            for i, task in enumerate(workflow.tasks, 1):
-                print(f"   {i}. {task.name}")
+            for i, task in enumerate(tasks, 1):
+                task_name = task.get("name", f"Task {i}")
+                print(f"   {i}. {task_name}")
             print()
 
-            execution_results = []
-            successful_tasks = 0
-            total_tasks = len(workflow.tasks)
+            # 将workflow转换为JSON格式供Executor使用
+            import json
+            workflow_json = json.dumps(workflow, ensure_ascii=False, indent=2)
 
-            # 按执行顺序处理任务
-            for order_group in workflow.execution_order:
-                for task_id in order_group:
-                    task = next(
-                        (t for t in workflow.tasks if t.task_id == task_id), None
-                    )
-                    if not task:
-                        continue
+            # 根据模式选择执行方式
+            execution_mode = self.mode if self.mode != "auto" else "sequential"
+            print(f"🎯 执行模式: {execution_mode}")
 
-                    print(f"执行任务: {task.name} (工具: {task.action})")
-                    task_start = time.time()
+            # 使用Executor系统执行
+            execution_result = self.executor.execute_workflow(
+                workflow_json,
+                mode=execution_mode
+            )
 
-                    try:
-                        # 根据工具类型执行任务
-                        if self.use_mcp_tools:
-                            result = await self._execute_mcp_task(task)
-                        else:
-                            result = await self._execute_local_task(task)
+            # 处理执行结果
+            if execution_result:
+                print(f"\n📊 Executor执行摘要:")
+                print(f"   执行ID: {execution_result.execution_id}")
+                print(f"   状态: {execution_result.status}")
+                print(f"   任务结果数: {len(execution_result.task_results)}")
 
-                        task_time = time.time() - task_start
+                # 统计成功失败
+                successful_tasks = sum(1 for tr in execution_result.task_results
+                                     if tr.status.value == "completed")
+                total_tasks = len(execution_result.task_results)
+                failed_tasks = total_tasks - successful_tasks
+                overall_success = successful_tasks > 0
+                success_rate = successful_tasks / total_tasks if total_tasks > 0 else 0
 
-                        task_result = {
-                            "task_id": task.task_id,
-                            "task_name": task.name,
-                            "tool": task.action,
-                            "success": result.get("success", False),
-                            "time_taken": task_time,
-                            "result": result,
-                        }
+                print(f"   成功率: {success_rate:.1%} ({successful_tasks}/{total_tasks})")
 
-                        if result.get("success"):
-                            successful_tasks += 1
-                            print(f"   ✅ 任务成功，耗时{task_time:.2f}秒")
-                        else:
-                            print(f"   ❌ 任务失败: {result.get('error', '未知错误')}")
+                # 转换为统一的执行摘要格式
+                execution_summary = {
+                    "overall_success": overall_success,
+                    "total_tasks": total_tasks,
+                    "successful_tasks": successful_tasks,
+                    "failed_tasks": failed_tasks,
+                    "success_rate": success_rate,
+                    "execution_result": execution_result,
+                    "task_results": [{
+                        "task_id": tr.task_id,
+                        "task_name": tr.task_id,  # Executor中的任务结构
+                        "success": tr.status.value == "completed",
+                        "result": tr.output if hasattr(tr, 'output') else None,
+                        "error": tr.error if tr.error else None,
+                        "time_taken": tr.execution_time if hasattr(tr, 'execution_time') else 0
+                    } for tr in execution_result.task_results]
+                }
 
-                        execution_results.append(task_result)
-
-                    except Exception as e:
-                        task_time = time.time() - task_start
-                        task_result = {
-                            "task_id": task.task_id,
-                            "task_name": task.name,
-                            "tool": task.action,
-                            "success": False,
-                            "time_taken": task_time,
-                            "error": str(e),
-                        }
-                        execution_results.append(task_result)
-                        print(f"   ❌ 任务执行异常: {e}")
-
-            # 生成执行摘要
-            overall_success = successful_tasks > 0
-            success_rate = successful_tasks / total_tasks if total_tasks > 0 else 0
-
-            execution_summary = {
-                "overall_success": overall_success,
-                "total_tasks": total_tasks,
-                "successful_tasks": successful_tasks,
-                "failed_tasks": total_tasks - successful_tasks,
-                "success_rate": success_rate,
-                "task_results": execution_results,
-            }
-
-            print(f"\n📊 执行摘要:")
-            print(f"   状态: {'✅ 成功' if overall_success else '❌ 失败'}")
-            print(f"   成功率: {success_rate:.1%} ({successful_tasks}/{total_tasks})")
-
-            return execution_summary
+                return execution_summary
+            else:
+                logger.error("Executor返回空结果")
+                print(f"   ❌ Executor执行失败: 返回空结果")
+                return {
+                    "overall_success": False,
+                    "error": "Executor返回空结果",
+                    "total_tasks": len(tasks),
+                    "successful_tasks": 0,
+                    "failed_tasks": 1,
+                    "task_results": [],
+                }
 
         except Exception as e:
-            logger.error(f"工作流执行失败: {e}")
-            print(f"   ❌ 工作流执行失败: {e}")
+            logger.error(f"Executor工作流执行失败: {e}")
+            print(f"   ❌ Executor工作流执行失败: {e}")
             return {
                 "overall_success": False,
                 "error": str(e),
-                "total_tasks": len(workflow.tasks) if workflow else 0,
+                "total_tasks": len(workflow.get("tasks", [])) if workflow else 0,
                 "successful_tasks": 0,
                 "failed_tasks": 1,
                 "task_results": [],
             }
 
-    async def _execute_mcp_task(self, task) -> Dict[str, Any]:
-        """执行MCP任务"""
-        try:
-            # 调用对应的MCP工具
-            if task.action == "get_model_params":
-                result = self.mcp_tools.get_model_params(**task.parameters)
-            elif task.action == "prepare_data":
-                result = self.mcp_tools.prepare_data(**task.parameters)
-            elif task.action == "calibrate_model":
-                result = self.mcp_tools.calibrate_model(**task.parameters)
-            elif task.action == "evaluate_model":
-                result = self.mcp_tools.evaluate_model(**task.parameters)
-            else:
-                result = {"success": False, "error": f"不支持的MCP工具: {task.action}"}
-
-            return result
-
-        except Exception as e:
-            logger.error(f"MCP任务执行失败: {e}")
-            return {"success": False, "error": f"MCP任务执行异常: {str(e)}"}
-
-    async def _execute_local_task(self, task) -> Dict[str, Any]:
-        """执行本地任务"""
-        try:
-            # 查找对应的本地工具
-            tool = next((t for t in self.local_tools if t.name == task.action), None)
-
-            if not tool:
-                return {"success": False, "error": f"未找到本地工具: {task.action}"}
-
-            # 执行本地工具
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: tool.run(task.parameters)
-            )
-
-            return {
-                "success": True,
-                "result": result,
-                "message": f"本地工具 {task.action} 执行成功",
-            }
-
-        except Exception as e:
-            logger.error(f"本地任务执行失败: {e}")
-            return {"success": False, "error": f"本地任务执行异常: {str(e)}"}
 
     async def _generate_final_answer(
         self, user_query: str, workflow, execution_result: Dict[str, Any]
@@ -754,16 +683,23 @@ class HydroIntelligentAgent:
                 f"根据您的查询「{user_query}」，我执行了以下水文模型工作流："
             )
             answer_parts.append(f"")
-            answer_parts.append(f"🔧 **工作流名称**: {workflow.name}")
-            answer_parts.append(f"📝 **工作流描述**: {workflow.description}")
+            workflow_name = workflow.get("name", "Unknown Workflow")
+            workflow_description = workflow.get("description", "无描述")
+            tasks = workflow.get("tasks", [])
+
+            answer_parts.append(f"🔧 **工作流名称**: {workflow_name}")
+            answer_parts.append(f"📝 **工作流描述**: {workflow_description}")
             answer_parts.append(f"")
 
             # 2. 执行计划详情
-            answer_parts.append(f"📋 **执行计划** ({len(workflow.tasks)} 个步骤):")
-            for i, task in enumerate(workflow.tasks, 1):
-                answer_parts.append(f"   {i}. {task.name} (工具: {task.action})")
-                if task.description and task.description != task.name:
-                    answer_parts.append(f"      描述: {task.description}")
+            answer_parts.append(f"📋 **执行计划** ({len(tasks)} 个步骤):")
+            for i, task in enumerate(tasks, 1):
+                task_name = task.get("name", f"Task {i}")
+                task_action = task.get("action", "unknown")
+                answer_parts.append(f"   {i}. {task_name} (动作: {task_action})")
+                task_description = task.get("description", "")
+                if task_description and task_description != task_name:
+                    answer_parts.append(f"      描述: {task_description}")
             answer_parts.append(f"")
 
             # 3. 执行结果总览
@@ -865,11 +801,12 @@ class HydroIntelligentAgent:
         overall_success = execution_result.get("overall_success", False)
         successful_tasks = execution_result.get("successful_tasks", 0)
         total_tasks = execution_result.get("total_tasks", 0)
+        workflow_name = workflow.get("name", "Unknown Workflow")
 
         if overall_success:
             return f"""📋 执行报告
 
-根据您的查询「{user_query}」，我成功执行了 {workflow.name} 工作流。
+根据您的查询「{user_query}」，我成功执行了 {workflow_name} 工作流。
 
 ✅ 执行状态: 成功
 📊 完成步骤: {successful_tasks}/{total_tasks}
@@ -885,7 +822,7 @@ class HydroIntelligentAgent:
         else:
             return f"""📋 执行报告
 
-根据您的查询「{user_query}」，我执行了 {workflow.name} 工作流。
+根据您的查询「{user_query}」，我执行了 {workflow_name} 工作流。
 
 ⚠️  执行状态: 部分完成
 📊 完成步骤: {successful_tasks}/{total_tasks}
@@ -904,14 +841,14 @@ class HydroIntelligentAgent:
         """获取系统信息"""
         return {
             "session_id": self.current_session_id,
-            "model_name": self.model_name,
+            "reasoning_model": self.reasoning_model,
             "system_ready": self.system_ready,
             "system_checks": self.system_checks,
             "enable_rag": self.enable_rag,
-            "use_mcp_tools": self.use_mcp_tools,
-            "tools_count": (
-                len(self.local_tools) if not self.use_mcp_tools else "MCP工具"
-            ),
+            "execution_mode": self.mode,
+            "builder_ready": self.builder is not None,
+            "hydrorag_ready": self.hydrorag is not None,
+            "executor_ready": self.executor is not None,
             "session_count": len(self.session_history),
             "uptime": (datetime.now() - self.start_time).total_seconds(),
         }
@@ -925,11 +862,11 @@ class HydroIntelligentAgent:
         try:
             logger.info("开始清理系统资源...")
 
-            # 清理各种资源
+            # 清理三层架构组件
             components_to_cleanup = [
-                self.rag_system,
-                self.workflow_generator,
-                self.mcp_tools,
+                self.builder,
+                self.hydrorag,
+                self.executor,
             ]
 
             for component in components_to_cleanup:
@@ -969,7 +906,7 @@ def print_banner():
     )
 
 
-async def interactive_mode(agent: HydroIntelligentAgent, killer: GracefulKiller):
+async def interactive_mode(agent: HydroAgent, killer: GracefulKiller):
     """交互模式"""
     print("\n🎯 进入对话模式 (输入 'quit'、'exit' 或按 Ctrl+C 退出)")
     print("💡 支持的任务类型:")
@@ -1013,17 +950,17 @@ async def interactive_mode(agent: HydroIntelligentAgent, killer: GracefulKiller)
                     info = agent.get_system_info()
                     print(f"\n📊 系统信息:")
                     print(f"   会话ID: {info['session_id']}")
-                    print(f"   模型: {info['model_name']}")
+                    print(f"   推理模型: {info['reasoning_model']}")
                     print(
                         f"   系统状态: {'🟢 就绪' if info['system_ready'] else '🔴 未就绪'}"
                     )
                     print(
-                        f"   RAG系统: {'✅ 启用' if info['enable_rag'] else '❌ 禁用'}"
+                        f"   HydroRAG系统: {'✅ 启用' if info['enable_rag'] else '❌ 禁用'}"
                     )
-                    print(
-                        f"   工具类型: {'MCP工具' if info['use_mcp_tools'] else '本地工具'}"
-                    )
-                    print(f"   工具数量: {info['tools_count']}")
+                    print(f"   执行模式: {info['execution_mode']}")
+                    print(f"   Builder系统: {'✅ 就绪' if info['builder_ready'] else '❌ 未就绪'}")
+                    print(f"   HydroRAG: {'✅ 就绪' if info['hydrorag_ready'] else '❌ 未就绪'}")
+                    print(f"   Executor系统: {'✅ 就绪' if info['executor_ready'] else '❌ 未就绪'}")
                     print(f"   会话数量: {info['session_count']}")
                     print(f"   运行时间: {info['uptime']:.1f}秒")
                 elif user_input.lower() == "history":
@@ -1085,13 +1022,14 @@ async def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="智能水文模型助手 - 新版架构")
     parser.add_argument(
-        "--model", "-m", type=str, default="qwen3:8b", help="指定LLM模型名称"
+        "--model", "-m", type=str, default="qwen-turbo", help="指定推理模型名称"
     )
     parser.add_argument("--debug", "-d", action="store_true", help="启用调试模式")
     parser.add_argument("--query", "-q", type=str, help="直接执行查询")
-    parser.add_argument("--no-rag", action="store_true", help="禁用RAG系统")
+    parser.add_argument("--no-rag", action="store_true", help="禁用HydroRAG系统")
     parser.add_argument(
-        "--local-tools", action="store_true", help="使用本地工具而非MCP工具"
+        "--mode", type=str, choices=["auto", "sequential", "react"],
+        default="auto", help="执行模式选择"
     )
 
     args = parser.parse_args()
@@ -1110,11 +1048,11 @@ async def main():
         os.chdir(project_root)
 
         # 创建并初始化智能体
-        agent = HydroIntelligentAgent(
-            model_name=args.model,
+        agent = HydroAgent(
+            reasoning_model=args.model,
             enable_debug=args.debug,
             enable_rag=not args.no_rag,  # 默认启用RAG，除非指定--no-rag
-            use_mcp_tools=not args.local_tools,  # 默认使用MCP工具，除非指定--local-tools
+            mode=args.mode,  # 使用命令行指定的执行模式
         )
 
         # 检查是否在初始化期间收到退出信号

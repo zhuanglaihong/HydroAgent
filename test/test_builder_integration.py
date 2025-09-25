@@ -291,7 +291,8 @@ def test_workflow_builder():
                     print(f"      依赖: {dependencies}")
 
             # 保存工作流到文件
-            output_file = project_root / "test" / f"workflow_{query.replace(' ', '_').replace('，', '_')[:20]}.json"
+            workflow_id = workflow.get('workflow_id', 'unknown_workflow')
+            output_file = project_root / "workflow" / "generated" / f"{workflow_id}.json"
             try:
                 with open(output_file, 'w', encoding='utf-8') as f:
                     json.dump(workflow, f, ensure_ascii=False, indent=2)
