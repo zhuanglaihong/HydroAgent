@@ -1,5 +1,11 @@
 """
-数据准备工具
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 数据准备工具
+FilePath: \HydroAgent\executor\tools\prepare_data_tool.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import sys
@@ -52,10 +58,29 @@ class PrepareDataTool(BaseTool):
                 self.logger.error(f"target_data_scale 必须是 {valid_scales} 中的一个")
                 return False
 
-            # 检查数据目录是否存在
-            if not os.path.exists(data_dir):
-                self.logger.error(f"数据目录不存在: {data_dir}")
-                return False
+            # 尝试多种数据目录路径
+            possible_paths = [
+                data_dir,
+                os.path.join(DATASET_DIR, data_dir),
+                f"data/{data_dir}",
+                data_dir.replace("data/", DATASET_DIR + "/")
+            ]
+
+            # 检查是否存在任何可用的数据目录
+            valid_path_found = False
+            for path in possible_paths:
+                if os.path.exists(path):
+                    valid_path_found = True
+                    break
+
+            if not valid_path_found:
+                # 检查默认数据目录是否存在，如果存在就使用默认目录
+                if os.path.exists(DATASET_DIR):
+                    self.logger.warning(f"指定数据目录不存在: {data_dir}，将使用默认数据目录: {DATASET_DIR}")
+                    return True
+                else:
+                    self.logger.error(f"数据目录不存在: {data_dir}，可尝试的路径: {possible_paths}")
+                    return False
 
             return True
 
@@ -96,9 +121,29 @@ class PrepareDataTool(BaseTool):
         target_data_scale = parameters.get("target_data_scale", "D")
 
         try:
-            # 确保数据目录存在
-            if not os.path.exists(data_dir):
-                return self._create_error_result(f"数据目录不存在: {data_dir}")
+            # 寻找有效的数据目录路径
+            valid_data_dir = None
+            possible_paths = [
+                data_dir,
+                os.path.join(DATASET_DIR, data_dir),
+                f"data/{data_dir}",
+                data_dir.replace("data/", DATASET_DIR + "/")
+            ]
+
+            for path in possible_paths:
+                if os.path.exists(path):
+                    valid_data_dir = path
+                    break
+
+            # 如果都不存在，使用默认数据目录
+            if valid_data_dir is None:
+                if os.path.exists(DATASET_DIR):
+                    valid_data_dir = DATASET_DIR
+                    self.logger.warning(f"指定数据目录不存在: {data_dir}，使用默认目录: {DATASET_DIR}")
+                else:
+                    return self._create_error_result(f"数据目录不存在: {data_dir}")
+
+            data_dir = valid_data_dir
 
             # 检查数据目录中的文件
             data_files = self._check_data_files(data_dir)

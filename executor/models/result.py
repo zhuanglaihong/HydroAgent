@@ -1,5 +1,11 @@
 """
-执行结果数据模型
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 执行结果数据模型
+FilePath: \HydroAgent\executor\models\result.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 from typing import Dict, List, Any, Optional, Union
@@ -40,6 +46,7 @@ class TaskResult(BaseModel):
     # 日志和调试信息
     logs: List[str] = Field(default_factory=list, description="执行日志")
     debug_info: Dict[str, Any] = Field(default_factory=dict, description="调试信息")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="任务元数据")
 
     def calculate_duration(self) -> Optional[float]:
         """计算执行时长"""

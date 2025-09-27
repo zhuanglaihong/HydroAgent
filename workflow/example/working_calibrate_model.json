@@ -1,0 +1,64 @@
+{
+  "workflow_id": "working_calibrate_model",
+  "name": "模型率定工作流",
+  "description": "可运行的GR4J模型率定工作流",
+  "execution_mode": "linear",
+  "tasks": [
+    {
+      "task_id": "task_1",
+      "name": "率定GR4J模型",
+      "description": "使用SCE-UA算法对GR4J水文模型进行参数率定",
+      "tool_name": "calibrate_model",
+      "type": "simple",
+      "parameters": {
+        "data_type": "owndata",
+        "data_dir": "D:\\MCP\\HydroAgent\\data\\camels_11532500",
+        "result_dir": "D:\\MCP\\HydroAgent\\result",
+        "exp_name": "exp001",
+        "cv_fold": 1,
+        "warmup": 720,
+        "periods": ["2000-01-01", "2023-12-31"],
+        "train_period": ["2000-01-01", "2018-12-31"],
+        "test_period": ["2019-01-01", "2023-12-31"],
+        "basin_ids": ["11532500"],
+        "model": {
+          "name": "gr4j",
+          "source_type": "sources",
+          "source_book": "HF",
+          "kernel_size": 15,
+          "time_interval_hours": 24
+        },
+        "param_range_file": "D:\\MCP\\hydromodel\\hydromodel\\models\\param.yaml",
+        "algorithm": {
+          "name": "SCE_UA",
+          "random_seed": 1234,
+          "rep": 100,
+          "ngs": 30,
+          "kstop": 5,
+          "peps": 0.05,
+          "pcento": 0.05
+        },
+        "loss": {
+          "type": "time_series",
+          "obj_func": "RMSE",
+          "events": null
+        }
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 1800
+      },
+      "expected_output": "率定后的模型参数文件和配置信息"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-27T11:00:00.000000",
+    "estimated_duration": "30分钟",
+    "complexity": "高",
+    "based_on_script": "script/calibrate_gr.py",
+    "requires_prepared_data": true,
+    "model_type": "GR4J",
+    "algorithm": "SCE-UA"
+  }
+}

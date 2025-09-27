@@ -35,7 +35,7 @@ if __name__ == "__main__":
         "--origin_data_dir",
         type=str,
         help="Path to your hydrological data foler",
-        default="D:\Project\MCP\hydromodel\data\camels_11532500",
+        default="D:\\MCP\\HydroAgent\\data\\camels_11532500",
         # default="C:\\Users\\wenyu\\Downloads\\biliuhe",
     )
     parser.add_argument(

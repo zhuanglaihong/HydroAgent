@@ -1,4 +1,12 @@
 """
+Author: zhuanglaihong
+Date: 2024-09-26 16:45:00
+LastEditTime: 2024-09-26 16:45:00
+LastEditors: zhuanglaihong
+Description: 文件路径处理工具函数 - 统一处理项目中的文件路径问题
+FilePath: \\HydroAgent\\utils\\filepath.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
+
 filepath.py - 文件路径处理工具包
 
 功能：
@@ -8,13 +16,24 @@ filepath.py - 文件路径处理工具包
 4. 将相对路径转换为绝对路径
 5. 修复常见路径问题
 6. 智能处理AI生成的路径问题
+7. 项目特定的路径处理（数据目录、结果目录等）
 """
 
 import os
 import re
 import sys
 from pathlib import Path
-from typing import Union, Tuple, Optional
+from typing import Union, Tuple, Optional, Dict, Any
+
+# 导入项目配置
+try:
+    import definitions
+except ImportError:
+    # 如果无法导入definitions，使用默认值
+    class definitions:
+        PROJECT_DIR = os.getcwd()
+        RESULT_DIR = "result"
+        DATASET_DIR = "data/camels_11532500"
 
 # 定义操作系统类型常量
 WINDOWS = sys.platform.startswith('win')
@@ -318,3 +337,239 @@ if __name__ == "__main__":
     base = "/base/path"
     target = "/base/path/subdir/file.txt"
     print(f"{target} 相对于 {base}: {get_relative_path(target, base)}")
+
+
+# ============================================================================
+# 项目特定的路径处理函数
+# ============================================================================
+
+def get_project_root() -> Path:
+    """
+    获取项目根目录路径
+
+    Returns:
+        Path: 项目根目录路径
+    """
+    return Path(definitions.PROJECT_DIR)
+
+
+def resolve_data_path(data_dir: Union[str, Path]) -> Path:
+    """
+    解析数据目录路径
+
+    Args:
+        data_dir: 数据目录路径（可以是相对或绝对路径）
+
+    Returns:
+        Path: 解析后的绝对路径
+    """
+    data_path = Path(data_dir)
+
+    if data_path.is_absolute():
+        return data_path
+
+    # 如果是相对路径，先尝试相对于项目根目录
+    project_relative = get_project_root() / data_path
+    if project_relative.exists():
+        return project_relative
+
+    # 然后尝试相对于DATASET_DIR
+    dataset_relative = Path(definitions.DATASET_DIR) / data_path
+    if dataset_relative.exists():
+        return dataset_relative.resolve()
+
+    # 最后返回相对于项目根目录的路径（即使不存在）
+    return project_relative
+
+
+def resolve_result_path(result_dir: Union[str, Path]) -> Path:
+    """
+    解析结果目录路径
+
+    Args:
+        result_dir: 结果目录路径（可以是相对或绝对路径）
+
+    Returns:
+        Path: 解析后的绝对路径
+    """
+    result_path = Path(result_dir)
+
+    if result_path.is_absolute():
+        return result_path
+
+    # 如果是相对路径，先尝试相对于项目根目录
+    project_relative = get_project_root() / result_path
+    if project_relative.exists():
+        return project_relative
+
+    # 然后尝试相对于RESULT_DIR
+    result_relative = Path(definitions.RESULT_DIR) / result_path
+    return to_absolute_path(result_relative)
+
+
+def process_workflow_paths(workflow: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    处理工作流中的路径参数，将相对路径转换为绝对路径
+
+    Args:
+        workflow: 工作流字典
+
+    Returns:
+        Dict[str, Any]: 处理后的工作流字典
+    """
+    processed_workflow = workflow.copy()
+
+    if "tasks" in processed_workflow:
+        for task in processed_workflow["tasks"]:
+            if "parameters" in task:
+                parameters = task["parameters"]
+
+                # 处理常见的路径参数
+                if "data_dir" in parameters:
+                    parameters["data_dir"] = str(resolve_data_path(parameters["data_dir"]))
+
+                if "result_dir" in parameters:
+                    parameters["result_dir"] = str(resolve_result_path(parameters["result_dir"]))
+
+                if "output_dir" in parameters:
+                    parameters["output_dir"] = str(to_absolute_path(parameters["output_dir"]))
+
+                if "input_file" in parameters:
+                    parameters["input_file"] = str(to_absolute_path(parameters["input_file"]))
+
+                if "output_file" in parameters:
+                    parameters["output_file"] = str(to_absolute_path(parameters["output_file"]))
+
+                if "config_file" in parameters:
+                    parameters["config_file"] = str(to_absolute_path(parameters["config_file"]))
+
+                # 处理其他可能包含路径的参数
+                for key, value in parameters.items():
+                    if isinstance(value, str) and value:  # 确保不是空字符串
+                        # 检查是否是路径格式的字符串（包含路径分隔符且不是参数引用）
+                        if (("/" in value or "\\" in value) and not value.startswith("${") and len(value) > 1):
+                            # 尝试解析为路径
+                            try:
+                                # 使用简单的绝对路径转换
+                                if not os.path.isabs(value):
+                                    resolved_path = os.path.abspath(value)
+                                else:
+                                    resolved_path = value
+                                parameters[key] = resolved_path
+                            except Exception as e:
+                                # 如果解析失败，保持原值
+                                pass
+
+    return processed_workflow
+
+
+def ensure_directory_exists(path: Union[str, Path]) -> Path:
+    """
+    确保目录存在，如果不存在则创建
+
+    Args:
+        path: 目录路径
+
+    Returns:
+        Path: 确保存在的目录路径
+    """
+    dir_path = Path(path)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    return dir_path
+
+
+def create_output_path(base_dir: Union[str, Path], filename: str) -> Path:
+    """
+    创建输出文件路径，自动确保目录存在
+
+    Args:
+        base_dir: 基础目录
+        filename: 文件名
+
+    Returns:
+        Path: 完整的输出文件路径
+    """
+    base_path = to_absolute_path(base_dir)
+    ensure_directory_exists(base_path)
+    return Path(base_path) / filename
+
+
+def is_path_parameter(value: Any) -> bool:
+    """
+    判断参数值是否可能是路径
+
+    Args:
+        value: 参数值
+
+    Returns:
+        bool: 是否是路径参数
+    """
+    if not isinstance(value, str):
+        return False
+
+    # 排除参数引用格式
+    if value.startswith("${") and value.endswith("}"):
+        return False
+
+    # 检查是否包含路径分隔符
+    if "/" in value or "\\" in value:
+        return True
+
+    # 检查是否是已知的路径模式
+    path_patterns = ["data", "result", "output", "input", "temp", "cache", "log"]
+    return any(pattern in value.lower() for pattern in path_patterns)
+
+
+def convert_paths_to_absolute(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将参数字典中的路径值转换为绝对路径
+
+    Args:
+        parameters: 参数字典
+
+    Returns:
+        Dict[str, Any]: 转换后的参数字典
+    """
+    converted_params = parameters.copy()
+
+    for key, value in converted_params.items():
+        if is_path_parameter(value):
+            try:
+                # 根据参数名称选择合适的路径解析方式
+                if "data" in key.lower():
+                    converted_params[key] = str(resolve_data_path(value))
+                elif "result" in key.lower() or "output" in key.lower():
+                    converted_params[key] = str(resolve_result_path(value))
+                else:
+                    converted_params[key] = str(to_absolute_path(value))
+            except Exception:
+                # 解析失败时保持原值
+                pass
+
+    return converted_params
+
+
+def validate_path_exists(path: Union[str, Path], create_if_missing: bool = False) -> bool:
+    """
+    验证路径是否存在
+
+    Args:
+        path: 要验证的路径
+        create_if_missing: 如果缺失是否创建（仅对目录有效）
+
+    Returns:
+        bool: 路径是否存在或成功创建
+    """
+    path = Path(path)
+
+    if path.exists():
+        return True
+
+    if create_if_missing and not path.suffix:  # 没有扩展名，视为目录
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return True
+        except Exception:
+            return False
+
+    return False

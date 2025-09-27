@@ -1,5 +1,11 @@
 """
-工具注册表 - 管理所有可用工具
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 工具注册表 - 管理所有可用工具
+FilePath: \HydroAgent\executor\tools\registry.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

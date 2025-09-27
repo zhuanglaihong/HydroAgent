@@ -1,5 +1,11 @@
 """
-基础工具接口定义
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 基础工具接口定义
+FilePath: \HydroAgent\executor\tools\base_tool.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 from abc import ABC, abstractmethod

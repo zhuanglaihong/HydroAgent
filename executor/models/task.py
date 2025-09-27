@@ -1,5 +1,11 @@
 """
-任务数据模型
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 任务数据模型
+FilePath: \HydroAgent\executor\models\task.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 from typing import Dict, List, Any, Optional, Union
@@ -58,6 +64,7 @@ class Task(BaseModel):
     success_criteria: SuccessCriteria = Field(default_factory=SuccessCriteria, description="成功标准")
     timeout: Optional[int] = Field(None, description="超时时间(秒)")
     retry_count: int = Field(default=0, description="重试次数")
+    conditions: Dict[str, Any] = Field(default_factory=dict, description="执行条件")
 
     @validator('tool_name')
     def validate_simple_task(cls, v, values):

@@ -1,5 +1,11 @@
 """
-数据模型模块
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 数据模型模块
+FilePath: \HydroAgent\executor\models\__init__.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 from .workflow import Workflow, WorkflowTarget, WorkflowSettings

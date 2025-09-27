@@ -1,5 +1,11 @@
 """
-图表生成器 - 使用各种图表库生成可视化图表
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 图表生成器 - 使用各种图表库生成可视化图表
+FilePath: \HydroAgent\executor\visualization\chart_generator.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

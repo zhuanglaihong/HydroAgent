@@ -260,6 +260,7 @@ Copyright (c) 2023-2024 [Project Name]. All rights reserved.
 - **script/** - All executable scripts and utilities
   - Standalone scripts for specific tasks
   - Utility scripts for data processing, setup, etc.
+  - **IMPORTANT**: All run_* scripts (interactive runners) belong here
   - Should be executable and include proper argument parsing
   - Include comprehensive README.md for script descriptions
 

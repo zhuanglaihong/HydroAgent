@@ -1,5 +1,11 @@
 """
-任务分发器 - 智能任务路由和分发
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 任务分发器 - 智能任务路由和分发
+FilePath: \HydroAgent\executor\core\task_dispatcher.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

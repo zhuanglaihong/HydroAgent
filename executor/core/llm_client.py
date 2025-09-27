@@ -1,5 +1,11 @@
 """
-LLM客户端 - 统一的大语言模型调用接口
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: LLM客户端 - 统一的大语言模型调用接口
+FilePath: \HydroAgent\executor\core\llm_client.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

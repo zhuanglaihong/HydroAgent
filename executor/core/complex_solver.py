@@ -1,9 +1,17 @@
 """
-复杂任务解决器 - 使用LLM+RAG生成解决方案
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 复杂任务解决器 - 使用LLM+RAG生成解决方案
+FilePath: \HydroAgent\executor\core\complex_solver.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging
 import json
+import os
+from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -12,6 +20,12 @@ from ..models.task import Task, TaskType
 from ..models.result import TaskResult, ExecutionStatus
 from .llm_client import LLMClientFactory, LLMMessage, BaseLLMClient
 from .simple_executor import SimpleTaskExecutor
+
+# 尝试导入配置
+try:
+    from definitions import DATASET_DIR
+except ImportError:
+    DATASET_DIR = "data"
 
 
 class ToolCall(BaseModel):
@@ -210,6 +224,10 @@ class ComplexTaskSolver:
                     continue
 
                 # 解析参数中的引用
+                self.logger.debug(f"当前步骤 {step.step_id} 上下文: {list(current_context.keys())}")
+                for key, value in current_context.items():
+                    if isinstance(value, dict) and 'output' in value:
+                        self.logger.debug(f"  {key}.output: {list(value['output'].keys())}")
                 resolved_params = self._resolve_step_parameters(step.parameters, current_context)
 
                 # 判断是否需要代码生成
@@ -297,8 +315,14 @@ class ComplexTaskSolver:
 
     def _build_solution_prompt(self, task: Task, knowledge_chunks: List[Dict[str, Any]]) -> str:
         """构建解决方案提示词"""
+        # 检查可用的数据目录
+        available_data_dirs = self._get_available_data_directories()
+
         prompt = f"""
 任务描述: {task.description}
+
+可用数据目录: {', '.join(available_data_dirs)}
+注意: 在调用prepare_data工具时，请使用上述实际存在的数据目录，不要使用不存在的虚假路径。
 
 相关知识:
 {self._format_knowledge_chunks(knowledge_chunks)}
@@ -307,8 +331,9 @@ class ComplexTaskSolver:
 重点考虑:
 1. 任务的具体需求和目标
 2. 工具之间的依赖关系和数据流
-3. 参数的正确设置和引用
+3. 参数的正确设置和引用（特别是数据目录路径）
 4. 步骤的逻辑顺序
+5. 使用实际存在的数据目录
 
 请生成JSON格式的解决方案:
 """
@@ -435,11 +460,21 @@ class ComplexTaskSolver:
         """解析参数引用"""
         parts = ref_path.split('.')
         value = context
+        current_path = []
 
         for part in parts:
+            current_path.append(part)
             if isinstance(value, dict) and part in value:
                 value = value[part]
             else:
+                # 提供更详细的错误信息
+                available_keys = list(value.keys()) if isinstance(value, dict) else "不是字典类型"
+                current_path_str = '.'.join(current_path)
+                self.logger.error(f"引用解析失败: {ref_path}")
+                self.logger.error(f"  - 失败位置: {current_path_str}")
+                self.logger.error(f"  - 当前值类型: {type(value)}")
+                if isinstance(value, dict):
+                    self.logger.error(f"  - 可用键: {list(value.keys())}")
                 raise ValueError(f"无法解析引用: {ref_path}")
 
         return value
@@ -553,6 +588,35 @@ class ComplexTaskSolver:
                 formatted.append(f"- {key}: {value}")
 
         return "\n".join(formatted)
+
+    def _get_available_data_directories(self) -> List[str]:
+        """获取可用的数据目录列表"""
+        available_dirs = []
+
+        # 检查默认数据目录
+        if os.path.exists(DATASET_DIR):
+            available_dirs.append(DATASET_DIR)
+
+        # 检查通用的data目录
+        if os.path.exists("data"):
+            available_dirs.append("data")
+            # 检查data目录下的子目录
+            try:
+                for item in os.listdir("data"):
+                    item_path = os.path.join("data", item)
+                    if os.path.isdir(item_path):
+                        available_dirs.append(item_path)
+            except (OSError, PermissionError):
+                pass
+
+        # 去重并排序
+        available_dirs = sorted(list(set(available_dirs)))
+
+        # 如果没有找到任何目录，至少返回默认值
+        if not available_dirs:
+            available_dirs = [DATASET_DIR]
+
+        return available_dirs
 
     def _create_error_result(self, task_id: str, error_msg: str) -> TaskResult:
         """创建错误结果"""

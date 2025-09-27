@@ -1,5 +1,11 @@
 """
-Executor 新架构主入口文件
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: Executor 新架构主入口文件
+FilePath: \HydroAgent\executor\main.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import json

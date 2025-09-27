@@ -1,5 +1,11 @@
 """
-工作流数据模型
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 工作流数据模型
+FilePath: \HydroAgent\executor\models\workflow.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 from typing import Dict, List, Any, Optional, Union

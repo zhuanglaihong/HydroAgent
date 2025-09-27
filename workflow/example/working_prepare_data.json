@@ -1,0 +1,35 @@
+{
+  "workflow_id": "working_prepare_data",
+  "name": "数据准备工作流",
+  "description": "原始水文数据准备工作流",
+  "execution_mode": "linear",
+  "tasks": [
+    {
+      "task_id": "task_1",
+      "name": "准备水文数据",
+      "description": "处理和验证水文时间序列数据，转换为模型可用的netCDF格式",
+      "tool_name": "prepare_data",
+      "type": "simple",
+      "parameters": {
+        "data_dir": "D:\\MCP\\HydroAgent\\data\\camels_11532500",
+        "target_data_scale": "D"
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 300
+      },
+      "expected_output": "处理后的数据文件路径和统计信息"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-27T11:00:00.000000",
+    "estimated_duration": "3分钟",
+    "complexity": "低",
+    "based_on_script": "script/prepare_data.py",
+    "default_params": {
+      "origin_data_dir": "D:\\MCP\\HydroAgent\\data\\camels_11532500",
+      "target_data_scale": "D"
+    }
+  }
+}

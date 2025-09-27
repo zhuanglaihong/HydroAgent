@@ -1,5 +1,11 @@
 """
-结果可视化器 - 生成工作流执行结果的可视化图表
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 结果可视化器 - 生成工作流执行结果的可视化图表
+FilePath: \HydroAgent\executor\visualization\result_visualizer.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

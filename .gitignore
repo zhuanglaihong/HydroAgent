@@ -188,11 +188,14 @@ faiss_db/
 # 其他临时文件
 chunks_result.txt
 .qodo/
-.log
-documents/
+*.log
+documents/processed/
+documents/vector_db/
+documents/*.json
 output/
 /.claude/
 __pycache__/
 *.pyc
 definitions_private.py
 /workflow/generated/
+logs/

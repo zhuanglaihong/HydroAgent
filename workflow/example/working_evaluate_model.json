@@ -1,0 +1,32 @@
+{
+  "workflow_id": "working_evaluate_model",
+  "name": "模型评估工作流",
+  "description": "可运行的模型性能评估工作流",
+  "execution_mode": "linear",
+  "tasks": [
+    {
+      "task_id": "task_1",
+      "name": "评估率定后的模型",
+      "description": "评估已率定的GR4J模型在训练期和测试期的性能指标",
+      "tool_name": "evaluate_model",
+      "type": "simple",
+      "parameters": {
+        "result_dir": "D:\\MCP\\HydroAgent\\result\\exp001"
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 600
+      },
+      "expected_output": "模型性能评估指标和结果文件"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-09-27T11:00:00.000000",
+    "estimated_duration": "5分钟",
+    "complexity": "中等",
+    "based_on_script": "script/evaluate_gr.py",
+    "requires_calibrated_model": true,
+    "evaluation_periods": ["train", "test"]
+  }
+}

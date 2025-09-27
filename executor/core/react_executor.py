@@ -1,5 +1,11 @@
 """
-React执行器 - 目标导向的迭代执行逻辑
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: React执行器 - 目标导向的迭代执行逻辑
+FilePath: \HydroAgent\executor\core\react_executor.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging
@@ -90,7 +96,7 @@ class ReactExecutor:
 
             try:
                 # 执行一轮工作流
-                iteration_result = self._execute_workflow_iteration(workflow, result)
+                iteration_result = self._execute_workflow_iteration(workflow, result, current_iteration)
 
                 # 评估目标达成情况
                 current_metric = self._extract_target_metric(iteration_result, target.metric)
@@ -141,7 +147,7 @@ class ReactExecutor:
 
         return result
 
-    def _execute_workflow_iteration(self, workflow: Workflow, overall_result: WorkflowResult) -> WorkflowResult:
+    def _execute_workflow_iteration(self, workflow: Workflow, overall_result: WorkflowResult, iteration_number: int = 1) -> WorkflowResult:
         """执行一次工作流迭代"""
         # 创建本次迭代的结果对象
         iteration_result = WorkflowResult(
@@ -163,15 +169,19 @@ class ReactExecutor:
             for task_id in task_ids:
                 task = workflow.get_task_by_id(task_id)
                 if task:
-                    task_result = self._execute_single_task(task, iteration_result)
-                    iteration_result.add_task_result(task_result)
+                    # 检查任务是否应该在当前迭代中执行
+                    if self._should_execute_task(task, iteration_number):
+                        task_result = self._execute_single_task(task, iteration_result)
+                        iteration_result.add_task_result(task_result)
 
-                    # 检查是否失败且设置了遇错停止
-                    if (not task_result.is_successful() and
-                        workflow.global_settings.error_handling.value == "stop_on_error"):
-                        self.logger.error(f"任务 {task_id} 失败，停止执行")
-                        iteration_result.status = ExecutionStatus.FAILED
-                        return iteration_result
+                        # 检查是否失败且设置了遇错停止
+                        if (not task_result.is_successful() and
+                            workflow.global_settings.error_handling.value == "stop_on_error"):
+                            self.logger.error(f"任务 {task_id} 失败，停止执行")
+                            iteration_result.status = ExecutionStatus.FAILED
+                            return iteration_result
+                    else:
+                        self.logger.info(f"根据条件跳过任务 {task_id} (迭代 {iteration_number})")
 
         iteration_result.status = ExecutionStatus.COMPLETED
         return iteration_result
@@ -215,21 +225,77 @@ class ReactExecutor:
 
         return task_result
 
+    def _should_execute_task(self, task, iteration_number: int) -> bool:
+        """检查任务是否应该在当前迭代中执行"""
+        # 检查任务的执行条件
+        if hasattr(task, 'conditions') and task.conditions:
+            # 检查是否有迭代条件
+            if 'execute_iterations' in task.conditions:
+                execute_iterations = task.conditions['execute_iterations']
+                if isinstance(execute_iterations, list):
+                    return iteration_number in execute_iterations
+                elif isinstance(execute_iterations, str):
+                    if execute_iterations == 'first_only':
+                        return iteration_number == 1
+                    elif execute_iterations == 'all':
+                        return True
+                    elif execute_iterations == 'skip_first':
+                        return iteration_number > 1
+
+        # 默认所有迭代都执行
+        return True
+
     def _extract_target_metric(self, result: WorkflowResult, metric_name: str) -> Optional[float]:
         """从执行结果中提取目标指标"""
         try:
             # 在所有任务结果中查找指标
             for task_result in result.task_results.values():
+                # 方法1: 直接查找指标名称
                 if metric_name in task_result.outputs:
                     value = task_result.outputs[metric_name]
                     if isinstance(value, (int, float)):
                         return float(value)
 
-                # 检查metrics字段
+                # 方法2: 检查metrics字段
                 if metric_name in task_result.metrics:
                     value = task_result.metrics[metric_name]
                     if isinstance(value, (int, float)):
                         return float(value)
+
+                # 方法3: 检查evaluation_results中的test_metrics
+                outputs = task_result.outputs
+                if 'evaluation_results' in outputs:
+                    eval_results = outputs['evaluation_results']
+                    if isinstance(eval_results, dict):
+                        # 检查test_metrics (优先使用测试期指标)
+                        if 'test_metrics' in eval_results:
+                            test_metrics = eval_results['test_metrics']
+                            if isinstance(test_metrics, dict):
+                                # 尝试不同的大小写组合
+                                metric_variations = [
+                                    metric_name.upper(),  # NSE
+                                    metric_name.lower(),  # nse
+                                    metric_name.capitalize(),  # Nse
+                                    metric_name  # 原始名称
+                                ]
+                                for variant in metric_variations:
+                                    if variant in test_metrics:
+                                        value = test_metrics[variant]
+                                        if isinstance(value, (int, float)):
+                                            self.logger.info(f"找到目标指标 {metric_name}={value} (在test_metrics.{variant})")
+                                            return float(value)
+
+                        # 检查train_metrics (备选)
+                        if 'train_metrics' in eval_results:
+                            train_metrics = eval_results['train_metrics']
+                            if isinstance(train_metrics, dict):
+                                metric_variations = [metric_name.upper(), metric_name.lower(), metric_name.capitalize(), metric_name]
+                                for variant in metric_variations:
+                                    if variant in train_metrics:
+                                        value = train_metrics[variant]
+                                        if isinstance(value, (int, float)):
+                                            self.logger.info(f"找到目标指标 {metric_name}={value} (在train_metrics.{variant})")
+                                            return float(value)
 
             self.logger.warning(f"未找到目标指标: {metric_name}")
             return None

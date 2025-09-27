@@ -1,5 +1,11 @@
 """
-核心执行组件
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 核心执行组件
+FilePath: \HydroAgent\executor\core\__init__.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 from .task_dispatcher import TaskDispatcher, ExecutorType

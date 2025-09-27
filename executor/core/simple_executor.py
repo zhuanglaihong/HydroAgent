@@ -1,5 +1,11 @@
 """
-简单任务执行器 - 处理简单类型的任务
+Author: zhuanglaihong
+Date: 2024-09-26 16:35:00
+LastEditTime: 2024-09-26 16:35:00
+LastEditors: zhuanglaihong
+Description: 简单任务执行器 - 处理简单类型的任务
+FilePath: \HydroAgent\executor\core\simple_executor.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging
@@ -9,7 +15,7 @@ from datetime import datetime
 from ..models.task import Task, TaskType
 from ..models.result import TaskResult, ExecutionStatus
 from ..tools.registry import HydroToolRegistry
-from ..tools import GetModelParamsTool, PrepareDataTool
+from ..tools import GetModelParamsTool, PrepareDataTool, CalibrateModelTool, EvaluateModelTool
 
 
 class SimpleTaskExecutor:
@@ -189,12 +195,13 @@ class SimpleTaskExecutor:
             prepare_data_tool = PrepareDataTool()
             self.tool_registry.register_tool(prepare_data_tool, category="data_processing")
 
-            # TODO: 注册其他工具
-            # calibrate_tool = CalibrateModelTool()
-            # self.tool_registry.register_tool(calibrate_tool, category="modeling")
+            # 注册模型率定工具
+            calibrate_tool = CalibrateModelTool()
+            self.tool_registry.register_tool(calibrate_tool, category="modeling")
 
-            # evaluate_tool = EvaluateModelTool()
-            # self.tool_registry.register_tool(evaluate_tool, category="evaluation")
+            # 注册模型评估工具
+            evaluate_tool = EvaluateModelTool()
+            self.tool_registry.register_tool(evaluate_tool, category="evaluation")
 
             self.logger.info("水文工具注册完成")
 

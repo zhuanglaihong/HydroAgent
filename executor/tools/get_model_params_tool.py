@@ -1,5 +1,11 @@
 """
-获取模型参数工具
+Author: zhuanglaihong
+Date: 2024-09-26 16:40:00
+LastEditTime: 2024-09-26 16:40:00
+LastEditors: zhuanglaihong
+Description: 获取模型参数工具
+FilePath: \HydroAgent\executor\tools\get_model_params_tool.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import sys
@@ -97,7 +103,9 @@ class GetModelParamsTool(BaseTool):
                 "param_names": param_info.get("param_name", []),
                 "param_ranges": param_info.get("param_range", []),
                 "param_count": len(param_info.get("param_name", [])),
-                "description": f"{model_name.upper()} 模型参数信息"
+                "description": f"{model_name.upper()} 模型参数信息",
+                # 添加兼容性字段，用于工作流引用
+                "param_range_file": f"{model_name}_param_ranges.json"
             }
 
             # 添加详细的参数信息
@@ -116,6 +124,8 @@ class GetModelParamsTool(BaseTool):
                     })
 
                 output["param_details"] = param_details
+                # 添加适合模型校准工具使用的字段
+                output["param_range_file"] = param_details
 
             self.logger.info(f"成功获取模型 {model_name} 参数信息")
             return self._create_success_result(output)

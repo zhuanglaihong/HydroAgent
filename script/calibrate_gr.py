@@ -127,7 +127,7 @@ if __name__ == "__main__":
         + " for your own data, you should set the absolute path of your data directory",
         # default="camels_us",
         # default="C:\\Users\\wenyu\\OneDrive\\data\\biliuhe",
-        default="D:\Project\MCP\hydromodel\data\camels_11532500",
+        default=r"D:\MCP\HydroAgent\data\camels_11532500",
         type=str,
     )
     parser.add_argument(
@@ -141,7 +141,7 @@ if __name__ == "__main__":
         "--exp",
         dest="exp",
         help="An exp is corresponding to one data setting",
-        default="expbiliuhe001",  # 实验名
+        default="exp001",  # 实验名
         # default="exp21113800test001",
         # default="expselfmadehydrodataset001",
         type=str,
@@ -222,7 +222,7 @@ if __name__ == "__main__":
         dest="param_range_file",
         help="The file of the parameter range",
         # default=None,
-        default="D:\Project\MCP\hydromodel\hydromodel\models\param.yaml",
+        default=r"D:\MCP\hydromodel\hydromodel\models\param.yaml",
         # default="C:\\Users\\wenyu\\Downloads\\21113800\\param_range.yaml",
         type=str,
     )
@@ -239,7 +239,7 @@ if __name__ == "__main__":
             "name": "SCE_UA",
             "random_seed": 1234,
             # these params are just for test
-            "rep": 1000,
+            "rep": 100,
             "ngs": 30,
             "kstop": 5,
             "peps": 0.05,

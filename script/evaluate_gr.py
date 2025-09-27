@@ -93,7 +93,7 @@ if __name__ == "__main__":
         "--exp",
         dest="exp",
         help="An exp is corresponding to a data plan from calibrate_gr.py",
-        default="exp3",
+        default="exp001",
         # default="exp21113800test001",
         # default="expselfmadehydrodataset001",
         type=str,
