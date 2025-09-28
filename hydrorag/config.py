@@ -1,6 +1,11 @@
 """
-配置管理模块
-管理RAG系统的各种配置参数
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2025-09-27 15:00:00
+LastEditors: zhuanglaihong
+Description: 配置管理模块，管理RAG系统的各种配置参数
+FilePath: \HydroAgent\hydrorag\config.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import os

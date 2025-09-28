@@ -105,14 +105,16 @@ class IntentResult:
 class IntentParser:
     """指令解析器 - 用于指令理解和意图识别"""
 
-    def __init__(self, llm_client: LLMClient = None):
+    def __init__(self, llm_client: LLMClient = None, enable_llm_enhancement: bool = False):
         """
         初始化指令解析器
 
         Args:
             llm_client: LLM客户端，用于增强分析
+            enable_llm_enhancement: 是否启用LLM增强功能，默认False
         """
-        self.llm_client = llm_client or get_llm_client()
+        self.enable_llm_enhancement = enable_llm_enhancement
+        self.llm_client = llm_client if enable_llm_enhancement else None
 
         # 初始化意图关键词映射
         self._init_intent_keywords()
@@ -284,9 +286,9 @@ class IntentParser:
             # 6. 建议工具
             suggested_tools = self._suggest_tools(intent_type, entities)
 
-            # 7. 使用LLM进行增强分析（如果可用）
+            # 7. 使用LLM进行增强分析（如果启用且可用）
             clarified_intent = instruction
-            if self.llm_client and self.llm_client.is_available():
+            if self.enable_llm_enhancement and self.llm_client and self.llm_client.is_available():
                 enhanced_result = self._enhance_with_llm(
                     instruction, intent_type, entities, parameters, constraints
                 )
@@ -566,9 +568,9 @@ class IntentParser:
 _intent_parser = None
 
 
-def get_intent_parser(llm_client: LLMClient = None) -> IntentParser:
+def get_intent_parser(llm_client: LLMClient = None, enable_llm_enhancement: bool = False) -> IntentParser:
     """获取全局意图解析器实例"""
     global _intent_parser
     if _intent_parser is None:
-        _intent_parser = IntentParser(llm_client=llm_client)
+        _intent_parser = IntentParser(llm_client=llm_client, enable_llm_enhancement=enable_llm_enhancement)
     return _intent_parser

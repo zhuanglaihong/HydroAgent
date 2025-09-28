@@ -30,6 +30,8 @@ from config import (
     LLM_USE_API_FIRST, LLM_API_MODEL_NAME, LLM_API_TIMEOUT,
     LLM_FALLBACK_MODEL, LLM_FALLBACK_TIMEOUT, LLM_TEMPERATURE
 )
+import signal
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +56,16 @@ class LLMClient:
     LLM客户端，支持API优先调用和本地Ollama降级
     """
 
-    def __init__(self, use_api_first: bool = True):
+    def __init__(self, use_api_first: bool = True, force_local: bool = False):
         """
         初始化LLM客户端
 
         Args:
             use_api_first: 是否优先使用API
+            force_local: 是否强制使用本地模式（忽略API）
         """
-        self.use_api_first = use_api_first and LLM_USE_API_FIRST
+        self.force_local = force_local
+        self.use_api_first = (use_api_first and LLM_USE_API_FIRST) and not force_local
         self.api_available = API_CLIENT_AVAILABLE
         self.ollama_available = OLLAMA_AVAILABLE
 
@@ -153,7 +157,7 @@ class LLMClient:
         )
 
     def _call_api(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
-        """调用API客户端"""
+        """调用API客户端（带30秒超时）"""
         start_time = time.time()
         self.stats["api_calls"] += 1
 
@@ -162,8 +166,43 @@ class LLMClient:
             if get_api_response is None:
                 raise Exception("API客户端函数不可用")
 
-            # 调用API
-            content = get_api_response(prompt, model=model, temperature=temperature)
+            # 使用线程和超时机制调用API
+            response_container = [None]
+            exception_container = [None]
+
+            def api_call():
+                try:
+                    content = get_api_response(prompt, model=model, temperature=temperature)
+                    response_container[0] = content
+                except Exception as e:
+                    exception_container[0] = e
+
+            # 启动调用线程
+            thread = threading.Thread(target=api_call)
+            thread.daemon = True
+            thread.start()
+
+            # 等待完成或超时
+            thread.join(timeout=LLM_API_TIMEOUT)
+
+            if thread.is_alive():
+                # 超时了
+                response_time = time.time() - start_time
+                logger.warning(f"API调用超时({LLM_API_TIMEOUT}秒) - 模型: {model}")
+                return LLMResponse(
+                    content="",
+                    model_used=f"api_{model}",
+                    response_time=response_time,
+                    success=False,
+                    error_message=f"API调用超时({LLM_API_TIMEOUT}秒)"
+                )
+
+            # 检查是否有异常
+            if exception_container[0]:
+                raise exception_container[0]
+
+            # 获取响应
+            content = response_container[0]
             response_time = time.time() - start_time
 
             if content:
@@ -200,20 +239,66 @@ class LLMClient:
             )
 
     def _call_ollama(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
-        """调用Ollama客户端"""
+        """调用Ollama客户端（带60秒超时）"""
         start_time = time.time()
         self.stats["ollama_calls"] += 1
 
+        # 增加详细日志
+        logger.info(f"开始Ollama调用 - 模型: {model}, 温度: {temperature}, 最大tokens: {max_tokens}")
+        logger.info(f"提示词长度: {len(prompt)} 字符")
+        logger.info(f"当前超时设置: {LLM_FALLBACK_TIMEOUT}秒")
+
         try:
-            # 调用Ollama
-            response = self.ollama_client.generate(
-                model=model,
-                prompt=prompt,
-                options={
-                    "temperature": temperature,
-                    "num_predict": max_tokens
-                }
-            )
+            # 使用线程和超时机制调用Ollama
+            response_container = [None]
+            exception_container = [None]
+
+            def ollama_call():
+                try:
+                    logger.info(f"Ollama线程开始执行 - 模型: {model}")
+                    response = self.ollama_client.generate(
+                        model=model,
+                        prompt=prompt,
+                        options={
+                            "temperature": temperature,
+                            "num_predict": max_tokens
+                        }
+                    )
+                    logger.info(f"Ollama生成完成 - 响应大小: {len(str(response))} 字符")
+                    response_container[0] = response
+                except Exception as e:
+                    logger.error(f"Ollama线程异常: {str(e)}")
+                    exception_container[0] = e
+
+            # 启动调用线程
+            thread = threading.Thread(target=ollama_call)
+            thread.daemon = True
+            thread.start()
+            logger.info("Ollama调用线程已启动")
+
+            # 等待完成或超时
+            thread.join(timeout=LLM_FALLBACK_TIMEOUT)
+
+            if thread.is_alive():
+                # 超时了
+                response_time = time.time() - start_time
+                logger.warning(f"Ollama调用超时({LLM_FALLBACK_TIMEOUT}秒) - 模型: {model}")
+                logger.warning(f"提示词长度: {len(prompt)} 字符可能过长导致超时")
+                logger.warning(f"建议: 1) 减少提示词长度 2) 增加超时设置 3) 检查模型性能")
+                return LLMResponse(
+                    content="",
+                    model_used=f"ollama_{model}",
+                    response_time=response_time,
+                    success=False,
+                    error_message=f"Ollama调用超时({LLM_FALLBACK_TIMEOUT}秒)"
+                )
+
+            # 检查是否有异常
+            if exception_container[0]:
+                raise exception_container[0]
+
+            # 获取响应
+            response = response_container[0]
             response_time = time.time() - start_time
 
             content = response.get("response", "")
@@ -273,8 +358,46 @@ class LLMClient:
             "api_success_rate": self.stats["api_successes"] / self.stats["api_calls"] if self.stats["api_calls"] > 0 else 0.0,
             "ollama_success_rate": self.stats["ollama_successes"] / self.stats["ollama_calls"] if self.stats["ollama_calls"] > 0 else 0.0,
             "api_available": self.api_available,
-            "ollama_available": self.ollama_available
+            "ollama_available": self.ollama_available,
+            "timeout_settings": {
+                "api_timeout": LLM_API_TIMEOUT,
+                "ollama_timeout": LLM_FALLBACK_TIMEOUT
+            }
         }
+
+    def test_timeout_mechanism(self) -> Dict[str, Any]:
+        """
+        测试超时机制是否工作
+        """
+        results = {
+            "api_timeout": LLM_API_TIMEOUT,
+            "ollama_timeout": LLM_FALLBACK_TIMEOUT,
+            "tests": {}
+        }
+
+        # 测试API超时（如果可用）
+        if self.api_available:
+            logger.info(f"测试API超时机制（{LLM_API_TIMEOUT}秒）")
+            start = time.time()
+            try:
+                # 使用一个可能较慢的提示来测试
+                response = self.generate("请详细描述水文建模的完整流程，包括所有步骤和细节，至少2000字",
+                                       temperature=0.1, max_tokens=3000)
+                test_time = time.time() - start
+                results["tests"]["api"] = {
+                    "completed": response.success,
+                    "response_time": test_time,
+                    "within_timeout": test_time <= LLM_API_TIMEOUT + 5,  # 允许5秒误差
+                    "error": response.error_message if not response.success else None
+                }
+            except Exception as e:
+                results["tests"]["api"] = {
+                    "completed": False,
+                    "error": str(e),
+                    "response_time": time.time() - start
+                }
+
+        return results
 
     def chat(self, messages: List[Dict[str, str]], model: str = None, temperature: float = None) -> LLMResponse:
         """
@@ -337,9 +460,15 @@ class LLMClient:
 _llm_client = None
 
 
-def get_llm_client() -> LLMClient:
-    """获取全局LLM客户端实例"""
+def get_llm_client(use_api_first: bool = True, force_local: bool = False) -> LLMClient:
+    """
+    获取全局LLM客户端实例
+
+    Args:
+        use_api_first: 是否优先使用API
+        force_local: 是否强制使用本地模式
+    """
     global _llm_client
     if _llm_client is None:
-        _llm_client = LLMClient()
+        _llm_client = LLMClient(use_api_first=use_api_first, force_local=force_local)
     return _llm_client

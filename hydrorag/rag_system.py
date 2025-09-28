@@ -1,6 +1,11 @@
 """
-RAG系统主接口
-整合文档处理、向量存储和查询功能，提供统一的RAG服务接口
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2025-09-27 15:00:00
+LastEditors: zhuanglaihong
+Description: RAG系统主接口，整合文档处理、向量存储和查询功能，提供统一的RAG服务接口
+FilePath: \HydroAgent\hydrorag\rag_system.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

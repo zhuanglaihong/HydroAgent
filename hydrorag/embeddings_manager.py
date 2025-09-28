@@ -1,6 +1,11 @@
 """
-嵌入模型管理器
-负责管理文本嵌入模型，提供文本向量化功能
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2025-09-27 15:00:00
+LastEditors: zhuanglaihong
+Description: 嵌入模型管理器，负责管理文本嵌入模型，提供文本向量化功能
+FilePath: \HydroAgent\hydrorag\embeddings_manager.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

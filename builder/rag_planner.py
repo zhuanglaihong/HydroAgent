@@ -205,15 +205,33 @@ class RAGPlanner:
             logger.info("构建思维链提示词")
             prompt = self._build_cot_prompt(query, rag_context)
 
+            # 打印提示词调试信息
+            prompt_length = len(prompt)
+            prompt_tokens_estimate = prompt_length // 4  # 粗略估算token数
+            logger.info(f"提示词长度: {prompt_length} 字符, 估算 {prompt_tokens_estimate} tokens")
+            logger.info(f"提示词内容预览 (前500字符): {prompt[:500]}...")
+            logger.info(f"使用的知识片段数量: {len(rag_context.fragments)}")
+
             # 第三步：LLM推理生成工作流
-            logger.info("执行LLM推理")
+            logger.info(f"执行LLM推理 - 温度: {COT_TEMPERATURE}, 最大tokens: 4000")
+            logger.info(f"完整提示词内容:\n{'='*80}\n{prompt}\n{'='*80}")
+
+            llm_start_time = time.time()
             response = self.llm_client.generate(
                 prompt=prompt,
                 temperature=COT_TEMPERATURE,
                 max_tokens=4000
             )
+            llm_time = time.time() - llm_start_time
 
-            if not response.success:
+            logger.info(f"LLM调用完成 - 耗时: {llm_time:.2f}秒, 成功: {response.success}")
+
+            if response.success:
+                logger.info(f"LLM响应长度: {len(response.content)} 字符")
+                logger.info(f"LLM响应内容预览 (前1000字符):\n{response.content[:1000]}...")
+            else:
+                logger.error(f"LLM调用失败详情: {response.error_message}")
+                logger.error(f"使用的模型: {response.model_used}")
                 raise Exception(f"LLM调用失败: {response.error_message}")
 
             # 第四步：解析响应

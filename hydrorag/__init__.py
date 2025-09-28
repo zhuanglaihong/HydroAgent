@@ -1,8 +1,11 @@
 """
-HydroRAG - 智能水文知识检索增强生成系统
-
-支持Qwen API和本地Ollama嵌入模型的混合RAG系统，
-为水文智能体提供高质量的知识检索和增强生成服务。
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2025-09-27 15:00:00
+LastEditors: zhuanglaihong
+Description: HydroRAG - 智能水文知识检索增强生成系统，支持Qwen API和本地Ollama嵌入模型的混合RAG系统，为水文智能体提供高质量的知识检索和增强生成服务
+FilePath: \HydroAgent\hydrorag\__init__.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 
 主要特性:
 - 混合嵌入模型支持（Qwen API + 本地Ollama）

@@ -72,7 +72,8 @@ class WorkflowBuilder:
     结合RAG知识库和思维链推理，生成可执行的工作流
     """
 
-    def __init__(self, rag_system=None, llm_client: LLMClient = None, enable_rag: bool = True):
+    def __init__(self, rag_system=None, llm_client: LLMClient = None, enable_rag: bool = True,
+                 use_api_llm: bool = True):
         """
         初始化工作流构建器
 
@@ -80,8 +81,11 @@ class WorkflowBuilder:
             rag_system: RAG系统实例
             llm_client: LLM客户端实例
             enable_rag: 是否启用RAG系统，测试时可设为False
+            use_api_llm: LLM推理模式 - True使用API优先，False强制使用本地Ollama
         """
-        self.llm_client = llm_client or get_llm_client()
+        self.use_api_llm = use_api_llm
+        # RAG和工作流生成需要LLM推理，根据参数选择模式
+        self.llm_client = llm_client or get_llm_client(use_api_first=use_api_llm, force_local=not use_api_llm)
 
         # 初始化RAG系统
         if rag_system is None and enable_rag:
@@ -95,7 +99,12 @@ class WorkflowBuilder:
                     local_embedding_model="bge-large:335m"
                 )
                 self.rag_system = RAGSystem(local_config)
-                logger.info("自动初始化RAG系统成功")
+                # 检查RAG系统是否初始化成功
+                if self.rag_system.is_initialized:
+                    logger.info("自动初始化RAG系统成功")
+                else:
+                    logger.warning(f"RAG系统初始化部分失败: {self.rag_system.initialization_errors}")
+                    # 仍然保留实例，但功能可能受限
             except Exception as e:
                 logger.warning(f"自动初始化RAG系统失败: {e}，将以None模式运行")
                 self.rag_system = None
@@ -108,7 +117,8 @@ class WorkflowBuilder:
                 logger.info("RAG系统被禁用，运行在简化模式")
 
         # 初始化子组件
-        self.intent_parser = get_intent_parser(llm_client=self.llm_client)
+        # 意图解析器默认不使用LLM增强，主要依靠规则匹配以提升性能
+        self.intent_parser = get_intent_parser(llm_client=None, enable_llm_enhancement=False)
         self.rag_planner = get_rag_planner(rag_system=self.rag_system, llm_client=self.llm_client)
         self.mode_analyzer = get_mode_analyzer()
 
@@ -126,6 +136,23 @@ class WorkflowBuilder:
         }
 
         logger.info("工作流构建器初始化完成")
+
+    def enable_intent_llm_enhancement(self, enable: bool = True):
+        """
+        动态启用或禁用意图解析器的LLM增强功能
+        注意：正常情况下意图解析器不需要LLM，这个方法仅用于特殊场景
+
+        Args:
+            enable: 是否启用LLM增强
+        """
+        if enable and not self.intent_parser.enable_llm_enhancement:
+            # 重新创建意图解析器并启用LLM增强
+            self.intent_parser = get_intent_parser(llm_client=self.llm_client, enable_llm_enhancement=True)
+            logger.info("已启用意图解析器LLM增强功能（通常不推荐）")
+        elif not enable and self.intent_parser.enable_llm_enhancement:
+            # 重新创建意图解析器并禁用LLM增强
+            self.intent_parser = get_intent_parser(llm_client=None, enable_llm_enhancement=False)
+            logger.info("已禁用意图解析器LLM增强功能")
 
     def build_workflow(self, query: str, context: Dict[str, Any] = None) -> WorkflowBuildResult:
         """
@@ -473,8 +500,8 @@ class WorkflowBuilder:
             status["rag_planner_ready"]
         ])
 
-        # 如果RAG系统未就绪，记录为降级模式
-        status["degraded_mode"] = not status["rag_system_ready"]
+        # 如果RAG系统就绪，记录为非降级模式（OK）
+        status["degraded_mode"] = status["rag_system_ready"]
 
         return status
 

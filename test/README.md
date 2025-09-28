@@ -24,49 +24,12 @@
 ### 系统支持测试
 - **test_logging_system.py** - 日志系统功能测试
 
-## 运行测试
+## 工作流构建测试 **test_workflow_builder.py** 
+# 使用Ollama本地模型测试
+python test/test_workflow_builder.py --mode ollama --model qwen3:8b
 
-### 运行单个测试
-```bash
-python test/test_executor_simple.py
-python test/test_rag_effectiveness_comparison.py
-```
+# 使用API模型测试
+python test/test_workflow_builder.py --mode api --model gpt-3.5-turbo
 
-### 运行所有测试
-```bash
-# 在项目根目录下运行
-python -m pytest test/
-```
-
-## 测试分类
-
-### 按复杂度分类
-- **简单测试**: test_executor_simple.py, test_builder_basic.py
-- **复杂测试**: test_executor_complex.py, test_rag_effectiveness_comparison.py
-- **集成测试**: test_builder_integration.py
-
-### 按功能模块分类
-- **执行器模块**: test_executor_*.py
-- **构建器模块**: test_builder_*.py
-- **RAG模块**: test_enhanced_rag.py, test_rag_effectiveness_comparison.py
-- **LLM模块**: test_intelligent_llm_client.py, test_qwen.py
-- **支持模块**: test_logging_system.py, test_executor_visualization.py
-
-## 特殊测试说明
-
-### RAG效果对比测试 (test_rag_effectiveness_comparison.py)
-- 专门用于验证RAG系统对复杂任务处理能力的提升
-- 包含6个不同复杂度的测试用例
-- 支持A/B对比测试（启用/禁用RAG）
-- 详细的质量评估和效果分析
-
-### 复杂任务测试 (test_executor_complex.py)
-- 验证多步骤、跨工具的复杂工作流执行
-- 包含真实水文建模场景测试
-- 测试错误处理和恢复机制
-
-## 测试数据和结果
-
-- 测试结果保存在 `test/results/` 目录
-- 测试日志保存在 `utils/logs/` 目录
-- 测试配置可在各测试文件中调整
+# 指定输出目录
+python test/test_workflow_builder.py --output-dir ./test_results

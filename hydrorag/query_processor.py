@@ -1,6 +1,11 @@
 """
-查询处理和重排序模块
-负责查询预处理、结果重排序和多样性优化
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2025-09-27 15:00:00
+LastEditors: zhuanglaihong
+Description: 查询处理和重排序模块，负责查询预处理、结果重排序和多样性优化
+FilePath: \HydroAgent\hydrorag\query_processor.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging

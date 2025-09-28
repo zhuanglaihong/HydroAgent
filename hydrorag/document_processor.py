@@ -1,7 +1,11 @@
 """
-文档处理器
-负责将raw目录中的原始文档转换为processed目录中的处理后文档
-支持多种文件格式的文本提取和分块处理
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2025-09-27 15:00:00
+LastEditors: zhuanglaihong
+Description: 文档处理器，负责将raw目录中的原始文档转换为processed目录中的处理后文档，支持多种文件格式的文本提取和分块处理
+FilePath: \HydroAgent\hydrorag\document_processor.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import os

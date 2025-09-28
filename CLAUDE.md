@@ -57,6 +57,9 @@ python Agent.py --mcp-mode service
 ```
 
 ### Testing
+
+**重要**: 所有测试都应将日志保存到 `logs/` 目录，便于问题追踪和性能分析。
+
 ```bash
 # Run basic tool tests
 python test/test_basic_tools.py
@@ -72,6 +75,71 @@ python test/run_integration_test.py
 
 # Test individual components
 python test/test_individual_tools.py
+
+# Ollama诊断测试
+python test/test_ollama_diagnosis.py
+
+# LLM性能对比测试
+python test/test_llm_performance.py
+```
+
+#### 测试日志规范
+
+**所有测试脚本必须遵循以下日志规范**：
+
+```python
+# 标准测试日志设置模板
+import logging
+import time
+from pathlib import Path
+
+# 添加项目根目录到路径
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+# 确保logs目录存在
+logs_dir = project_root / "logs"
+logs_dir.mkdir(exist_ok=True)
+
+# 设置详细日志
+log_file = logs_dir / f"test_{test_name}_{int(time.time())}.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(log_file, encoding='utf-8')
+    ]
+)
+
+print(f"日志将保存到: {log_file}")
+```
+
+**日志文件命名规范**：
+- 格式: `test_{测试名称}_{时间戳}.log`
+- 示例: `test_ollama_diagnosis_1695893373.log`
+- 位置: `logs/` 目录
+
+**纯日志输出模式**（用于长时间运行的诊断测试）：
+
+```python
+# 将所有输出重定向到日志文件
+import builtins
+original_print = builtins.print
+
+def log_print(*args, **kwargs):
+    """重定向print到logger"""
+    message = ' '.join(str(arg) for arg in args)
+    logger.info(message)
+
+builtins.print = log_print
+
+# 只在终端显示关键信息
+original_print(f"测试开始，详细输出保存到: {log_file}")
+
+# 测试结束时恢复并显示摘要
+builtins.print = original_print
+original_print(f"测试完成！详细日志: {log_file}")
 ```
 
 ### RAG System Testing

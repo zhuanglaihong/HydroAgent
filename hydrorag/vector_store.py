@@ -1,6 +1,11 @@
 """
-向量数据库管理器
-基于Chroma实现的向量数据库管理，支持文档存储、检索和管理
+Author: zhuanglaihong
+Date: 2024-09-24 15:30:00
+LastEditTime: 2025-09-27 15:00:00
+LastEditors: zhuanglaihong
+Description: 向量数据库管理器，基于ChromaDB提供高效的向量存储和检索功能
+FilePath: \HydroAgent\hydrorag\vector_store.py
+Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging
@@ -20,26 +25,29 @@ class VectorStore:
     def __init__(self, config, embeddings_manager):
         """
         初始化向量数据库管理器
-        
+
         Args:
             config: 配置对象
-            embeddings_manager: 嵌入模型管理器
+            embeddings_manager: 嵌入模型管理器，可以为None
         """
         self.config = config
         self.embeddings_manager = embeddings_manager
         self.db_path = Path(config.vector_db_dir)
         self.collection_name = config.chroma_collection_name
-        
+
         # Chroma客户端和集合
         self.client = None
         self.collection = None
-        
+
         # 确保数据库目录存在
         self.db_path.mkdir(parents=True, exist_ok=True)
-        
-        # 初始化Chroma
+
+        # 初始化Chroma（即使嵌入管理器为None也尝试初始化）
         self._initialize_chroma()
-        
+
+        if self.embeddings_manager is None:
+            logger.warning("嵌入管理器为None，向量功能将受限")
+
         logger.info(f"向量数据库管理器初始化完成")
         logger.info(f"数据库路径: {self.db_path}")
         logger.info(f"集合名称: {self.collection_name}")
@@ -145,32 +153,65 @@ class VectorStore:
             chunks_with_embeddings = self._ensure_embeddings(chunks)
             
             # 过滤有效的文档块
-            valid_chunks = [
-                chunk for chunk in chunks_with_embeddings 
-                if chunk.get("has_embedding", False)
-            ]
-            
+            valid_chunks = []
+            chunks_with_embeddings_count = 0
+
+            for chunk in chunks_with_embeddings:
+                # 检查块是否有内容
+                if chunk.get("content") and chunk.get("content").strip():
+                    valid_chunks.append(chunk)
+                    if chunk.get("has_embedding", False):
+                        chunks_with_embeddings_count += 1
+
             if not valid_chunks:
-                logger.error("没有有效的文档块（缺少嵌入向量）")
-                return {"status": "error", "error": "没有有效的嵌入向量"}
+                logger.error("没有有效的文档块（缺少内容）")
+                return {"status": "error", "error": "没有有效的文档内容"}
+
+            if chunks_with_embeddings_count == 0 and self.embeddings_manager is not None:
+                logger.warning("所有文档块都缺少嵌入向量，将仅存储文本和元数据")
+
+            logger.info(f"有效文档块: {len(valid_chunks)}，其中 {chunks_with_embeddings_count} 个有嵌入向量")
             
             # 准备数据
             ids = []
             embeddings = []
             documents = []
             metadatas = []
-            
-            for chunk in valid_chunks:
+
+            # 获取现有的所有ID（避免冲突）
+            existing_ids = set()
+            try:
+                existing_data = self.collection.get()
+                if existing_data and existing_data.get('ids'):
+                    existing_ids = set(existing_data['ids'])
+                    logger.debug(f"检测到现有文档ID数量: {len(existing_ids)}")
+            except Exception as e:
+                logger.debug(f"获取现有ID失败，假设数据库为空: {e}")
+
+            for i, chunk in enumerate(valid_chunks):
                 # 生成唯一ID
-                chunk_id = chunk.get("chunk_id") or str(uuid.uuid4())
-                
-                # 确保ID唯一
-                full_id = f"{chunk_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                
+                base_chunk_id = chunk.get("chunk_id") or f"chunk_{uuid.uuid4().hex[:8]}"
+
+                # 使用微秒级时间戳和递增索引确保唯一性
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]  # 毫秒精度
+                full_id = f"{base_chunk_id}_{timestamp}_{i:03d}"
+
+                # 如果ID仍然冲突，添加随机后缀
+                while full_id in existing_ids:
+                    random_suffix = uuid.uuid4().hex[:4]
+                    full_id = f"{base_chunk_id}_{timestamp}_{i:03d}_{random_suffix}"
+
+                existing_ids.add(full_id)  # 防止本批次内的重复
                 ids.append(full_id)
-                embeddings.append(chunk["embedding"])
                 documents.append(chunk["content"])
-                
+
+                # 只有在有嵌入向量时才添加
+                if chunk.get("has_embedding", False) and chunk.get("embedding"):
+                    embeddings.append(chunk["embedding"])
+                else:
+                    # 没有嵌入向量时，添加None或不添加embeddings参数
+                    embeddings.append(None)
+
                 # 准备元数据
                 metadata = {
                     "chunk_id": chunk.get("chunk_id", ""),
@@ -178,22 +219,39 @@ class VectorStore:
                     "chunk_index": chunk.get("chunk_index", 0),
                     "chunk_size": chunk.get("chunk_size", 0),
                     "embedding_model": chunk.get("embedding_model", ""),
-                    "added_time": datetime.now().isoformat()
+                    "added_time": datetime.now().isoformat(),
+                    "has_embedding": chunk.get("has_embedding", False)
                 }
-                
+
                 # 添加原始元数据
                 if "metadata" in chunk:
                     metadata.update(chunk["metadata"])
-                
+
                 metadatas.append(metadata)
-            
+
             # 批量添加到Chroma
-            self.collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                documents=documents,
-                metadatas=metadatas
-            )
+            try:
+                # 如果所有嵌入都是None，就不传递embeddings参数
+                add_params = {
+                    "ids": ids,
+                    "documents": documents,
+                    "metadatas": metadatas
+                }
+
+                # 只有当有有效嵌入时才添加embeddings参数
+                valid_embeddings = [emb for emb in embeddings if emb is not None]
+                if valid_embeddings and len(valid_embeddings) == len(embeddings):
+                    add_params["embeddings"] = embeddings
+
+                self.collection.add(**add_params)
+            except Exception as e:
+                # 如果添加失败，尝试仅添加文档和元数据
+                logger.warning(f"带嵌入向量添加失败，尝试仅添加文档: {e}")
+                self.collection.add(
+                    ids=ids,
+                    documents=documents,
+                    metadatas=metadatas
+                )
             
             logger.info(f"成功添加 {len(valid_chunks)} 个文档块到向量数据库")
             
@@ -211,31 +269,40 @@ class VectorStore:
     def _ensure_embeddings(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """确保文档块有嵌入向量"""
         try:
+            # 如果没有嵌入管理器，跳过嵌入生成
+            if self.embeddings_manager is None:
+                logger.warning("嵌入管理器不可用，跳过嵌入向量生成")
+                # 为所有块标记为没有嵌入
+                for chunk in chunks:
+                    chunk["has_embedding"] = False
+                    chunk["embedding"] = None
+                return chunks
+
             # 检查哪些块缺少嵌入向量
             chunks_need_embedding = []
-            
+
             for chunk in chunks:
                 if not chunk.get("has_embedding", False) or not chunk.get("embedding"):
                     chunks_need_embedding.append(chunk)
-            
+
             if chunks_need_embedding:
                 logger.info(f"{len(chunks_need_embedding)} 个文档块需要生成嵌入向量")
-                
+
                 # 生成嵌入向量
                 chunks_with_embeddings = self.embeddings_manager.embed_documents_chunks(
                     chunks_need_embedding
                 )
-                
+
                 # 更新原始列表
                 chunk_map = {chunk.get("chunk_id", ""): chunk for chunk in chunks_with_embeddings}
-                
+
                 for i, chunk in enumerate(chunks):
                     chunk_id = chunk.get("chunk_id", "")
                     if chunk_id in chunk_map:
                         chunks[i] = chunk_map[chunk_id]
-            
+
             return chunks
-            
+
         except Exception as e:
             logger.error(f"生成嵌入向量失败: {e}")
             return chunks
@@ -547,23 +614,155 @@ class VectorStore:
         """检查向量数据库是否可用"""
         return self.client is not None and self.collection is not None
     
+    def get_stats(self) -> Dict[str, Any]:
+        """获取数据库统计信息（兼容性方法）"""
+        return self.get_statistics()
+
+    def close(self):
+        """关闭数据库连接"""
+        try:
+            if self.collection:
+                self.collection = None
+                logger.info("向量集合连接已关闭")
+
+            if self.client:
+                # 尝试调用reset来清理连接
+                try:
+                    self.client.reset()
+                    logger.info("ChromaDB客户端已reset")
+                except Exception as e:
+                    logger.debug(f"无法reset ChromaDB客户端: {e}")
+
+                # 设置为None让GC处理
+                self.client = None
+                logger.info("向量数据库客户端连接已关闭")
+
+                # 强制垃圾回收
+                import gc
+                gc.collect()
+                logger.debug("已执行垃圾回收")
+
+        except Exception as e:
+            logger.error(f"关闭数据库连接失败: {e}")
+
+    def force_close(self):
+        """强制关闭连接，用于处理顽固的连接问题"""
+        try:
+            logger.info("开始强制关闭向量数据库连接...")
+
+            # 第一步：清除客户端引用
+            if hasattr(self, 'client') and self.client is not None:
+                try:
+                    # 尝试关闭客户端连接
+                    if hasattr(self.client, 'reset'):
+                        self.client.reset()
+                    logger.debug("客户端连接已重置")
+                except Exception as e:
+                    logger.debug(f"客户端重置失败: {e}")
+                finally:
+                    self.client = None
+
+            # 第二步：清除集合引用
+            if hasattr(self, 'collection') and self.collection is not None:
+                self.collection = None
+                logger.debug("集合引用已清除")
+
+            # 第三步：尝试正常关闭
+            try:
+                self.close()
+            except Exception as e:
+                logger.debug(f"正常关闭失败: {e}")
+
+            # 第四步：强制清理资源
+            import threading
+            import time
+            import sqlite3
+            import gc
+
+            logger.info("强制清理系统资源...")
+
+            # 强制关闭所有SQLite连接
+            closed_connections = 0
+            try:
+                for obj in gc.get_objects():
+                    if isinstance(obj, sqlite3.Connection):
+                        try:
+                            if not obj.in_transaction:
+                                obj.close()
+                                closed_connections += 1
+                        except Exception:
+                            pass
+                if closed_connections > 0:
+                    logger.info(f"强制关闭了 {closed_connections} 个SQLite连接")
+            except Exception as e:
+                logger.debug(f"强制关闭SQLite连接时出错: {e}")
+
+            # 清理ChromaDB模块级别的状态
+            try:
+                import sys
+                modules_to_clear = []
+                for module_name in sys.modules:
+                    if 'chroma' in module_name.lower():
+                        modules_to_clear.append(module_name)
+
+                for module_name in modules_to_clear:
+                    try:
+                        module = sys.modules[module_name]
+                        if hasattr(module, '_clients'):
+                            module._clients = {}
+                        if hasattr(module, '_collections'):
+                            module._collections = {}
+                        if hasattr(module, '_client_cache'):
+                            module._client_cache = {}
+                    except Exception:
+                        pass
+
+                logger.debug(f"清理了 {len(modules_to_clear)} 个ChromaDB模块")
+            except Exception as e:
+                logger.debug(f"清理ChromaDB模块状态时出错: {e}")
+
+            # 多轮垃圾回收，增加等待时间
+            for i in range(3):
+                gc.collect()
+                time.sleep(2)
+                logger.debug(f"执行第 {i+1} 轮垃圾回收")
+
+            # 最后等待，确保所有资源释放
+            time.sleep(5)
+            logger.info("强制关闭完成，等待资源释放...")
+
+        except Exception as e:
+            logger.error(f"强制关闭失败: {e}")
+        finally:
+            # 确保所有引用都被清除
+            for attr in ['client', 'collection', 'embeddings_manager']:
+                if hasattr(self, attr):
+                    setattr(self, attr, None)
+
+    def __del__(self):
+        """析构函数，确保资源释放"""
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """根据ID获取文档"""
         try:
             if not self.collection:
                 return None
-            
+
             result = self.collection.get(ids=[doc_id])
-            
+
             if result.get("documents"):
                 return {
                     "id": doc_id,
                     "document": result["documents"][0],
                     "metadata": result["metadatas"][0] if result.get("metadatas") else {}
                 }
-            
+
             return None
-            
+
         except Exception as e:
             logger.error(f"获取文档失败: {e}")
             return None
