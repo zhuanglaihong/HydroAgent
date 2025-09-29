@@ -91,6 +91,7 @@ python test/test_llm_performance.py
 # 标准测试日志设置模板
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 
 # 添加项目根目录到路径
@@ -102,7 +103,7 @@ logs_dir = project_root / "logs"
 logs_dir.mkdir(exist_ok=True)
 
 # 设置详细日志
-log_file = logs_dir / f"test_{test_name}_{int(time.time())}.log"
+log_file = logs_dir / f"test_{test_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -116,9 +117,10 @@ print(f"日志将保存到: {log_file}")
 ```
 
 **日志文件命名规范**：
-- 格式: `test_{测试名称}_{时间戳}.log`
-- 示例: `test_ollama_diagnosis_1695893373.log`
+- 格式: `test_{测试名称}_{YYYYMMDD_HHMMSS}.log`
+- 示例: `test_ollama_diagnosis_20241001_143052.log`
 - 位置: `logs/` 目录
+- **重要**: 必须使用年月日时分秒格式，不允许使用时间戳
 
 **纯日志输出模式**（用于长时间运行的诊断测试）：
 

@@ -25,7 +25,8 @@ logs_dir = project_root / "logs"
 logs_dir.mkdir(exist_ok=True)
 
 # 设置详细日志
-log_file = logs_dir / f"test_hydrorag_faiss_integration_{int(time.time())}.log"
+from datetime import datetime
+log_file = logs_dir / f"test_hydrorag_faiss_integration_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -46,156 +47,51 @@ class TestHydroRAGFaissIntegration:
         """测试类初始化"""
         logger.info("开始HydroRAG FAISS集成测试")
 
-        # 创建临时测试目录
-        cls.test_dir = Path(tempfile.mkdtemp(prefix="test_hydrorag_"))
-        cls.documents_dir = cls.test_dir / "documents"
+        # 使用项目实际的documents目录
+        cls.documents_dir = project_root / "documents"
         cls.raw_dir = cls.documents_dir / "raw"
         cls.processed_dir = cls.documents_dir / "processed"
         cls.vector_db_dir = cls.documents_dir / "vector_db"
-        cls.backup_dir = cls.documents_dir / "backups"
 
-        # 创建目录结构
-        for dir_path in [cls.raw_dir, cls.processed_dir, cls.vector_db_dir, cls.backup_dir]:
-            dir_path.mkdir(parents=True, exist_ok=True)
+        # 检查raw目录是否存在且有文档
+        if not cls.raw_dir.exists():
+            logger.error(f"Raw文档目录不存在: {cls.raw_dir}")
+            raise FileNotFoundError(f"Raw文档目录不存在: {cls.raw_dir}")
 
-        # 创建测试文档
-        cls._create_test_documents()
+        # 检查raw目录中是否有文档
+        raw_files = list(cls.raw_dir.rglob("*"))
+        raw_docs = [f for f in raw_files if f.is_file() and f.suffix.lower() in ['.txt', '.md', '.pdf', '.py', '.yaml', '.yml', '.json']]
 
-        logger.info(f"测试环境初始化完成: {cls.test_dir}")
+        if not raw_docs:
+            logger.error(f"Raw目录中没有找到支持的文档文件: {cls.raw_dir}")
+            raise FileNotFoundError(f"Raw目录中没有找到支持的文档文件")
+
+        logger.info(f"找到 {len(raw_docs)} 个原始文档文件")
+        for doc in raw_docs[:10]:  # 只显示前10个
+            logger.info(f"  - {doc.relative_to(cls.raw_dir)}")
+
+        # 确保processed和vector_db目录存在
+        cls.processed_dir.mkdir(parents=True, exist_ok=True)
+        cls.vector_db_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"使用实际文档目录: {cls.documents_dir}")
+        logger.info(f"原始文档: {cls.raw_dir}")
+        logger.info(f"处理后文档: {cls.processed_dir}")
+        logger.info(f"向量数据库: {cls.vector_db_dir}")
 
     @classmethod
     def teardown_class(cls):
         """测试类清理"""
         try:
-            if cls.test_dir.exists():
-                shutil.rmtree(cls.test_dir)
+            # 不删除真实的documents目录，只清理测试过程中可能创建的临时文件
+            logger.info("测试完成，保留真实的documents目录")
+
+            # 可选：清理测试过程中的一些临时文件
+            # 但保留processed和vector_db目录，供后续使用
             logger.info("测试环境清理完成")
         except Exception as e:
             logger.error(f"清理测试环境失败: {e}")
 
-    @classmethod
-    def _create_test_documents(cls):
-        """创建测试文档"""
-        test_docs = {
-            "hydro_basics.txt": """
-水文学基础知识
-
-水文学是研究地球上水的存在、分布、循环和运动规律的科学。它涉及地表水、地下水、大气中的水以及海洋中的水。
-
-水文循环是水文学的核心概念，包括蒸发、降水、地表径流、地下水补给等过程。
-
-流域是水文学研究的基本单元，是由分水岭围成的一个相对独立的水文地理区域。
-            """,
-
-            "gr4j_model.md": """
-# GR4J模型介绍
-
-GR4J（Génie Rural à 4 paramètres Journalier）是一个四参数的日尺度概念性降雨径流模型。
-
-## 模型参数
-
-1. **X1** - 生产储库的最大容量 (mm)
-2. **X2** - 地下水交换系数 (mm/day)
-3. **X3** - 汇流储库的容量 (mm)
-4. **X4** - 单位线的时间常数 (day)
-
-## 模型结构
-
-GR4J模型包含以下主要组件：
-- 生产储库
-- 汇流储库
-- 单位线汇流
-- 地下水交换
-
-模型适用于各种气候条件下的流域，参数物理意义明确。
-
-## 应用案例
-
-GR4J模型广泛应用于：
-- 洪水预报
-- 水资源评估
-- 气候变化影响研究
-            """,
-
-            "xaj_model.py": """
-# XAJ模型实现示例
-
-def xaj_model(P, E, params):
-    '''
-    XAJ模型（新安江模型）实现
-
-    参数：
-    P: 降水 (mm)
-    E: 蒸发 (mm)
-    params: 模型参数字典
-
-    返回：
-    Q: 径流 (mm)
-    '''
-    # 模型参数
-    K = params['K']      # 蒸发系数
-    B = params['B']      # 张力水容量分布
-    IM = params['IM']    # 不透水面积比
-    WM = params['WM']    # 张力水库容量
-
-    # 简化的XAJ模型计算过程
-    # 实际实现会更复杂，包含多个水源计算
-
-    # 蒸发计算
-    if W < WM:
-        E_act = K * E * (W / WM)
-    else:
-        E_act = K * E
-
-    # 产流计算
-    if P > 0:
-        if W + P <= WM:
-            R = IM * P
-        else:
-            R = P - (WM - W) + IM * P
-    else:
-        R = 0
-
-    return R
-            """,
-
-            "calibration_guide.txt": """
-水文模型率定指南
-
-水文模型率定是水文建模中的关键步骤，目的是确定模型参数的最优值。
-
-1. 率定数据准备
-   - 降水数据
-   - 蒸发数据
-   - 径流观测数据
-   - 数据质量控制
-
-2. 目标函数选择
-   - Nash-Sutcliffe效率系数(NSE)
-   - Kling-Gupta效率(KGE)
-   - 相关系数(R²)
-   - 均方根误差(RMSE)
-
-3. 优化算法
-   - 差分进化算法
-   - 遗传算法
-   - 粒子群优化
-   - 模拟退火算法
-
-4. 验证与评估
-   - 交叉验证
-   - 分期验证
-   - 不确定性分析
-            """
-        }
-
-        # 写入测试文档
-        for filename, content in test_docs.items():
-            file_path = cls.raw_dir / filename
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content.strip())
-
-        logger.info(f"创建了 {len(test_docs)} 个测试文档")
 
     def test_01_config_and_imports(self):
         """测试配置和导入"""
@@ -386,17 +282,17 @@ def xaj_model(P, E, params):
             # 准备测试文档块
             test_chunks = [
                 {
-                    "content": "GR4J模型是一个四参数的日尺度概念性降雨径流模型",
+                    "content": "prepare_data工具用于数据准备和预处理",
                     "chunk_id": "test_001",
                     "source_file": "test_gr4j.txt"
                 },
                 {
-                    "content": "XAJ模型又称新安江模型，是中国开发的概念性水文模型",
+                    "content": "calibrate_model工具用于模型参数率定",
                     "chunk_id": "test_002",
                     "source_file": "test_xaj.txt"
                 },
                 {
-                    "content": "水文模型率定是确定模型参数最优值的过程",
+                    "content": "evaluate_model工具用于模型性能评估",
                     "chunk_id": "test_003",
                     "source_file": "test_calib.txt"
                 }
@@ -413,9 +309,9 @@ def xaj_model(P, E, params):
 
             # 测试查询
             query_tests = [
-                "GR4J模型参数",
-                "新安江模型",
-                "水文模型率定方法"
+                "工具使用方法",
+                "数据预处理",
+                "模型率定步骤"
             ]
 
             for query in query_tests:
@@ -454,8 +350,7 @@ def xaj_model(P, E, params):
             config = Config(
                 raw_documents_dir=str(self.raw_dir),
                 processed_documents_dir=str(self.processed_dir),
-                vector_db_dir=str(self.vector_db_dir),
-                backup_dir=str(self.backup_dir)
+                vector_db_dir=str(self.vector_db_dir)
             )
 
             # 初始化知识库更新器
@@ -505,8 +400,7 @@ def xaj_model(P, E, params):
             config = Config(
                 raw_documents_dir=str(self.raw_dir),
                 processed_documents_dir=str(self.processed_dir),
-                vector_db_dir=str(self.vector_db_dir),
-                backup_dir=str(self.backup_dir)
+                vector_db_dir=str(self.vector_db_dir)
             )
 
             # 初始化RAG系统
@@ -532,10 +426,10 @@ def xaj_model(P, E, params):
 
                 # 测试查询功能
                 test_queries = [
-                    "GR4J模型的参数含义",
-                    "新安江模型的特点",
-                    "水文模型率定方法",
-                    "降雨径流模型应用"
+                    "水文模型率定工作流",
+                    "prepare_data工具的功能",
+                    "calibrate_model参数配置",
+                    "常见场景解决方案"
                 ]
 
                 for query in test_queries:
@@ -563,7 +457,7 @@ def xaj_model(P, E, params):
                         logger.warning(f"⚠ 查询失败: {result}")
 
                 # 测试知识片段获取
-                fragments = rag_system.get_knowledge_fragments("水文模型", top_k=3)
+                fragments = rag_system.get_knowledge_fragments("工具使用", top_k=3)
                 logger.info(f"✓ 获取知识片段: {len(fragments)} 个")
 
                 # 测试知识库更新检查
@@ -594,9 +488,9 @@ def xaj_model(P, E, params):
         try:
             # 简单的性能测试
             test_queries = [
-                "GR4J模型参数",
-                "新安江模型特点",
-                "水文率定方法"
+                "工具使用指南",
+                "模型率定流程",
+                "数据准备方法"
             ]
 
             # 如果有多个后端可用，进行对比测试
@@ -636,7 +530,7 @@ def xaj_model(P, E, params):
         try:
             # 创建较多的测试查询
             stress_queries = [
-                f"测试查询 {i}: 水文模型参数率定优化方法研究"
+                f"测试查询 {i}: 水文工具使用指南和最佳实践"
                 for i in range(10)
             ]
 

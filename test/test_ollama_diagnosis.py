@@ -25,7 +25,8 @@ logs_dir = project_root / "logs"
 logs_dir.mkdir(exist_ok=True)
 
 # 设置详细日志
-log_file = logs_dir / f"test_ollama_diagnosis_{int(time.time())}.log"
+from datetime import datetime
+log_file = logs_dir / f"test_ollama_diagnosis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
 # 只输出到文件，不输出到终端
 logging.basicConfig(
