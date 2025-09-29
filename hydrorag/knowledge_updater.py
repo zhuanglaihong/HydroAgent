@@ -1,958 +1,663 @@
 """
 Author: zhuanglaihong
-Date: 2025-09-27 15:10:00
-LastEditTime: 2025-09-27 15:10:00
+Date: 2025-09-29 16:00:00
+LastEditTime: 2025-09-29 16:00:00
 LastEditors: zhuanglaihong
-Description: 知识库更新接口，提供增量更新、全量重建和维护功能
+Description: 知识库更新模块，负责知识库的增量更新、版本管理和自动维护
 FilePath: \HydroAgent\hydrorag\knowledge_updater.py
 Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 import logging
-import os
+import json
 import shutil
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
-from datetime import datetime
-import json
+from typing import List, Dict, Any, Optional, Set
+from datetime import datetime, timedelta
+import hashlib
+import time
 
-from .rag_system import RAGSystem
-from .config import Config, default_config
-from .document_processor import DocumentProcessor
-from .vector_store import VectorStore
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeUpdater:
-    """知识库更新器
+    """知识库更新器 - 负责知识库的增量更新、版本管理和自动维护"""
 
-    提供知识库的增量更新、全量重建、备份恢复等功能
-    支持上下文管理器，确保资源正确释放
-    """
-
-    def __init__(self, config: Optional[Config] = None, lazy_init: bool = True):
-        """初始化知识库更新器
+    def __init__(self, config, rag_system=None):
+        """
+        初始化知识库更新器
 
         Args:
-            config: RAG系统配置，如果为None则使用默认配置
-            lazy_init: 是否延迟初始化嵌入组件，True时仅在需要时初始化向量存储
+            config: 配置对象
+            rag_system: RAG系统实例（可选，用于更新操作）
         """
-        self.config = config or default_config
-        self.logger = logging.getLogger(__name__)
-        self.lazy_init = lazy_init
-
-        # 初始化核心组件
-        self.doc_processor = DocumentProcessor(self.config)
-
-        # 延迟初始化的组件
-        self.embeddings_manager = None
-        self.vector_store = None
+        self.config = config
+        self.rag_system = rag_system
 
         # 路径配置
-        self.raw_dir = Path(self.config.raw_documents_dir)
-        self.processed_dir = Path(self.config.processed_documents_dir)
-        self.vector_db_dir = Path(self.config.vector_db_dir)
-        self.backup_dir = Path(self.config.documents_dir) / "backup"
+        self.raw_dir = Path(getattr(config, 'raw_documents_dir', './documents/raw'))
+        self.processed_dir = Path(getattr(config, 'processed_documents_dir', './documents/processed'))
+        self.backup_dir = Path(getattr(config, 'backup_dir', './documents/backups'))
+        self.update_log_file = self.backup_dir / 'update_log.json'
+
+        # 更新配置
+        self.check_interval = getattr(config, 'UPDATE_CHECK_INTERVAL', 3600)  # 检查间隔（秒）
+        self.auto_backup = getattr(config, 'AUTO_BACKUP', True)
+        self.max_backups = getattr(config, 'MAX_BACKUPS', 10)
+        self.incremental_update = getattr(config, 'INCREMENTAL_UPDATE', True)
 
         # 确保目录存在
-        self._ensure_directories()
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
 
-        # 如果不是延迟初始化，立即初始化嵌入组件
-        if not lazy_init:
-            self._init_embedding_components()
+        # 状态跟踪
+        self.last_check_time = None
+        self.update_history = []
 
-    def _ensure_directories(self):
-        """确保必要的目录存在"""
-        for directory in [self.raw_dir, self.processed_dir, self.vector_db_dir, self.backup_dir]:
-            directory.mkdir(parents=True, exist_ok=True)
+        # 加载更新历史
+        self._load_update_history()
 
-    def _init_embedding_components(self):
-        """初始化嵌入管理器和向量存储"""
-        if self.embeddings_manager is None:
-            try:
-                from .embeddings_manager import EmbeddingsManager
-                self.embeddings_manager = EmbeddingsManager(self.config)
-                self.logger.info("嵌入管理器初始化成功")
-            except Exception as e:
-                self.logger.error(f"嵌入管理器初始化失败: {e}")
-                self.logger.warning("将使用空嵌入管理器继续运行")
-                # 创建一个虚拟的嵌入管理器
-                self.embeddings_manager = None
+        logger.info(f"知识库更新器初始化完成")
+        logger.info(f"原始文档目录: {self.raw_dir}")
+        logger.info(f"处理文档目录: {self.processed_dir}")
+        logger.info(f"备份目录: {self.backup_dir}")
 
-        # 无论嵌入管理器是否成功，都尝试初始化向量存储
+    def _load_update_history(self):
+        """加载更新历史"""
         try:
-            self.vector_store = VectorStore(self.config, self.embeddings_manager)
-            if self.vector_store.is_available():
-                self.logger.info("向量存储初始化成功")
+            if self.update_log_file.exists():
+                with open(self.update_log_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.update_history = data.get('history', [])
+                    self.last_check_time = data.get('last_check_time')
+                    if self.last_check_time:
+                        self.last_check_time = datetime.fromisoformat(self.last_check_time)
+
+                logger.info(f"加载了 {len(self.update_history)} 条更新历史记录")
             else:
-                self.logger.warning("向量存储初始化不完整，但可继续运行")
-        except Exception as e:
-            self.logger.error(f"向量存储初始化失败: {e}")
-            self.vector_store = None
-
-    def _ensure_vector_store(self):
-        """确保向量存储已初始化"""
-        if self.vector_store is None:
-            self._init_embedding_components()
-
-    def full_rebuild(self, backup_existing: bool = True) -> Dict[str, Any]:
-        """完全重建知识库
-
-        Args:
-            backup_existing: 是否备份现有知识库
-
-        Returns:
-            Dict: 重建结果统计
-        """
-        self.logger.info("开始完全重建知识库")
-
-        result = {
-            "status": "success",
-            "start_time": datetime.now().isoformat(),
-            "backup_created": False,
-            "processed_files": 0,
-            "indexed_documents": 0,
-            "errors": []
-        }
-
-        try:
-            # 0. 确保向量存储已初始化
-            self._ensure_vector_store()
-            self.logger.info("向量存储初始化完成")
-
-            # 1. 备份现有知识库
-            if backup_existing:
-                backup_path = self._create_backup()
-                result["backup_created"] = True
-                result["backup_path"] = str(backup_path)
-                self.logger.info(f"已创建备份: {backup_path}")
-
-            # 2. 清理现有数据
-            self._cleanup_existing_data()
-            self.logger.info("已清理现有数据")
-
-            # 3. 处理原始文档
-            processed_files = self._process_all_documents()
-            result["processed_files"] = len(processed_files)
-            self.logger.info(f"已处理 {len(processed_files)} 个文档")
-
-            # 4. 重建向量索引
-            indexed_count = self._rebuild_vector_index()
-            result["indexed_documents"] = indexed_count
-            self.logger.info(f"已索引 {indexed_count} 个文档块")
-
-            # 5. 验证重建结果
-            validation_result = self._validate_knowledge_base()
-            result.update(validation_result)
-
-            result["end_time"] = datetime.now().isoformat()
-            self.logger.info("知识库重建完成")
+                logger.info("未找到更新历史，从头开始")
 
         except Exception as e:
-            result["status"] = "failed"
-            result["error"] = str(e)
-            result["errors"].append(str(e))
-            self.logger.error(f"知识库重建失败: {e}")
+            logger.error(f"加载更新历史失败: {e}")
+            self.update_history = []
+            self.last_check_time = None
 
-        return result
-
-    def incremental_update(self, file_paths: Optional[List[Union[str, Path]]] = None) -> Dict[str, Any]:
-        """增量更新知识库
-
-        Args:
-            file_paths: 要更新的文件路径列表，如果为None则自动检测变更
-
-        Returns:
-            Dict: 更新结果统计
-        """
-        self.logger.info("开始增量更新知识库")
-
-        result = {
-            "status": "success",
-            "start_time": datetime.now().isoformat(),
-            "updated_files": [],
-            "added_documents": 0,
-            "updated_documents": 0,
-            "removed_documents": 0,
-            "errors": []
-        }
-
+    def _save_update_history(self):
+        """保存更新历史"""
         try:
-            # 0. 确保向量存储已初始化
-            self._ensure_vector_store()
-            self.logger.info("向量存储初始化完成")
-
-            # 1. 确定需要更新的文件
-            if file_paths:
-                files_to_update = [Path(f) for f in file_paths]
-            else:
-                files_to_update = self._detect_changed_files()
-
-            self.logger.info(f"检测到 {len(files_to_update)} 个文件需要更新")
-
-            # 2. 处理每个变更的文件
-            for file_path in files_to_update:
-                try:
-                    if file_path.exists():
-                        # 文件存在，处理更新
-                        self._update_single_file(file_path)
-                        result["updated_files"].append(str(file_path))
-                        self.logger.info(f"已更新文件: {file_path}")
-                    else:
-                        # 文件不存在，删除相关索引
-                        self._remove_file_from_index(file_path)
-                        result["removed_documents"] += 1
-                        self.logger.info(f"已从索引中删除: {file_path}")
-
-                except Exception as e:
-                    error_msg = f"处理文件 {file_path} 时出错: {e}"
-                    result["errors"].append(error_msg)
-                    self.logger.error(error_msg)
-
-            # 3. 更新统计信息
-            self._update_statistics(result)
-
-            result["end_time"] = datetime.now().isoformat()
-            self.logger.info("增量更新完成")
-
-        except Exception as e:
-            result["status"] = "failed"
-            result["error"] = str(e)
-            result["errors"].append(str(e))
-            self.logger.error(f"增量更新失败: {e}")
-
-        return result
-
-    def add_documents(self, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """添加新文档到知识库
-
-        Args:
-            documents: 文档列表，每个文档包含content, metadata等字段
-
-        Returns:
-            Dict: 添加结果
-        """
-        self.logger.info(f"开始添加 {len(documents)} 个文档到知识库")
-
-        result = {
-            "status": "success",
-            "added_count": 0,
-            "failed_count": 0,
-            "errors": []
-        }
-
-        try:
-            # 确保向量存储已初始化
-            self._ensure_vector_store()
-
-            for i, doc in enumerate(documents):
-                try:
-                    # 添加到向量数据库
-                    self.vector_store.add_document(
-                        content=doc["content"],
-                        metadata=doc.get("metadata", {}),
-                        doc_id=doc.get("id", f"manual_doc_{i}")
-                    )
-                    result["added_count"] += 1
-
-                except Exception as e:
-                    result["failed_count"] += 1
-                    error_msg = f"添加文档 {i} 失败: {e}"
-                    result["errors"].append(error_msg)
-                    self.logger.error(error_msg)
-
-            self.logger.info(f"文档添加完成: 成功 {result['added_count']}, 失败 {result['failed_count']}")
-
-        except Exception as e:
-            result["status"] = "failed"
-            result["error"] = str(e)
-            self.logger.error(f"添加文档失败: {e}")
-
-        return result
-
-    def remove_documents(self, doc_ids: List[str]) -> Dict[str, Any]:
-        """从知识库中删除指定文档
-
-        Args:
-            doc_ids: 要删除的文档ID列表
-
-        Returns:
-            Dict: 删除结果
-        """
-        self.logger.info(f"开始删除 {len(doc_ids)} 个文档")
-
-        result = {
-            "status": "success",
-            "removed_count": 0,
-            "failed_count": 0,
-            "errors": []
-        }
-
-        try:
-            # 确保向量存储已初始化
-            self._ensure_vector_store()
-
-            for doc_id in doc_ids:
-                try:
-                    success = self.vector_store.delete_document(doc_id)
-                    if success:
-                        result["removed_count"] += 1
-                    else:
-                        result["failed_count"] += 1
-                        result["errors"].append(f"文档 {doc_id} 不存在")
-
-                except Exception as e:
-                    result["failed_count"] += 1
-                    error_msg = f"删除文档 {doc_id} 失败: {e}"
-                    result["errors"].append(error_msg)
-                    self.logger.error(error_msg)
-
-            self.logger.info(f"文档删除完成: 成功 {result['removed_count']}, 失败 {result['failed_count']}")
-
-        except Exception as e:
-            result["status"] = "failed"
-            result["error"] = str(e)
-            self.logger.error(f"删除文档失败: {e}")
-
-        return result
-
-    def get_knowledge_base_stats(self) -> Dict[str, Any]:
-        """获取知识库统计信息
-
-        Returns:
-            Dict: 统计信息
-        """
-        try:
-            # 获取文件系统统计（不需要向量存储）
-            raw_files = list(self.raw_dir.rglob("*.*")) if self.raw_dir.exists() else []
-            processed_files = list(self.processed_dir.rglob("*.json")) if self.processed_dir.exists() else []
-
-            stats = {
-                "file_system": {
-                    "raw_files_count": len(raw_files),
-                    "processed_files_count": len(processed_files),
-                    "raw_files": [str(f.relative_to(self.raw_dir)) for f in raw_files],
-                    "processed_files": [str(f.relative_to(self.processed_dir)) for f in processed_files]
-                },
-                "last_updated": datetime.now().isoformat()
+            data = {
+                'history': self.update_history[-100:],  # 只保留最近100条记录
+                'last_check_time': self.last_check_time.isoformat() if self.last_check_time else None,
+                'last_updated': datetime.now().isoformat()
             }
 
-            # 尝试获取向量数据库统计（如果向量存储可用）
-            try:
-                if self.vector_store is not None:
-                    vector_stats = self.vector_store.get_stats()
-                    stats["vector_database"] = vector_stats
-                else:
-                    # 如果是延迟初始化且还未初始化，提供基本信息
-                    stats["vector_database"] = {
-                        "document_count": "未初始化",
-                        "collection_count": "未初始化",
-                        "status": "向量存储未初始化"
-                    }
-            except Exception as e:
-                self.logger.warning(f"无法获取向量数据库统计: {e}")
-                stats["vector_database"] = {
-                    "document_count": "错误",
-                    "collection_count": "错误",
-                    "error": str(e)
-                }
-
-            return stats
+            with open(self.update_log_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
 
         except Exception as e:
-            self.logger.error(f"获取统计信息失败: {e}")
-            return {"error": str(e)}
+            logger.error(f"保存更新历史失败: {e}")
 
-    def create_backup(self, backup_name: Optional[str] = None) -> Path:
-        """创建知识库备份
-
-        Args:
-            backup_name: 备份名称，如果为None则使用时间戳
+    def check_for_updates(self) -> Dict[str, Any]:
+        """
+        检查是否有文档需要更新
 
         Returns:
-            Path: 备份路径
+            Dict[str, Any]: 检查结果
         """
-        if backup_name is None:
-            backup_name = f"knowledge_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-        return self._create_backup(backup_name)
-
-    def restore_backup(self, backup_path: Union[str, Path]) -> Dict[str, Any]:
-        """恢复知识库备份
-
-        Args:
-            backup_path: 备份路径
-
-        Returns:
-            Dict: 恢复结果
-        """
-        backup_path = Path(backup_path)
-
-        if not backup_path.exists():
-            return {"status": "failed", "error": f"备份路径不存在: {backup_path}"}
-
         try:
-            self.logger.info(f"开始恢复备份: {backup_path}")
+            logger.info("开始检查文档更新...")
 
-            # 备份当前状态
-            current_backup = self._create_backup("pre_restore_backup")
+            # 扫描原始文档
+            current_files = self._scan_raw_documents()
+            if not current_files:
+                return {
+                    "status": "no_documents",
+                    "message": "未找到原始文档",
+                    "changes": {}
+                }
 
-            # 恢复数据
-            if self.processed_dir.exists():
-                shutil.rmtree(self.processed_dir)
-            if self.vector_db_dir.exists():
-                shutil.rmtree(self.vector_db_dir)
+            # 获取上次处理的文档状态
+            last_state = self._get_last_document_state()
 
-            # 从备份恢复
-            shutil.copytree(backup_path / "processed", self.processed_dir)
-            shutil.copytree(backup_path / "vector_db", self.vector_db_dir)
+            # 检测变更
+            changes = self._detect_changes(current_files, last_state)
 
-            self.logger.info("备份恢复完成")
+            # 更新检查时间
+            self.last_check_time = datetime.now()
+
+            # 记录检查结果
+            check_result = {
+                "status": "completed",
+                "check_time": self.last_check_time.isoformat(),
+                "total_files": len(current_files),
+                "changes": changes,
+                "summary": {
+                    "new_files": len(changes.get("new", [])),
+                    "modified_files": len(changes.get("modified", [])),
+                    "deleted_files": len(changes.get("deleted", [])),
+                    "unchanged_files": len(changes.get("unchanged", []))
+                }
+            }
+
+            logger.info(f"检查完成: 新增 {check_result['summary']['new_files']}, "
+                       f"修改 {check_result['summary']['modified_files']}, "
+                       f"删除 {check_result['summary']['deleted_files']}")
+
+            return check_result
+
+        except Exception as e:
+            logger.error(f"检查更新失败: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def _scan_raw_documents(self) -> Dict[str, Dict[str, Any]]:
+        """扫描原始文档目录"""
+        try:
+            files_info = {}
+
+            if not self.raw_dir.exists():
+                logger.warning(f"原始文档目录不存在: {self.raw_dir}")
+                return files_info
+
+            supported_extensions = getattr(self.config, 'RAG_SUPPORTED_EXTENSIONS',
+                                         ['.txt', '.md', '.markdown', '.rst', '.pdf', '.docx', '.doc', '.py', '.yaml', '.yml', '.json'])
+
+            for file_path in self.raw_dir.rglob('*'):
+                if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
+                    try:
+                        stat = file_path.stat()
+                        file_hash = self._get_file_hash(file_path)
+
+                        files_info[str(file_path)] = {
+                            "path": str(file_path),
+                            "size": stat.st_size,
+                            "mtime": stat.st_mtime,
+                            "hash": file_hash,
+                            "relative_path": str(file_path.relative_to(self.raw_dir))
+                        }
+
+                    except Exception as e:
+                        logger.error(f"处理文件信息失败 {file_path}: {e}")
+
+            logger.debug(f"扫描到 {len(files_info)} 个文档文件")
+            return files_info
+
+        except Exception as e:
+            logger.error(f"扫描原始文档失败: {e}")
+            return {}
+
+    def _get_file_hash(self, file_path: Path) -> str:
+        """计算文件哈希值"""
+        try:
+            hasher = hashlib.md5()
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except Exception as e:
+            logger.error(f"计算文件哈希失败 {file_path}: {e}")
+            return ""
+
+    def _get_last_document_state(self) -> Dict[str, Dict[str, Any]]:
+        """获取上次处理的文档状态"""
+        try:
+            if not self.update_history:
+                return {}
+
+            # 找到最近一次成功的更新记录
+            for record in reversed(self.update_history):
+                if record.get("status") == "success" and "document_state" in record:
+                    return record["document_state"]
+
+            return {}
+
+        except Exception as e:
+            logger.error(f"获取文档状态失败: {e}")
+            return {}
+
+    def _detect_changes(self, current_files: Dict[str, Dict[str, Any]],
+                       last_state: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
+        """检测文档变更"""
+        try:
+            changes = {
+                "new": [],
+                "modified": [],
+                "deleted": [],
+                "unchanged": []
+            }
+
+            # 检查新增和修改的文件
+            for file_path, file_info in current_files.items():
+                if file_path not in last_state:
+                    changes["new"].append(file_path)
+                else:
+                    last_info = last_state[file_path]
+                    if (file_info["hash"] != last_info.get("hash") or
+                        file_info["mtime"] != last_info.get("mtime")):
+                        changes["modified"].append(file_path)
+                    else:
+                        changes["unchanged"].append(file_path)
+
+            # 检查删除的文件
+            for file_path in last_state:
+                if file_path not in current_files:
+                    changes["deleted"].append(file_path)
+
+            return changes
+
+        except Exception as e:
+            logger.error(f"检测变更失败: {e}")
+            return {"new": [], "modified": [], "deleted": [], "unchanged": []}
+
+    def update_knowledge_base(self, force_full_update: bool = False) -> Dict[str, Any]:
+        """
+        更新知识库
+
+        Args:
+            force_full_update: 是否强制全量更新
+
+        Returns:
+            Dict[str, Any]: 更新结果
+        """
+        try:
+            logger.info("开始更新知识库...")
+            start_time = datetime.now()
+
+            # 检查更新
+            check_result = self.check_for_updates()
+            if check_result["status"] != "completed":
+                return check_result
+
+            changes = check_result["changes"]
+            has_changes = (len(changes["new"]) > 0 or
+                         len(changes["modified"]) > 0 or
+                         len(changes["deleted"]) > 0)
+
+            if not has_changes and not force_full_update:
+                logger.info("没有检测到变更，跳过更新")
+                return {
+                    "status": "no_changes",
+                    "message": "没有检测到文档变更",
+                    "check_result": check_result
+                }
+
+            # 备份（如果启用）
+            backup_result = None
+            if self.auto_backup:
+                backup_result = self.create_backup()
+                if backup_result["status"] != "success":
+                    logger.warning(f"备份失败: {backup_result}")
+
+            update_result = {
+                "status": "success",
+                "start_time": start_time.isoformat(),
+                "changes": changes,
+                "backup": backup_result,
+                "steps": {}
+            }
+
+            try:
+                # 执行更新步骤
+                if force_full_update:
+                    # 全量更新
+                    logger.info("执行全量更新...")
+                    full_update_result = self._perform_full_update()
+                    update_result["steps"]["full_update"] = full_update_result
+                else:
+                    # 增量更新
+                    logger.info("执行增量更新...")
+                    incremental_result = self._perform_incremental_update(changes)
+                    update_result["steps"]["incremental_update"] = incremental_result
+
+                # 记录成功的文档状态
+                current_files = self._scan_raw_documents()
+                update_result["document_state"] = current_files
+
+                # 计算更新时间
+                end_time = datetime.now()
+                update_result["end_time"] = end_time.isoformat()
+                update_result["duration"] = (end_time - start_time).total_seconds()
+
+                logger.info(f"知识库更新完成，耗时 {update_result['duration']:.2f} 秒")
+
+            except Exception as e:
+                update_result["status"] = "error"
+                update_result["error"] = str(e)
+                logger.error(f"更新过程中出错: {e}")
+
+            # 记录更新历史
+            self.update_history.append(update_result)
+            self._save_update_history()
+
+            # 清理旧备份
+            if self.auto_backup:
+                self._cleanup_old_backups()
+
+            return update_result
+
+        except Exception as e:
+            logger.error(f"更新知识库失败: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def _perform_full_update(self) -> Dict[str, Any]:
+        """执行全量更新"""
+        try:
+            if not self.rag_system:
+                return {"status": "error", "error": "RAG系统未初始化"}
+
+            # 清理现有数据
+            logger.info("清理现有处理数据...")
+            if hasattr(self.rag_system.document_processor, 'clean_processed_documents'):
+                self.rag_system.document_processor.clean_processed_documents()
+
+            if hasattr(self.rag_system.vector_store, 'clear_collection'):
+                clear_result = self.rag_system.vector_store.clear_collection()
+                logger.info(f"清理向量库: {clear_result}")
+
+            # 重新设置系统
+            logger.info("重新构建知识库...")
+            setup_result = self.rag_system.setup_from_raw_documents()
 
             return {
                 "status": "success",
-                "restored_from": str(backup_path),
-                "current_backup": str(current_backup)
+                "type": "full_update",
+                "setup_result": setup_result
             }
 
         except Exception as e:
-            self.logger.error(f"恢复备份失败: {e}")
-            return {"status": "failed", "error": str(e)}
+            logger.error(f"全量更新失败: {e}")
+            return {"status": "error", "error": str(e)}
 
-    def _create_backup(self, backup_name: Optional[str] = None) -> Path:
-        """创建备份（内部方法）"""
-        if backup_name is None:
-            backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    def _perform_incremental_update(self, changes: Dict[str, List[str]]) -> Dict[str, Any]:
+        """执行增量更新"""
+        try:
+            if not self.rag_system:
+                return {"status": "error", "error": "RAG系统未初始化"}
 
-        backup_path = self.backup_dir / backup_name
-        backup_path.mkdir(parents=True, exist_ok=True)
+            result = {
+                "status": "success",
+                "type": "incremental_update",
+                "processed": {
+                    "new": 0,
+                    "modified": 0,
+                    "deleted": 0
+                },
+                "details": []
+            }
 
-        # 备份processed目录
-        if self.processed_dir.exists():
-            shutil.copytree(self.processed_dir, backup_path / "processed")
+            # 处理新增和修改的文件
+            files_to_process = changes["new"] + changes["modified"]
 
-        # 备份vector_db目录（跳过可能被占用的文件）
-        if self.vector_db_dir.exists():
-            try:
-                shutil.copytree(self.vector_db_dir, backup_path / "vector_db")
-            except Exception as e:
-                self.logger.warning(f"无法备份向量数据库目录（可能被占用）: {e}")
-                # 创建空目录标记
-                (backup_path / "vector_db_backup_failed.txt").write_text(
-                    f"向量数据库备份失败: {e}\n时间: {datetime.now().isoformat()}",
-                    encoding="utf-8"
-                )
+            if files_to_process:
+                logger.info(f"处理 {len(files_to_process)} 个新增/修改的文件...")
 
-        # 创建备份元数据（不获取向量存储统计以避免初始化连接）
-        metadata = {
-            "created_at": datetime.now().isoformat(),
-            "config": str(self.config),
-            "backup_note": "备份创建时未获取向量存储统计以避免连接冲突"
-        }
-
-        with open(backup_path / "metadata.json", "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
-
-        return backup_path
-
-    def _cleanup_existing_data(self):
-        """清理现有数据"""
-        # 先尝试清空集合数据（如果向量存储可用）
-        if self.vector_store is not None:
-            try:
-                self.logger.info("尝试清空向量数据库集合...")
-
-                # 确保向量存储已正确初始化
-                if hasattr(self.vector_store, 'collection') and self.vector_store.collection is not None:
-                    clear_result = self.vector_store.clear_collection()
-                    if clear_result.get("status") == "success":
-                        self.logger.info(f"成功清空集合，删除了 {clear_result.get('deleted', 0)} 个文档")
-                    elif clear_result.get("status") == "already_empty":
-                        self.logger.info("集合已经为空")
-                    else:
-                        self.logger.warning(f"清空集合失败: {clear_result.get('error', '未知错误')}")
-                else:
-                    self.logger.info("向量存储未完全初始化，跳过集合清空")
-
-            except Exception as e:
-                self.logger.warning(f"清空集合时出错: {e}")
-
-            # 然后强制关闭连接
-            self.logger.info("强制关闭向量数据库连接...")
-            try:
-                self.vector_store.force_close()
-            except Exception as e:
-                self.logger.warning(f"强制关闭连接失败: {e}")
-            finally:
-                self.vector_store = None
-
-        # 同时清理嵌入管理器
-        if self.embeddings_manager is not None:
-            self.embeddings_manager = None
-
-        # 强制垃圾回收
-        import gc
-        gc.collect()
-
-        # 额外等待时间，确保所有资源释放
-        import time
-        time.sleep(3)
-        self.logger.info("等待资源释放完成")
-
-        # 额外检查并终止可能占用ChromaDB文件的进程
-        self._terminate_chromadb_processes()
-
-        # 清理处理后的文档目录
-        if self.processed_dir.exists():
-            self.logger.info(f"删除处理后文档目录: {self.processed_dir}")
-            try:
-                shutil.rmtree(self.processed_dir)
-            except OSError as e:
-                self.logger.warning(f"删除处理后文档目录失败: {e}")
-
-        # 清理向量数据库目录
-        if self.vector_db_dir.exists():
-            self.logger.info(f"删除向量数据库目录: {self.vector_db_dir}")
-            success = False
-
-            # 方法1: 直接删除
-            try:
-                import time
-                time.sleep(2)  # 增加等待时间
-                shutil.rmtree(self.vector_db_dir)
-                success = True
-                self.logger.info("成功删除向量数据库目录")
-            except OSError as e:
-                self.logger.warning(f"直接删除失败: {e}")
-
-            # 方法2: 逐个删除文件
-            if not success:
-                try:
-                    self._force_delete_directory(self.vector_db_dir)
-                    success = True
-                    self.logger.info("逐个删除文件成功")
-                except Exception as e:
-                    self.logger.warning(f"逐个删除失败: {e}")
-
-            # 方法3: 使用系统命令
-            if not success:
-                try:
-                    import subprocess
-                    result = subprocess.run(
-                        ['rmdir', '/s', '/q', str(self.vector_db_dir)],
-                        shell=True, capture_output=True, text=True
-                    )
-                    if result.returncode == 0:
-                        success = True
-                        self.logger.info("使用系统命令成功删除向量数据库目录")
-                    else:
-                        self.logger.warning(f"系统命令失败: {result.stderr}")
-                except Exception as e:
-                    self.logger.warning(f"系统命令执行失败: {e}")
-
-            # 如果仍然失败，重命名旧目录并创建新目录
-            if not success and self.vector_db_dir.exists():
-                self.logger.warning("无法删除现有向量数据库目录，将重命名并创建新目录")
-                from datetime import datetime
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-                # 尝试多种方法处理旧目录
-                renamed_success = False
-
-                # 方法1: 直接重命名
-                old_backup_dir = self.vector_db_dir.parent / f"vector_db_old_{timestamp}"
-                try:
-                    self.vector_db_dir.rename(old_backup_dir)
-                    self.logger.info(f"旧向量数据库已重命名为: {old_backup_dir}")
-                    renamed_success = True
-                except Exception as e:
-                    self.logger.debug(f"直接重命名失败: {e}")
-
-                # 方法2: 使用系统命令重命名
-                if not renamed_success:
+                for file_path in files_to_process:
                     try:
-                        import subprocess
-                        result = subprocess.run(
-                            ['move', str(self.vector_db_dir), str(old_backup_dir)],
-                            shell=True, capture_output=True, text=True
-                        )
-                        if result.returncode == 0:
-                            self.logger.info(f"使用系统命令重命名成功: {old_backup_dir}")
-                            renamed_success = True
-                        else:
-                            self.logger.debug(f"系统命令重命名失败: {result.stderr}")
+                        path_obj = Path(file_path)
+                        if not path_obj.exists():
+                            continue
+
+                        # 处理单个文档
+                        process_result = self.rag_system.document_processor.process_document(path_obj)
+
+                        if process_result["status"] == "success":
+                            # 获取处理后的文档块
+                            processed_file = process_result.get("processed_file")
+                            if processed_file and Path(processed_file).exists():
+                                with open(processed_file, 'r', encoding='utf-8') as f:
+                                    doc_data = json.load(f)
+
+                                chunks = doc_data.get("chunks", [])
+                                if chunks:
+                                    # 添加到向量数据库
+                                    add_result = self.rag_system.vector_store.add_documents(chunks)
+                                    if add_result.get("status") == "success":
+                                        if file_path in changes["new"]:
+                                            result["processed"]["new"] += 1
+                                        else:
+                                            result["processed"]["modified"] += 1
+
+                                        result["details"].append({
+                                            "file": file_path,
+                                            "action": "processed",
+                                            "chunks": len(chunks)
+                                        })
+                                    else:
+                                        logger.error(f"添加向量失败: {add_result}")
+                                        result["details"].append({
+                                            "file": file_path,
+                                            "action": "vector_add_failed",
+                                            "error": add_result.get("error")
+                                        })
+
                     except Exception as e:
-                        self.logger.debug(f"系统命令重命名异常: {e}")
+                        logger.error(f"处理文件失败 {file_path}: {e}")
+                        result["details"].append({
+                            "file": file_path,
+                            "action": "failed",
+                            "error": str(e)
+                        })
 
-                # 方法3: 创建新路径
-                if renamed_success:
-                    # 重新创建目录
-                    self.vector_db_dir.mkdir(parents=True, exist_ok=True)
-                    self.logger.info(f"重新创建向量数据库目录: {self.vector_db_dir}")
-                else:
-                    # 如果重命名失败，使用新路径
-                    self.logger.warning("重命名失败，使用新的数据库路径")
-                    new_db_dir = self.vector_db_dir.parent / f"vector_db_{timestamp}"
-                    self.vector_db_dir = new_db_dir
-                    self.config.vector_db_dir = str(new_db_dir)
-                    self.logger.info(f"使用新的向量数据库路径: {new_db_dir}")
+            # 处理删除的文件（FAISS不支持直接删除，记录但不处理）
+            if changes["deleted"]:
+                logger.warning(f"检测到 {len(changes['deleted'])} 个删除的文件，FAISS不支持直接删除")
+                for file_path in changes["deleted"]:
+                    result["details"].append({
+                        "file": file_path,
+                        "action": "deleted_detected",
+                        "note": "FAISS不支持直接删除，需要全量重建"
+                    })
 
-        self._ensure_directories()
+            logger.info(f"增量更新完成: 新增 {result['processed']['new']}, "
+                       f"修改 {result['processed']['modified']}")
 
-    def _force_delete_directory(self, directory):
-        """强制删除目录中的所有文件"""
-        import stat
-        import time
-
-        for root, dirs, files in os.walk(directory, topdown=False):
-            # 删除文件
-            for file in files:
-                file_path = Path(root) / file
-                try:
-                    # 移除只读属性
-                    file_path.chmod(stat.S_IWRITE)
-                    time.sleep(0.1)
-                    file_path.unlink()
-                except Exception as e:
-                    self.logger.debug(f"删除文件 {file_path} 失败: {e}")
-
-            # 删除目录
-            for dir_name in dirs:
-                dir_path = Path(root) / dir_name
-                try:
-                    dir_path.rmdir()
-                except Exception as e:
-                    self.logger.debug(f"删除目录 {dir_path} 失败: {e}")
-
-        # 删除根目录
-        try:
-            directory.rmdir()
-        except Exception:
-            # 如果还是删不掉，重命名为备份目录
-            backup_name = f"{directory.name}_old_{int(time.time())}"
-            backup_path = directory.parent / backup_name
-            directory.rename(backup_path)
-            self.logger.info(f"无法删除目录，已重命名为: {backup_path}")
-
-    def _process_all_documents(self) -> List[Path]:
-        """处理所有原始文档"""
-        if not self.raw_dir.exists():
-            return []
-
-        # 获取所有支持的文件
-        supported_extensions = [".txt", ".md", ".json", ".csv"]
-        raw_files = []
-
-        for ext in supported_extensions:
-            raw_files.extend(self.raw_dir.rglob(f"*{ext}"))
-
-        processed_files = []
-        for file_path in raw_files:
-            try:
-                self.doc_processor.process_document(file_path)
-                processed_files.append(file_path)
-            except Exception as e:
-                self.logger.error(f"处理文档 {file_path} 失败: {e}")
-
-        return processed_files
-
-    def _rebuild_vector_index(self) -> int:
-        """重建向量索引"""
-        if not self.processed_dir.exists():
-            return 0
-
-        # 确保向量存储已重新初始化
-        self._ensure_vector_store()
-
-        if self.vector_store is None:
-            self.logger.error("向量存储初始化失败，无法索引文档")
-            return 0
-
-        # 获取所有处理后的文档
-        processed_files = list(self.processed_dir.rglob("*.json"))
-
-        if not processed_files:
-            self.logger.warning("没有找到处理后的文档文件")
-            return 0
-
-        self.logger.info(f"找到 {len(processed_files)} 个处理后的文档，开始索引...")
-
-        # 收集所有文档块
-        all_chunks = []
-        indexed_count = 0
-
-        for file_path in processed_files:
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    doc_data = json.load(f)
-
-                # 准备文档块
-                for chunk in doc_data.get("chunks", []):
-                    chunk_data = {
-                        "content": chunk["content"],
-                        "metadata": {
-                            "source_file": doc_data.get("source_file", ""),
-                            "chunk_index": chunk.get("index", 0),
-                            "processed_time": doc_data.get("processed_time", ""),
-                            "chunk_id": f"{file_path.stem}_{chunk.get('index', 0)}",
-                            **chunk.get("metadata", {})
-                        },
-                        "chunk_id": f"{file_path.stem}_{chunk.get('index', 0)}"
-                    }
-                    all_chunks.append(chunk_data)
-                    indexed_count += 1
-
-            except Exception as e:
-                self.logger.error(f"读取文档 {file_path} 失败: {e}")
-
-        # 批量添加到向量数据库
-        if all_chunks:
-            self.logger.info(f"开始批量索引 {len(all_chunks)} 个文档块...")
-            try:
-                result = self.vector_store.add_documents(all_chunks)
-                if result.get("status") == "success":
-                    actual_added = result.get("added", 0)
-                    self.logger.info(f"成功索引 {actual_added} 个文档块")
-                    return actual_added
-                else:
-                    self.logger.error(f"批量索引失败: {result.get('error', '未知错误')}")
-                    return 0
-            except Exception as e:
-                self.logger.error(f"批量索引过程失败: {e}")
-                return 0
-        else:
-            self.logger.warning("没有有效的文档块可以索引")
-            return 0
-
-    def _detect_changed_files(self) -> List[Path]:
-        """检测变更的文件"""
-        # 简单实现：检查raw目录中的所有文件
-        if not self.raw_dir.exists():
-            return []
-
-        # 获取所有支持的文件
-        supported_extensions = [".txt", ".md", ".json", ".csv"]
-        changed_files = []
-
-        for ext in supported_extensions:
-            changed_files.extend(self.raw_dir.rglob(f"*{ext}"))
-
-        return changed_files
-
-    def _update_single_file(self, file_path: Path):
-        """更新单个文件"""
-        # 重新处理文档
-        self.doc_processor.process_document(file_path)
-
-        # 更新向量索引
-        processed_file = self.processed_dir / f"{file_path.stem}_processed.json"
-        if processed_file.exists():
-            with open(processed_file, "r", encoding="utf-8") as f:
-                doc_data = json.load(f)
-
-            # 删除旧的索引
-            old_doc_ids = [f"{file_path.stem}_{i}" for i in range(100)]  # 假设最多100个块
-            for doc_id in old_doc_ids:
-                self.vector_store.delete_document(doc_id)
-
-            # 添加新的索引
-            for chunk in doc_data.get("chunks", []):
-                self.vector_store.add_document(
-                    content=chunk["content"],
-                    metadata={
-                        "source_file": str(file_path),
-                        "chunk_index": chunk.get("index", 0),
-                        "processed_time": doc_data.get("processed_time", ""),
-                        **chunk.get("metadata", {})
-                    },
-                    doc_id=f"{file_path.stem}_{chunk.get('index', 0)}"
-                )
-
-    def _remove_file_from_index(self, file_path: Path):
-        """从索引中删除文件"""
-        # 删除处理后的文件
-        processed_file = self.processed_dir / f"{file_path.stem}_processed.json"
-        if processed_file.exists():
-            processed_file.unlink()
-
-        # 删除向量索引
-        doc_ids = [f"{file_path.stem}_{i}" for i in range(100)]  # 假设最多100个块
-        for doc_id in doc_ids:
-            self.vector_store.delete_document(doc_id)
-
-    def _update_statistics(self, result: Dict[str, Any]):
-        """更新统计信息"""
-        # 这里可以添加更详细的统计逻辑
-        pass
-
-    def _validate_knowledge_base(self) -> Dict[str, Any]:
-        """验证知识库完整性"""
-        try:
-            stats = self.get_knowledge_base_stats()
-
-            validation = {
-                "validation_passed": True,
-                "issues": []
-            }
-
-            # 检查基本完整性
-            if stats.get("vector_database", {}).get("document_count", 0) == 0:
-                validation["issues"].append("向量数据库为空")
-
-            if stats.get("file_system", {}).get("processed_files_count", 0) == 0:
-                validation["issues"].append("没有处理后的文档")
-
-            validation["validation_passed"] = len(validation["issues"]) == 0
-
-            return validation
+            return result
 
         except Exception as e:
+            logger.error(f"增量更新失败: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def create_backup(self, backup_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        创建知识库备份
+
+        Args:
+            backup_name: 备份名称（可选）
+
+        Returns:
+            Dict[str, Any]: 备份结果
+        """
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if not backup_name:
+                backup_name = f"knowledge_backup_{timestamp}"
+
+            backup_path = self.backup_dir / backup_name
+            backup_path.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"创建知识库备份: {backup_path}")
+
+            backup_info = {
+                "backup_name": backup_name,
+                "backup_time": datetime.now().isoformat(),
+                "backup_path": str(backup_path),
+                "components": {}
+            }
+
+            # 备份处理后的文档
+            if self.processed_dir.exists():
+                processed_backup = backup_path / "processed_documents"
+                shutil.copytree(self.processed_dir, processed_backup, dirs_exist_ok=True)
+                backup_info["components"]["processed_documents"] = str(processed_backup)
+                logger.info("备份处理后的文档完成")
+
+            # 备份向量数据库
+            if self.rag_system and hasattr(self.rag_system.vector_store, 'backup_collection'):
+                vector_backup_file = backup_path / "vector_store.json"
+                vector_result = self.rag_system.vector_store.backup_collection(str(vector_backup_file))
+                if vector_result.get("status") == "success":
+                    backup_info["components"]["vector_store"] = str(vector_backup_file)
+                    logger.info("备份向量数据库完成")
+
+            # 保存备份信息
+            backup_info_file = backup_path / "backup_info.json"
+            with open(backup_info_file, 'w', encoding='utf-8') as f:
+                json.dump(backup_info, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"知识库备份创建完成: {backup_path}")
+
             return {
-                "validation_passed": False,
-                "issues": [f"验证过程出错: {e}"]
+                "status": "success",
+                "backup_name": backup_name,
+                "backup_path": str(backup_path),
+                "backup_info": backup_info
             }
 
-    def __enter__(self):
-        """上下文管理器入口"""
-        return self
+        except Exception as e:
+            logger.error(f"创建备份失败: {e}")
+            return {"status": "error", "error": str(e)}
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """上下文管理器出口，确保资源清理"""
+    def restore_backup(self, backup_name: str) -> Dict[str, Any]:
+        """
+        从备份恢复知识库
+
+        Args:
+            backup_name: 备份名称
+
+        Returns:
+            Dict[str, Any]: 恢复结果
+        """
         try:
-            self.logger.info("KnowledgeUpdater上下文管理器清理资源...")
+            backup_path = self.backup_dir / backup_name
+            backup_info_file = backup_path / "backup_info.json"
 
-            # 强制关闭向量存储连接
-            if self.vector_store is not None:
-                self.vector_store.force_close()
-                self.vector_store = None
+            if not backup_path.exists() or not backup_info_file.exists():
+                return {"status": "error", "error": f"备份不存在: {backup_name}"}
 
-            # 清理嵌入管理器
-            if self.embeddings_manager is not None:
-                self.embeddings_manager = None
+            logger.info(f"从备份恢复知识库: {backup_path}")
 
-            # 执行垃圾回收
-            import gc
-            gc.collect()
+            # 读取备份信息
+            with open(backup_info_file, 'r', encoding='utf-8') as f:
+                backup_info = json.load(f)
 
-            self.logger.info("KnowledgeUpdater资源清理完成")
+            restore_result = {
+                "status": "success",
+                "backup_name": backup_name,
+                "backup_time": backup_info.get("backup_time"),
+                "restored_components": {}
+            }
+
+            # 恢复处理后的文档
+            processed_backup = backup_path / "processed_documents"
+            if processed_backup.exists():
+                if self.processed_dir.exists():
+                    shutil.rmtree(self.processed_dir)
+                shutil.copytree(processed_backup, self.processed_dir)
+                restore_result["restored_components"]["processed_documents"] = True
+                logger.info("恢复处理后的文档完成")
+
+            # 恢复向量数据库
+            vector_backup_file = backup_path / "vector_store.json"
+            if vector_backup_file.exists() and self.rag_system:
+                if hasattr(self.rag_system.vector_store, 'restore_collection'):
+                    vector_result = self.rag_system.vector_store.restore_collection(str(vector_backup_file))
+                    restore_result["restored_components"]["vector_store"] = vector_result
+                    logger.info("恢复向量数据库完成")
+
+            logger.info(f"知识库恢复完成: {backup_name}")
+
+            # 记录恢复操作
+            restore_record = {
+                "action": "restore",
+                "backup_name": backup_name,
+                "restore_time": datetime.now().isoformat(),
+                "status": "success"
+            }
+            self.update_history.append(restore_record)
+            self._save_update_history()
+
+            return restore_result
 
         except Exception as e:
-            self.logger.error(f"KnowledgeUpdater资源清理失败: {e}")
+            logger.error(f"恢复备份失败: {e}")
+            return {"status": "error", "error": str(e)}
 
-    def cleanup(self):
-        """手动清理资源"""
-        self.__exit__(None, None, None)
-
-    def _terminate_chromadb_processes(self):
-        """终止可能占用ChromaDB文件的进程"""
+    def _cleanup_old_backups(self):
+        """清理旧备份"""
         try:
-            import psutil
-            import os
-            import signal
-            from pathlib import Path
-
-            self.logger.info("检查占用ChromaDB文件的进程...")
-
-            # 获取ChromaDB相关文件路径
-            chroma_db_path = Path(self.vector_db_dir)
-
-            if not chroma_db_path.exists():
-                self.logger.debug("ChromaDB目录不存在，跳过进程检查")
+            if not self.backup_dir.exists():
                 return
 
-            # 查找所有可能的SQLite文件
-            sqlite_files = list(chroma_db_path.glob("*.sqlite*"))
-            if not sqlite_files:
-                self.logger.debug("未找到SQLite文件，跳过进程检查")
-                return
+            # 获取所有备份目录
+            backup_dirs = [d for d in self.backup_dir.iterdir()
+                          if d.is_dir() and d.name.startswith('knowledge_backup_')]
 
-            self.logger.info(f"找到 {len(sqlite_files)} 个SQLite文件，检查占用进程...")
+            # 按创建时间排序
+            backup_dirs.sort(key=lambda x: x.stat().st_ctime, reverse=True)
 
-            terminated_processes = []
-
-            # 遍历所有运行的进程
-            for proc in psutil.process_iter(['pid', 'name', 'open_files']):
-                try:
-                    # 检查进程是否打开了我们的SQLite文件
-                    if proc.info['open_files']:
-                        for file_info in proc.info['open_files']:
-                            file_path = Path(file_info.path)
-
-                            # 检查是否是我们的ChromaDB文件
-                            if any(sqlite_file.resolve() == file_path.resolve() for sqlite_file in sqlite_files):
-                                self.logger.warning(f"发现占用文件的进程: PID={proc.info['pid']}, Name={proc.info['name']}, File={file_path}")
-
-                                # 尝试友好地终止进程
-                                try:
-                                    process = psutil.Process(proc.info['pid'])
-                                    process.terminate()
-                                    self.logger.info(f"已发送终止信号给进程 {proc.info['pid']}")
-                                    terminated_processes.append(proc.info['pid'])
-                                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                    self.logger.debug(f"无法终止进程 {proc.info['pid']}")
-
-                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-                    # 进程可能已经结束或无权限访问
-                    continue
-
-            # 等待进程终止
-            if terminated_processes:
-                self.logger.info(f"等待 {len(terminated_processes)} 个进程终止...")
-                import time
-                time.sleep(2)
-
-                # 检查是否还有未终止的进程，强制杀死
-                for pid in terminated_processes:
+            # 删除超出限制的备份
+            if len(backup_dirs) > self.max_backups:
+                for backup_dir in backup_dirs[self.max_backups:]:
                     try:
-                        process = psutil.Process(pid)
-                        if process.is_running():
-                            self.logger.warning(f"强制杀死进程 {pid}")
-                            process.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
+                        shutil.rmtree(backup_dir)
+                        logger.info(f"删除旧备份: {backup_dir.name}")
+                    except Exception as e:
+                        logger.error(f"删除备份失败 {backup_dir}: {e}")
 
-                time.sleep(1)
-                self.logger.info("进程清理完成")
-
-        except ImportError:
-            self.logger.warning("psutil未安装，无法检查占用进程，使用简单的进程终止方法")
-            self._simple_process_termination()
         except Exception as e:
-            self.logger.warning(f"进程检查失败: {e}")
+            logger.error(f"清理旧备份失败: {e}")
 
-    def _simple_process_termination(self):
-        """简单的进程终止方法（不依赖psutil）"""
+    def list_backups(self) -> List[Dict[str, Any]]:
+        """列出所有备份"""
         try:
-            import subprocess
-            import platform
+            backups = []
 
-            if platform.system() == "Windows":
-                # Windows下使用taskkill强制终止可能的Python进程
-                try:
-                    # 查找占用文件的句柄
-                    result = subprocess.run(
-                        ['wmic', 'process', 'where', 'name="python.exe"', 'get', 'ProcessId'],
-                        capture_output=True, text=True, timeout=10
-                    )
+            if not self.backup_dir.exists():
+                return backups
 
-                    if result.returncode == 0:
-                        # 解析输出，获取PID
-                        lines = result.stdout.strip().split('\n')[1:]  # 跳过标题行
-                        for line in lines:
-                            line = line.strip()
-                            if line and line.isdigit():
-                                pid = int(line)
-                                try:
-                                    # 检查是否是当前进程
-                                    import os
-                                    if pid != os.getpid():
-                                        subprocess.run(['taskkill', '/F', '/PID', str(pid)],
-                                                     capture_output=True, timeout=5)
-                                        self.logger.info(f"终止了Python进程 {pid}")
-                                except Exception:
-                                    pass
+            for backup_dir in self.backup_dir.iterdir():
+                if backup_dir.is_dir():
+                    info_file = backup_dir / "backup_info.json"
+                    if info_file.exists():
+                        try:
+                            with open(info_file, 'r', encoding='utf-8') as f:
+                                backup_info = json.load(f)
+                            backups.append(backup_info)
+                        except Exception as e:
+                            logger.error(f"读取备份信息失败 {backup_dir}: {e}")
 
-                except Exception as e:
-                    self.logger.debug(f"简单进程终止失败: {e}")
+            # 按时间排序
+            backups.sort(key=lambda x: x.get("backup_time", ""), reverse=True)
+            return backups
 
         except Exception as e:
-            self.logger.debug(f"简单进程终止方法失败: {e}")
+            logger.error(f"列出备份失败: {e}")
+            return []
+
+    def get_update_history(self) -> List[Dict[str, Any]]:
+        """获取更新历史"""
+        return self.update_history.copy()
+
+    def get_status(self) -> Dict[str, Any]:
+        """获取更新器状态"""
+        try:
+            recent_updates = self.update_history[-5:] if self.update_history else []
+
+            return {
+                "last_check_time": self.last_check_time.isoformat() if self.last_check_time else None,
+                "total_updates": len(self.update_history),
+                "recent_updates": recent_updates,
+                "config": {
+                    "check_interval": self.check_interval,
+                    "auto_backup": self.auto_backup,
+                    "max_backups": self.max_backups,
+                    "incremental_update": self.incremental_update
+                },
+                "directories": {
+                    "raw_dir": str(self.raw_dir),
+                    "processed_dir": str(self.processed_dir),
+                    "backup_dir": str(self.backup_dir)
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"获取状态失败: {e}")
+            return {"error": str(e)}

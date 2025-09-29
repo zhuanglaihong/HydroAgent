@@ -200,3 +200,4 @@ __pycache__/
 definitions_private.py
 /workflow/generated/
 logs/
+test/results/

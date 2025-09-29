@@ -40,9 +40,21 @@ RAG_SEMANTIC_WEIGHT = 0.6               # 语义相似性权重
 RAG_DIVERSITY_WEIGHT = 0.3              # 结果多样性权重
 RAG_RECENCY_WEIGHT = 0.1                # 内容时效性权重
 
-# 向量数据库
+# 向量数据库（FAISS配置）
+VECTOR_DB_TYPE = "faiss"                 # 向量数据库类型: faiss, chroma
 VECTOR_DB_COLLECTION_NAME = "hydro_knowledge"
 VECTOR_DB_DISTANCE_FUNCTION = "cosine"   # 距离函数: cosine, l2, ip
+
+# FAISS特定配置
+FAISS_INDEX_TYPE = "Flat"               # FAISS索引类型: Flat, IVF, HNSW
+FAISS_IVF_NLIST = 100                   # IVF索引的聚类数量
+FAISS_HNSW_M = 16                       # HNSW图的连接数
+FAISS_HNSW_EF_SEARCH = 64               # HNSW搜索时的候选数量
+FAISS_ENABLE_GPU = False                # 是否启用GPU加速（需要faiss-gpu）
+
+# 向量库索引文件
+VECTOR_INDEX_FILE = "faiss_index.index" # FAISS索引文件名
+VECTOR_METADATA_FILE = "metadata.json"  # 元数据文件名
 
 # ============================================================================
 # LLM 模型参数
@@ -102,10 +114,18 @@ EMBEDDING_API_MAX_RETRIES = 2           # API 调用最大重试次数
 # 本地降级配置
 EMBEDDING_FALLBACK_MODEL = "bge-large:335m"  # 本地嵌入模型降级
 EMBEDDING_FALLBACK_TIMEOUT = 60         # 本地嵌入模型超时时间（秒）
+EMBEDDING_AUTO_FALLBACK = True          # 自动切换到本地模型
+EMBEDDING_TOTAL_TIMEOUT = 90            # 总超时时间（API + 本地）
 
 # 嵌入参数
 EMBEDDING_DIMENSION = 1536              # 预期嵌入维度
 EMBEDDING_DEVICE = "cpu"                # 本地嵌入设备
+
+# 重排序配置
+RERANK_ENABLED = True                   # 启用重排序
+RERANK_MODEL_TYPE = "cross-encoder"     # 重排序模型类型
+RERANK_TOP_K_CANDIDATES = 20            # 重排序候选数量
+RERANK_FINAL_K = 5                      # 重排序后最终返回数量
 
 # ============================
 # 兼容性配置（向后兼容）

@@ -36,4 +36,5 @@ dependencies = [
     "pypdf>=3.0.0",
     "python-docx>=0.8.11",
     "langchain-huggingface>=0.1.0",
+    "faiss-cpu>=1.12.0",
 ]

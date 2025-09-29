@@ -297,8 +297,9 @@ class HydroAgent:
             from builder import WorkflowBuilder
 
             self.builder = WorkflowBuilder(
-                reasoning_model=self.reasoning_model,
-                enable_debug=self.enable_debug
+                rag_system=self.hydrorag if self.enable_rag else None,
+                enable_rag=self.enable_rag,
+                use_api_llm=True  # 使用API优先模式
             )
 
             # 检查Builder就绪状态

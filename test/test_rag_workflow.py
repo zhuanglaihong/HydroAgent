@@ -14,7 +14,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('test_rag_workflow.log', encoding='utf-8')
+        logging.FileHandler( 'logs/test_rag_workflow.log', encoding='utf-8')
     ]
 )
 
@@ -112,7 +112,7 @@ def test_rag_workflow_generation():
                 print(f"  {i}. {task_name} (工具: {tool_name})")
 
             # 保存结果
-            output_file = project_root / "rag_workflow_test_result.json"
+            output_file = project_root / 'workflow' / 'generated' / "rag_workflow_test_result.json"
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump({
                     "query": test_query,

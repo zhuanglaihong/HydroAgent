@@ -114,7 +114,7 @@ class RAGPlanner:
 你必须：
 1. 使用逐步思考的方法分析问题
 2. 仅使用上述4个可用工具
-3. 为每个任务标记类型：simple_action 或 complex_reasoning
+3. 为每个任务标记类型：simple 或 complex
 4. 生成标准的JSON格式工作流"""
 
         self.cot_template = """基于以下信息，请逐步思考并生成工作流计划：
@@ -142,8 +142,8 @@ class RAGPlanner:
    - 是否需要条件判断或循环？
 
 4. **复杂度评估**
-   - 哪些是简单操作（simple_action）？
-   - 哪些是复杂推理（complex_reasoning）？
+   - 哪些是简单操作（simple）？
+   - 哪些是复杂推理（complex）？
    - 如何保证执行效率？
 
 5. **工作流设计**
@@ -154,14 +154,14 @@ class RAGPlanner:
   "workflow_id": "唯一标识",
   "name": "工作流名称",
   "description": "工作流描述",
-  "execution_mode": "linear/react/hybrid",
+  "mode": "sequential/react",
   "tasks": [
     {{
       "task_id": "任务ID",
       "name": "任务名称",
       "description": "任务描述",
-      "action": "工具名称",
-      "task_type": "simple_action或complex_reasoning",
+      "tool_name": "工具名称",
+      "type": "simple/complex",
       "parameters": {{
         "参数名": "参数值"
       }},
@@ -209,7 +209,6 @@ class RAGPlanner:
             prompt_length = len(prompt)
             prompt_tokens_estimate = prompt_length // 4  # 粗略估算token数
             logger.info(f"提示词长度: {prompt_length} 字符, 估算 {prompt_tokens_estimate} tokens")
-            logger.info(f"提示词内容预览 (前500字符): {prompt[:500]}...")
             logger.info(f"使用的知识片段数量: {len(rag_context.fragments)}")
 
             # 第三步：LLM推理生成工作流
@@ -335,7 +334,7 @@ class RAGPlanner:
                 fragment_type="tool_info"
             ),
             KnowledgeFragment(
-                content="工作流任务类型：simple_action用于直接操作，complex_reasoning用于需要复杂推理的任务",
+                content="工作流任务类型：simple用于直接操作，complex用于需要复杂推理的任务",
                 source="fallback_system",
                 score=0.8,
                 fragment_type="system_info"
@@ -468,14 +467,14 @@ class RAGPlanner:
             "workflow_id": f"default_{int(time.time())}",
             "name": "默认工作流",
             "description": "由于解析失败生成的默认工作流",
-            "execution_mode": "linear",
+            "mode": "sequential",
             "tasks": [
                 {
                     "task_id": "task_1",
                     "name": "获取模型参数",
                     "description": "获取模型参数信息",
-                    "action": "get_model_params",
-                    "task_type": "simple_action",
+                    "tool_name": "get_model_params",
+                    "type": "simple",
                     "parameters": {},
                     "dependencies": [],
                     "conditions": {},
@@ -495,14 +494,14 @@ class RAGPlanner:
             "workflow_id": f"fallback_{int(time.time())}",
             "name": "回退工作流",
             "description": f"针对查询 '{query[:50]}...' 的回退工作流",
-            "execution_mode": "linear",
+            "mode": "sequential",
             "tasks": [
                 {
                     "task_id": "fallback_task",
                     "name": "手动处理",
                     "description": "需要手动处理的任务",
-                    "action": "manual_processing",
-                    "task_type": "simple_action",
+                    "tool_name": "manual_processing",
+                    "type": "simple",
                     "parameters": {"query": query},
                     "dependencies": [],
                     "conditions": {},
@@ -557,13 +556,13 @@ class RAGPlanner:
                         task_ids.add(task_id)
 
                     # 检查动作
-                    action = task.get("action", "")
-                    if action not in valid_actions:
-                        validation_result["warnings"].append(f"未知的动作: {action}")
+                    tool_name = task.get("tool_name", "")
+                    if tool_name not in valid_actions:
+                        validation_result["warnings"].append(f"未知的工具: {tool_name}")
 
                     # 检查任务类型
-                    task_type = task.get("task_type", "")
-                    if task_type not in ["simple_action", "complex_reasoning"]:
+                    task_type = task.get("type", "")
+                    if task_type not in ["simple", "complex"]:
                         validation_result["warnings"].append(f"未知的任务类型: {task_type}")
 
                     # 检查依赖

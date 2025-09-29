@@ -10,17 +10,20 @@ Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 
 import os
 import logging
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import hashlib
 import json
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import math
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentProcessor:
-    """文档处理器 - 处理原始文档并转换为可嵌入的文本格式"""
+    """文档处理器 - 处理原始文档并转换为可嵌入的文本格式，支持智能分块和并行处理"""
     
     def __init__(self, config):
         """
@@ -32,16 +35,27 @@ class DocumentProcessor:
         self.config = config
         self.raw_dir = Path(config.raw_documents_dir)
         self.processed_dir = Path(config.processed_documents_dir)
-        
+
+        # 从配置中获取参数
+        self.chunk_size = getattr(config, 'RAG_CHUNK_SIZE', 1000)
+        self.chunk_overlap = getattr(config, 'RAG_CHUNK_OVERLAP', 200)
+        self.max_chunk_size = getattr(config, 'RAG_MAX_CHUNK_SIZE', 2000)
+        self.supported_extensions = getattr(config, 'RAG_SUPPORTED_EXTENSIONS',
+                                          ['.txt', '.md', '.markdown', '.rst', '.pdf', '.docx', '.doc', '.py', '.yaml', '.yml', '.json'])
+
         # 确保目录存在
         self.processed_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # 初始化文档加载器
         self._init_loaders()
-        
+
+        # 初始化文本分割器
+        self._init_text_splitters()
+
         logger.info(f"文档处理器初始化完成")
         logger.info(f"原始文档目录: {self.raw_dir}")
         logger.info(f"处理后文档目录: {self.processed_dir}")
+        logger.info(f"分块参数: 大小={self.chunk_size}, 重叠={self.chunk_overlap}, 最大={self.max_chunk_size}")
     
     def _init_loaders(self):
         """初始化各种文档加载器"""
@@ -88,7 +102,7 @@ class DocumentProcessor:
             for file_path in self.raw_dir.rglob('*'):
                 if file_path.is_file():
                     suffix = file_path.suffix.lower()
-                    if suffix in self.config.supported_file_extensions:
+                    if suffix in self.supported_extensions:
                         supported_files.append(file_path)
                         logger.debug(f"发现支持的文件: {file_path}")
                     else:
@@ -125,8 +139,14 @@ class DocumentProcessor:
                 logger.warning(f"无法加载文档内容: {file_path}")
                 return {"status": "failed", "reason": "content_loading_failed"}
             
-            # 分块处理
-            chunks = self._split_document(content, file_path)
+            # 内容质量检查
+            content = self._clean_and_validate_content(content)
+            if not content or len(content.strip()) < 50:  # 过短的内容
+                logger.warning(f"文档内容过短或为空: {file_path}")
+                return {"status": "failed", "reason": "content_too_short"}
+
+            # 智能分块处理
+            chunks = self._intelligent_split_document(content, file_path)
             if not chunks:
                 logger.warning(f"文档分块失败: {file_path}")
                 return {"status": "failed", "reason": "chunking_failed"}
@@ -185,80 +205,272 @@ class DocumentProcessor:
             logger.error(f"加载文档内容失败 {file_path}: {e}")
             return None
     
-    def _split_document(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
-        """将文档内容分块"""
+    def _init_text_splitters(self):
+        """初始化文本分割器"""
+        self.sentence_endings = re.compile(r'[.!?]\s+')
+        self.paragraph_splitter = re.compile(r'\n\s*\n')
+        self.section_headers = re.compile(r'^#{1,6}\s+.*$|^[A-Z\s]+:?$', re.MULTILINE)
+
+    def _clean_and_validate_content(self, content: str) -> str:
+        """清理和验证文档内容"""
         try:
-            # 简单的文本分块实现，不依赖LangChain
-            chunk_size = self.config.chunk_size
-            chunk_overlap = self.config.chunk_overlap
-            
-            # 首先按段落分割
-            paragraphs = content.split('\n\n')
-            
-            chunks = []
-            current_chunk = ""
-            chunk_index = 0
-            
-            for paragraph in paragraphs:
-                paragraph = paragraph.strip()
-                if not paragraph:
-                    continue
-                
-                # 如果当前块加上新段落超过了chunk_size
-                if len(current_chunk) + len(paragraph) + 2 > chunk_size and current_chunk:
-                    # 保存当前块
-                    chunk = {
-                        "chunk_id": f"{file_path.stem}_{chunk_index:04d}",
-                        "content": current_chunk.strip(),
-                        "source_file": str(file_path),
-                        "chunk_index": chunk_index,
-                        "chunk_size": len(current_chunk),
-                        "metadata": {
-                            "file_name": file_path.name,
-                            "file_extension": file_path.suffix,
-                            "file_size": file_path.stat().st_size
-                        }
-                    }
-                    chunks.append(chunk)
-                    chunk_index += 1
-                    
-                    # 开始新块，包含重叠部分
-                    if chunk_overlap > 0 and len(current_chunk) > chunk_overlap:
-                        current_chunk = current_chunk[-chunk_overlap:] + "\n\n" + paragraph
-                    else:
-                        current_chunk = paragraph
-                else:
-                    # 添加到当前块
-                    if current_chunk:
-                        current_chunk += "\n\n" + paragraph
-                    else:
-                        current_chunk = paragraph
-            
-            # 保存最后一个块
-            if current_chunk.strip():
-                chunk = {
-                    "chunk_id": f"{file_path.stem}_{chunk_index:04d}",
-                    "content": current_chunk.strip(),
-                    "source_file": str(file_path),
-                    "chunk_index": chunk_index,
-                    "chunk_size": len(current_chunk),
-                    "metadata": {
-                        "file_name": file_path.name,
-                        "file_extension": file_path.suffix,
-                        "file_size": file_path.stat().st_size
-                    }
-                }
-                chunks.append(chunk)
-            
-            # 更新总块数
-            for chunk in chunks:
-                chunk["metadata"]["total_chunks"] = len(chunks)
-            
-            return chunks
-            
+            if not content:
+                return ""
+
+            # 移除过多的空白字符
+            content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)
+            content = re.sub(r'[ \t]+', ' ', content)
+
+            # 移除开头和结尾的空白
+            content = content.strip()
+
+            # 检查内容质量
+            if len(content) < 50:
+                return ""
+
+            # 检查是否包含有意义的内容（不仅仅是特殊字符）
+            meaningful_chars = len(re.sub(r'[^a-zA-Z0-9\u4e00-\u9fff]', '', content))
+            if meaningful_chars / len(content) < 0.1:  # 有意义字符太少
+                return ""
+
+            return content
+
         except Exception as e:
-            logger.error(f"文档分块失败 {file_path}: {e}")
-            return []
+            logger.error(f"内容清理失败: {e}")
+            return content
+
+    def _intelligent_split_document(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+        """智能文档分块（保持语义完整性）"""
+        try:
+            # 首先检测文档类型和结构
+            doc_type = self._detect_document_type(content, file_path)
+
+            if doc_type == 'code':
+                return self._split_code_document(content, file_path)
+            elif doc_type == 'markdown':
+                return self._split_markdown_document(content, file_path)
+            else:
+                return self._split_text_document(content, file_path)
+
+        except Exception as e:
+            logger.error(f"智能分块失败 {file_path}: {e}")
+            return self._split_text_document(content, file_path)  # 退回到基本分块
+
+    def _detect_document_type(self, content: str, file_path: Path) -> str:
+        """检测文档类型"""
+        extension = file_path.suffix.lower()
+
+        if extension in ['.py', '.js', '.java', '.cpp', '.c', '.h']:
+            return 'code'
+        elif extension in ['.md', '.markdown']:
+            return 'markdown'
+        elif extension in ['.rst']:
+            return 'rst'
+        else:
+            # 通过内容特征判断
+            if re.search(r'^```|^#{1,6}\s+', content, re.MULTILINE):
+                return 'markdown'
+            elif re.search(r'^def |^class |^import |^from ', content, re.MULTILINE):
+                return 'code'
+            else:
+                return 'text'
+
+    def _split_text_document(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+        """分割普通文本文档"""
+        chunks = []
+        chunk_index = 0
+
+        # 首先按段落分割
+        paragraphs = self.paragraph_splitter.split(content)
+
+        current_chunk = ""
+
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+
+            # 检查段落是否过长
+            if len(paragraph) > self.max_chunk_size:
+                # 对过长的段落按句子分割
+                sentences = self._split_long_paragraph(paragraph)
+                for sentence in sentences:
+                    if self._should_create_new_chunk(current_chunk, sentence):
+                        if current_chunk.strip():
+                            chunks.append(self._create_chunk(current_chunk, file_path, chunk_index))
+                            chunk_index += 1
+                        current_chunk = self._get_overlap_text(current_chunk) + sentence
+                    else:
+                        current_chunk = self._add_to_chunk(current_chunk, sentence)
+            else:
+                # 正常段落处理
+                if self._should_create_new_chunk(current_chunk, paragraph):
+                    if current_chunk.strip():
+                        chunks.append(self._create_chunk(current_chunk, file_path, chunk_index))
+                        chunk_index += 1
+                    current_chunk = self._get_overlap_text(current_chunk) + paragraph
+                else:
+                    current_chunk = self._add_to_chunk(current_chunk, paragraph)
+
+        # 添加最后一个块
+        if current_chunk.strip():
+            chunks.append(self._create_chunk(current_chunk, file_path, chunk_index))
+
+        # 更新元数据
+        for chunk in chunks:
+            chunk["metadata"]["total_chunks"] = len(chunks)
+
+        return chunks
+
+    def _split_markdown_document(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+        """分割Markdown文档（保持结构）"""
+        chunks = []
+        chunk_index = 0
+
+        # 按标题分割
+        sections = re.split(r'^(#{1,6}\s+.*$)', content, flags=re.MULTILINE)
+
+        current_section = ""
+        current_header = ""
+
+        for i, section in enumerate(sections):
+            if not section.strip():
+                continue
+
+            # 检查是否是标题
+            if re.match(r'^#{1,6}\s+', section):
+                # 保存上一个部分
+                if current_section.strip():
+                    section_chunks = self._split_text_section(current_header + "\n\n" + current_section, file_path, chunk_index)
+                    chunks.extend(section_chunks)
+                    chunk_index += len(section_chunks)
+
+                current_header = section
+                current_section = ""
+            else:
+                current_section += section
+
+        # 处理最后一个部分
+        if current_section.strip():
+            section_chunks = self._split_text_section(current_header + "\n\n" + current_section, file_path, chunk_index)
+            chunks.extend(section_chunks)
+
+        # 更新元数据
+        for chunk in chunks:
+            chunk["metadata"]["total_chunks"] = len(chunks)
+
+        return chunks
+
+    def _split_code_document(self, content: str, file_path: Path) -> List[Dict[str, Any]]:
+        """分割代码文档（保持函数/类完整性）"""
+        chunks = []
+        chunk_index = 0
+
+        # 简单的代码分割（按函数/类）
+        lines = content.split('\n')
+        current_chunk = ""
+        current_indent = 0
+
+        for line in lines:
+            # 检测函数或类定义
+            if re.match(r'^\s*(def |class |function |public |private )', line):
+                # 如果当前块太大，先保存
+                if len(current_chunk) > self.chunk_size and current_chunk.strip():
+                    chunks.append(self._create_chunk(current_chunk, file_path, chunk_index))
+                    chunk_index += 1
+                    current_chunk = ""
+
+            current_chunk += line + "\n"
+
+            # 检查块大小
+            if len(current_chunk) > self.max_chunk_size:
+                chunks.append(self._create_chunk(current_chunk, file_path, chunk_index))
+                chunk_index += 1
+                current_chunk = ""
+
+        # 添加最后一个块
+        if current_chunk.strip():
+            chunks.append(self._create_chunk(current_chunk, file_path, chunk_index))
+
+        # 更新元数据
+        for chunk in chunks:
+            chunk["metadata"]["total_chunks"] = len(chunks)
+
+        return chunks
+
+    def _split_long_paragraph(self, paragraph: str) -> List[str]:
+        """分割过长的段落"""
+        sentences = self.sentence_endings.split(paragraph)
+        result = []
+        current = ""
+
+        for sentence in sentences:
+            if len(current + sentence) > self.chunk_size and current:
+                result.append(current.strip())
+                current = sentence
+            else:
+                current += sentence + " "
+
+        if current.strip():
+            result.append(current.strip())
+
+        return result
+
+    def _split_text_section(self, section: str, file_path: Path, start_index: int) -> List[Dict[str, Any]]:
+        """分割文本部分"""
+        if len(section) <= self.chunk_size:
+            return [self._create_chunk(section, file_path, start_index)]
+
+        # 对长部分递归分割
+        return self._split_text_document(section, file_path)
+
+    def _should_create_new_chunk(self, current_chunk: str, new_text: str) -> bool:
+        """判断是否应该创建新的块"""
+        if not current_chunk:
+            return False
+        return len(current_chunk) + len(new_text) + 2 > self.chunk_size
+
+    def _add_to_chunk(self, current_chunk: str, new_text: str) -> str:
+        """将新文本添加到当前块"""
+        if current_chunk:
+            return current_chunk + "\n\n" + new_text
+        else:
+            return new_text
+
+    def _get_overlap_text(self, chunk: str) -> str:
+        """获取重叠文本"""
+        if not chunk or self.chunk_overlap <= 0:
+            return ""
+
+        if len(chunk) <= self.chunk_overlap:
+            return chunk
+
+        # 尝试在句子边界处切断
+        overlap_text = chunk[-self.chunk_overlap:]
+
+        # 查找句子结束
+        sentences = self.sentence_endings.split(overlap_text)
+        if len(sentences) > 1:
+            return sentences[-1] + "\n\n"
+
+        return overlap_text + "\n\n"
+
+    def _create_chunk(self, content: str, file_path: Path, chunk_index: int) -> Dict[str, Any]:
+        """创建文档块"""
+        content = content.strip()
+        return {
+            "chunk_id": f"{file_path.stem}_{chunk_index:04d}",
+            "content": content,
+            "source_file": str(file_path),
+            "chunk_index": chunk_index,
+            "chunk_size": len(content),
+            "metadata": {
+                "file_name": file_path.name,
+                "file_extension": file_path.suffix,
+                "file_size": file_path.stat().st_size,
+                "content_hash": hashlib.md5(content.encode()).hexdigest()[:8]
+            }
+        }
     
     def _save_processed_document(self, source_file: Path, chunks: List[Dict[str, Any]]) -> Dict[str, str]:
         """保存处理后的文档"""
@@ -277,10 +489,17 @@ class DocumentProcessor:
                 "processed_time": datetime.now().isoformat(),
                 "source_file_hash": self._get_file_hash(source_file),
                 "config": {
-                    "chunk_size": self.config.chunk_size,
-                    "chunk_overlap": self.config.chunk_overlap
+                    "chunk_size": self.chunk_size,
+                    "chunk_overlap": self.chunk_overlap,
+                    "max_chunk_size": self.max_chunk_size
                 },
-                "chunks": chunks
+                "chunks": chunks,
+                "processing_stats": {
+                    "total_chunks": len(chunks),
+                    "avg_chunk_size": sum(len(chunk["content"]) for chunk in chunks) / len(chunks) if chunks else 0,
+                    "min_chunk_size": min(len(chunk["content"]) for chunk in chunks) if chunks else 0,
+                    "max_chunk_size": max(len(chunk["content"]) for chunk in chunks) if chunks else 0
+                }
             }
             
             # 保存处理后的数据
@@ -347,17 +566,17 @@ class DocumentProcessor:
             logger.error(f"检查文档处理状态失败 {file_path}: {e}")
             return False
     
-    def process_all_documents(self) -> Dict[str, Any]:
-        """处理所有原始文档"""
+    def process_all_documents(self, parallel: bool = True, max_workers: int = 4) -> Dict[str, Any]:
+        """处理所有原始文档（支持并行处理）"""
         try:
             logger.info("开始处理所有原始文档")
-            
+
             # 扫描文档
             files = self.scan_raw_documents()
             if not files:
                 logger.warning("未找到需要处理的文档")
                 return {"status": "no_documents", "processed": 0, "failed": 0, "skipped": 0}
-            
+
             # 处理统计
             results = {
                 "processed": 0,
@@ -365,26 +584,55 @@ class DocumentProcessor:
                 "skipped": 0,
                 "details": []
             }
-            
-            # 逐个处理文档
-            for file_path in files:
-                result = self.process_document(file_path)
-                results["details"].append(result)
-                
-                if result["status"] == "success":
-                    results["processed"] += 1
-                elif result["status"] == "failed":
-                    results["failed"] += 1
-                elif result["status"] == "skipped":
-                    results["skipped"] += 1
-            
+
+            if parallel and len(files) > 1:
+                logger.info(f"使用并行处理，最大工作线程数: {max_workers}")
+                # 并行处理
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_file = {executor.submit(self.process_document, file_path): file_path
+                                    for file_path in files}
+
+                    for future in as_completed(future_to_file):
+                        file_path = future_to_file[future]
+                        try:
+                            result = future.result()
+                            results["details"].append(result)
+
+                            if result["status"] == "success":
+                                results["processed"] += 1
+                            elif result["status"] == "failed":
+                                results["failed"] += 1
+                            elif result["status"] == "skipped":
+                                results["skipped"] += 1
+
+                        except Exception as e:
+                            logger.error(f"并行处理文档失败 {file_path}: {e}")
+                            results["failed"] += 1
+                            results["details"].append({
+                                "status": "failed",
+                                "source_file": str(file_path),
+                                "reason": str(e)
+                            })
+            else:
+                # 顺序处理
+                for file_path in files:
+                    result = self.process_document(file_path)
+                    results["details"].append(result)
+
+                    if result["status"] == "success":
+                        results["processed"] += 1
+                    elif result["status"] == "failed":
+                        results["failed"] += 1
+                    elif result["status"] == "skipped":
+                        results["skipped"] += 1
+
             logger.info(f"文档处理完成: 成功 {results['processed']}, 失败 {results['failed']}, 跳过 {results['skipped']}")
-            
+
             return {
                 "status": "completed",
                 **results
             }
-            
+
         except Exception as e:
             logger.error(f"批量处理文档失败: {e}")
             return {"status": "error", "error": str(e)}
@@ -443,7 +691,13 @@ class DocumentProcessor:
                 "processed_documents_count": len(processed_docs),
                 "total_chunks": total_chunks,
                 "total_characters": total_chars,
-                "average_chunk_size": total_chars / total_chunks if total_chunks > 0 else 0
+                "average_chunk_size": total_chars / total_chunks if total_chunks > 0 else 0,
+                "supported_extensions": self.supported_extensions,
+                "chunk_config": {
+                    "chunk_size": self.chunk_size,
+                    "chunk_overlap": self.chunk_overlap,
+                    "max_chunk_size": self.max_chunk_size
+                }
             }
             
         except Exception as e:
