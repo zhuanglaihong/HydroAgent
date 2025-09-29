@@ -1,15 +1,22 @@
 # Builder系统 - 智能工作流构建器
 
-Builder系统是HydroAgent的核心规划层，负责将用户的自然语言指令转换为可执行的工作流。系统采用模块化设计，结合规则匹配、RAG知识检索和LLM推理，实现高效准确的工作流生成。
+Builder系统是HydroAgent的核心规划层，负责将用户的自然语言指令转换为可执行的工作流。系统采用**五阶段工作流构建流程**，结合意图解析、RAG知识检索、思维链推理和智能模式分析，实现高质量的工作流生成。
 
-## 🏗️ 系统架构
+## 🏗️ 五阶段工作流构建架构
 
+```text
+用户查询 → [意图解析] → [RAG规划] → [执行模式分析] → [模式应用] → [工作流最终化]
+    ↓            ↓           ↓            ↓            ↓
+  原始查询    意图理解    知识增强规划   模式推荐    优化配置   → 可执行工作流
 ```
-用户指令 → 意图解析 → 执行模式分析 → RAG规划 → 工作流输出
-          ↓            ↓              ↓
-      规则匹配    复杂度评估      知识增强推理
-      (快速)      (轻量级)        (LLM推理)
-```
+
+### 工作流程详解
+
+1. **阶段1: 意图解析与理解** - 基于规则匹配快速识别用户意图和实体
+2. **阶段2: RAG规划生成工作流** - 结合知识检索和思维链推理生成初步工作流
+3. **阶段3: 执行模式分析** - 基于复杂度评分智能推荐执行模式
+4. **阶段4: 执行模式应用** - 针对不同模式优化工作流配置
+5. **阶段5: 工作流最终化** - 添加元数据、验证和确保完整性
 
 ### 设计理念
 
@@ -125,13 +132,13 @@ print(f"建议工具: {result.suggested_tools}")
 
 ### 2. 执行模式分析器 (ExecutionModeAnalyzer)
 
-评估任务复杂度并推荐执行模式，使用轻量级规则评估。
+基于多维度特征检测和加权评分机制，智能评估任务复杂度并推荐最适合的执行模式。
 
 ```python
 from builder.execution_mode import ExecutionModeAnalyzer
 
 analyzer = ExecutionModeAnalyzer()
-result = analyzer.analyze_execution_mode(intent_result, query)
+result = analyzer.analyze_workflow(workflow)
 
 print(f"推荐模式: {result.recommended_mode.value}")
 print(f"复杂度评分: {result.complexity_score:.2f}")
@@ -140,20 +147,99 @@ print(f"检测特征: {result.features}")
 ```
 
 **执行模式类型：**
-- `sequential` - 顺序执行（默认，适合标准流程）
-- `parallel` - 并行执行（独立任务可同时运行）
-- `react` - 反应式执行（需要条件判断、循环和反馈）
+- `LINEAR` - 线性执行（简单顺序任务，复杂度 < 0.3）
+- `REACT` - 反应式执行（复杂推理任务，复杂度 ≥ 0.7 或包含率定/反馈）
+- `HYBRID` - 混合模式（中等复杂度任务，0.3 ≤ 复杂度 < 0.7）
 
-**复杂度评估维度：**
-- 优化和迭代需求
-- 条件判断复杂性
-- 并行处理可能性
-- 用户交互需求
-- 错误处理要求
+#### **复杂度评分机制详解**
+
+**六个评分维度及权重：**
+```python
+complexity_weights = {
+    "task_count": 0.1,          # 任务数量权重 (10%)
+    "dependency_depth": 0.2,     # 依赖深度权重 (20%)
+    "branch_count": 0.15,        # 分支数量权重 (15%)
+    "loop_count": 0.25,          # 循环数量权重 (25%) - 最高权重
+    "condition_count": 0.15,     # 条件数量权重 (15%)
+    "complex_task_ratio": 0.15,  # 复杂任务比例权重 (15%)
+}
+```
+
+**特征检测列表：**
+```python
+features = {
+    "has_loops": False,              # 循环任务 (retry_count > 1)
+    "has_conditions": False,         # 条件判断 (if/while)
+    "has_complex_tasks": False,      # 复杂推理任务 (task_type="complex")
+    "has_parallel_branches": False,  # 并行分支
+    "has_error_handling": False,     # 错误处理 (on_error/timeout)
+    "has_dynamic_params": False,     # 动态参数 (${variable})
+    "requires_feedback": False,      # 反馈循环
+    "has_model_calibration": False,  # 模型率定 (calibrate动作)
+}
+```
+
+**评分计算示例：**
+- **任务数量评分**: `min(task_count / 10.0, 1.0)` (10个任务为满分)
+- **依赖深度评分**: `min(max_depth / 5.0, 1.0)` (5层依赖为满分)
+- **循环数量评分**: `min(loop_count / 2.0, 1.0)` (2个循环为满分)
+- **复杂任务比例**: `complex_tasks / total_tasks` (全部复杂为满分)
+
+**模式推荐决策规则：**
+```python
+# 高复杂度特征列表
+high_complexity_features = [
+    "has_loops", "has_conditions", "requires_feedback",
+    "has_model_calibration", "has_dynamic_params"
+]
+
+# 决策逻辑
+if complexity_score >= 0.7 or high_complexity_count >= 3:
+    return ExecutionMode.REACT      # 反应模式
+elif has_model_calibration or requires_feedback:
+    return ExecutionMode.REACT      # 特殊情况强制反应模式
+elif complexity_score >= 0.4 or has_parallel_branches:
+    return ExecutionMode.HYBRID     # 混合模式
+else:
+    return ExecutionMode.LINEAR     # 线性模式
+```
+
+**实际应用示例：**
+
+*简单任务 (LINEAR)*:
+```json
+{
+  "tasks": [{"action": "get_model_params", "task_type": "simple"}]
+}
+// 复杂度评分: ≈0.05 → LINEAR模式
+```
+
+*中等复杂任务 (HYBRID)*:
+```json
+{
+  "tasks": [
+    {"action": "prepare_data", "task_type": "simple"},
+    {"action": "analyze_data", "task_type": "complex", "retry_count": 2}
+  ]
+}
+// 有复杂任务+循环 → 复杂度评分: ≈0.5 → HYBRID模式
+```
+
+*高复杂任务 (REACT)*:
+```json
+{
+  "tasks": [{
+    "action": "calibrate_model", "task_type": "complex",
+    "conditions": {"retry_count": 3, "if": "${score} < 0.8"},
+    "feedback_enabled": true
+  }]
+}
+// 模型率定+循环+条件+反馈 → 强制REACT模式
+```
 
 ### 3. RAG规划器 (RAGPlanner)
 
-使用检索增强生成进行工作流规划，**需要LLM推理**。
+RAG规划器是Builder系统的核心智能组件，结合知识检索和思维链推理，生成高质量的工作流。
 
 ```python
 from builder.rag_planner import RAGPlanner
@@ -161,9 +247,12 @@ from builder.rag_planner import RAGPlanner
 planner = RAGPlanner(rag_system=rag_system, llm_client=llm_client)
 
 result = planner.plan_workflow(
-    intent_result=intent_result,
-    execution_mode=ExecutionMode.SEQUENTIAL,
-    context={"dataset": "camels_11532500", "model": "GR4J"}
+    query="率定GR4J模型并评估性能",
+    context={
+        "dataset": "camels_11532500",
+        "intent_result": intent_result,
+        "suggested_tools": ["prepare_data", "calibrate_model"]
+    }
 )
 
 print(f"规划时间: {result.planning_time:.2f}秒")
@@ -171,12 +260,127 @@ print(f"思维链步骤: {len(result.cot_steps)}")
 print(f"知识片段数: {len(result.rag_context.fragments)}")
 ```
 
-**规划过程：**
-1. **知识检索** - 从向量数据库检索相关文档
-2. **思维链推理** - 逐步分解复杂任务
-3. **工具映射** - 匹配可用的4个执行工具
-4. **工作流组装** - 生成完整的JSON工作流
-5. **格式验证** - 确保输出符合执行器要求
+#### **三阶段RAG规划流程**
+
+**阶段1: 知识检索 (HydroRAG集成)**
+```python
+def _retrieve_knowledge(self, query):
+    # 1. 查询扩展和预处理
+    expanded_queries = self._expand_query(query)
+
+    # 2. 调用HydroRAG进行多级检索
+    result = self.rag_system.query(
+        query_text=query,
+        top_k=COT_KNOWLEDGE_CHUNKS,  # 默认5个知识片段
+        enable_rerank=True,          # 启用重排序优化
+        enable_expansion=True        # 启用查询扩展
+    )
+
+    # 3. 转换为知识片段格式
+    fragments = [
+        KnowledgeFragment(
+            content=item["content"],
+            source=item["metadata"]["source_file"],
+            score=item["score"],
+            fragment_type=self._classify_fragment_type(item["content"])
+        ) for item in result.get("results", [])
+    ]
+
+    return RAGContext(query, fragments, len(fragments), retrieval_time)
+```
+
+**阶段2: 思维链推理 (CoT)**
+```python
+def _chain_of_thought_reasoning(self, query, rag_context):
+    cot_steps = []
+
+    # 生成推理步骤 (最多5次迭代)
+    for i in range(COT_MAX_ITERATIONS):
+        step_question = self._generate_step_question(query, i, rag_context)
+
+        # 调用LLM进行推理
+        reasoning_response = self.llm_client.generate(
+            prompt=self._build_cot_prompt(step_question, rag_context),
+            temperature=COT_TEMPERATURE,  # 0.2，保持推理稳定性
+            max_tokens=2000
+        )
+
+        step = CoTStep(
+            step_number=i+1,
+            question=step_question,
+            reasoning=reasoning_response.content,
+            conclusion=self._extract_conclusion(reasoning_response.content),
+            confidence=reasoning_response.confidence
+        )
+        cot_steps.append(step)
+
+        # 判断是否需要继续推理
+        if self._should_stop_reasoning(step, cot_steps):
+            break
+
+    return cot_steps
+```
+
+**阶段3: 工作流生成**
+```python
+def _generate_workflow_with_knowledge(self, query, rag_context, cot_steps):
+    # 构建综合提示词，包含：
+    # - 用户原始查询
+    # - 检索到的知识片段
+    # - 思维链推理结论
+    # - 可用工具列表和规范
+
+    # 调用LLM生成结构化工作流
+    workflow_response = self.llm_client.generate(
+        prompt=self._build_workflow_generation_prompt(...),
+        temperature=0.1,  # 低温度确保结构稳定
+        max_tokens=4000
+    )
+
+    # 解析和验证JSON格式
+    workflow = self._parse_and_validate_workflow(workflow_response.content)
+
+    return workflow
+```
+
+#### **知识增强特性**
+
+**知识片段分类：**
+```python
+fragment_types = {
+    "model_definition": "模型定义和原理",
+    "calibration_method": "率定方法和技巧",
+    "parameter_guidance": "参数设置指导",
+    "code_example": "代码实现示例",
+    "best_practice": "最佳实践建议"
+}
+```
+
+**思维链推理示例：**
+```text
+CoT步骤1: 任务分解
+问题: 如何将"率定GR4J模型"分解为具体步骤？
+推理: 根据知识片段，GR4J率定需要数据准备、参数初始化、优化算法选择、结果评估等步骤
+结论: 分解为4个主要任务：数据准备→模型率定→性能评估→结果可视化
+
+CoT步骤2: 工具映射
+问题: 每个步骤应该使用哪些可用工具？
+推理: prepare_data用于数据准备，calibrate_model用于率定，evaluate_model用于评估
+结论: 工具序列为 prepare_data → calibrate_model → evaluate_model
+
+CoT步骤3: 参数配置
+问题: 每个工具需要什么参数配置？
+推理: 基于知识片段中的参数说明和最佳实践，设置合适的默认值
+结论: 生成详细的参数配置方案
+```
+
+#### **工作流生成特点**
+
+- **知识驱动**: 基于检索到的专业知识生成任务步骤
+- **结构化输出**: 严格按照执行器要求的JSON格式
+- **参数智能化**: 根据领域知识自动设置合理参数
+- **依赖管理**: 智能分析任务依赖关系
+- **错误预防**: 基于最佳实践添加错误处理机制
 
 ### 4. LLM客户端 (LLMClient)
 

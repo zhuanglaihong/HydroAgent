@@ -221,7 +221,7 @@ class RAGPlanner:
 
             # 第三步：LLM推理生成工作流
             logger.info(f"执行LLM推理 - 温度: {COT_TEMPERATURE}, 最大tokens: 4000")
-            logger.info(f"完整提示词内容:\n{'='*80}\n{prompt}\n{'='*80}")
+            # logger.info(f"完整提示词内容:\n{'='*80}\n{prompt}\n{'='*80}")
 
             llm_start_time = time.time()
             response = self.llm_client.generate(

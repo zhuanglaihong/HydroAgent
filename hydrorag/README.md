@@ -435,69 +435,352 @@ result = rag_system.query(
 print("查询解释:", result["explanation"])
 ```
 
-## 🔗 与工作流集成
+## 🔗 与Builder工作流系统集成
 
-HydroRAG设计用于与`workflow/knowledge_retriever.py`集成，提供知识检索服务：
+HydroRAG系统作为智能工作流构建器的核心知识检索引擎，为Builder系统提供精准的知识增强服务。Builder通过多阶段工作流程，结合RAG知识检索和思维链推理，生成高质量的可执行工作流。
+
+### Builder工作流程详解
+
+#### 1. **五阶段工作流构建流程**
+
+```text
+用户查询 → [意图解析] → [RAG规划] → [执行模式分析] → [模式应用] → [工作流最终化]
+    ↓            ↓           ↓            ↓            ↓
+  原始查询    意图理解    知识增强规划   模式推荐    优化配置   → 可执行工作流
+```
+
+#### 2. **Builder核心组件架构**
 
 ```python
-# 在knowledge_retriever.py中使用
-from hydrorag import RAGSystem, KnowledgeFragment
+# Builder系统架构
+builder/
+├── workflow_builder.py      # 主构建器 - 五阶段工作流构建
+├── intent_parser.py         # 意图解析器 - 理解用户需求
+├── rag_planner.py          # RAG规划器 - 知识增强规划
+├── execution_mode.py       # 执行模式分析器
+├── llm_client.py           # LLM客户端管理
+└── templates/              # 工作流模板库
+```
 
-class KnowledgeRetriever:
-    def __init__(self):
-        # 初始化HydroRAG系统
-        self.hydrorag = RAGSystem()
+#### 3. **详细工作流程分析**
 
-        # 确保系统初始化完成
-        if not self.hydrorag.get_system_status()["is_initialized"]:
-            setup_result = self.hydrorag.setup_from_raw_documents()
-            if setup_result["status"] != "success":
-                raise RuntimeError(f"RAG系统初始化失败: {setup_result['error']}")
+##### **阶段1: 意图解析与理解**
+```python
+# WorkflowBuilder.build_workflow() -> 第一步
+intent_result = self.intent_parser.parse_instruction(query)
 
-    def retrieve_knowledge(self, query, k=5, score_threshold=0.3, category=None):
-        """检索相关知识片段"""
-        # 构建元数据过滤器
-        metadata_filter = {}
-        if category:
-            metadata_filter["category"] = category
+# 意图解析器工作原理:
+# 1. 规则匹配: 基于关键词和模式识别用户意图类型
+# 2. 实体提取: 提取模型名称、参数、文件路径等关键信息
+# 3. 工具推荐: 根据意图推荐适合的工具和操作
+# 4. 置信度评估: 评估解析结果的可信度
 
-        # 使用HydroRAG进行检索
-        result = self.hydrorag.query(
+意图类型包括:
+- MODEL_CALIBRATION    # 模型率定
+- DATA_PROCESSING      # 数据处理
+- PARAMETER_QUERY      # 参数查询
+- VISUALIZATION        # 可视化
+- UNKNOWN             # 未知意图
+```
+
+##### **阶段2: RAG规划生成工作流**
+```python
+# WorkflowBuilder.build_workflow() -> 第二步
+planning_result = self.rag_planner.plan_workflow(query, enhanced_context)
+
+# RAG规划器工作原理:
+class RAGPlanner:
+    def plan_workflow(self, query, context):
+        # 2.1 知识检索阶段
+        rag_context = self._retrieve_knowledge(query)
+
+        # 2.2 思维链推理阶段
+        cot_steps = self._chain_of_thought_reasoning(query, rag_context)
+
+        # 2.3 工作流生成阶段
+        workflow = self._generate_workflow_with_knowledge(query, rag_context, cot_steps)
+
+        return PlanningResult(workflow, rag_context, cot_steps, ...)
+```
+
+**RAG知识检索详细过程**:
+```python
+def _retrieve_knowledge(self, query):
+    """HydroRAG知识检索流程"""
+    # 1. 查询扩展和预处理
+    expanded_queries = self._expand_query(query)
+
+    # 2. 调用HydroRAG系统进行多级检索
+    if self.rag_system:
+        result = self.rag_system.query(
             query_text=query,
-            top_k=k,
-            score_threshold=score_threshold,
-            enable_rerank=True,
-            enable_expansion=True,
-            metadata_filter=metadata_filter if metadata_filter else None
+            top_k=COT_KNOWLEDGE_CHUNKS,  # 默认5个知识片段
+            enable_rerank=True,          # 启用重排序优化
+            enable_expansion=True        # 启用查询扩展
         )
 
-        # 转换为KnowledgeFragment格式
+        # 3. 转换为知识片段格式
         fragments = []
-        if result["status"] == "success":
-            for item in result["results"]:
-                fragment = KnowledgeFragment(
-                    content=item["content"],
-                    source=item["metadata"]["source_file"],
-                    score=item["score"],
-                    rerank_score=item.get("rerank_score"),
-                    doc_type=item["metadata"].get("doc_type"),
-                    metadata=item["metadata"]
-                )
-                fragments.append(fragment)
+        for item in result.get("results", []):
+            fragment = KnowledgeFragment(
+                content=item["content"],
+                source=item["metadata"]["source_file"],
+                score=item["score"],
+                fragment_type=self._classify_fragment_type(item["content"])
+            )
+            fragments.append(fragment)
 
-        return {
-            "fragments": fragments,
-            "total_found": result.get("total_found", 0),
-            "backend": result.get("backend", "unknown"),
-            "query_time": result.get("query_time", 0)
-        }
-
-    def update_knowledge_base(self):
-        """更新知识库"""
-        from hydrorag import KnowledgeUpdater
-        updater = KnowledgeUpdater(self.hydrorag.config)
-        return updater.update_knowledge_base()
+    return RAGContext(query, fragments, len(fragments), retrieval_time)
 ```
+
+**思维链推理过程**:
+```python
+def _chain_of_thought_reasoning(self, query, rag_context):
+    """CoT思维链推理流程"""
+    cot_steps = []
+
+    # 生成推理步骤
+    for i in range(COT_MAX_ITERATIONS):  # 最多5次迭代
+        step_question = self._generate_step_question(query, i, rag_context)
+
+        # 调用LLM进行推理
+        reasoning_response = self.llm_client.generate(
+            prompt=self._build_cot_prompt(step_question, rag_context),
+            temperature=COT_TEMPERATURE,  # 0.2，保持推理稳定性
+            max_tokens=2000
+        )
+
+        step = CoTStep(
+            step_number=i+1,
+            question=step_question,
+            reasoning=reasoning_response.content,
+            conclusion=self._extract_conclusion(reasoning_response.content),
+            confidence=reasoning_response.confidence
+        )
+        cot_steps.append(step)
+
+        # 判断是否需要继续推理
+        if self._should_stop_reasoning(step, cot_steps):
+            break
+
+    return cot_steps
+```
+
+##### **阶段3: 执行模式分析**
+```python
+# WorkflowBuilder.build_workflow() -> 第三步
+mode_analysis = self.mode_analyzer.analyze_workflow(workflow)
+
+# 执行模式分析器原理:
+class ExecutionModeAnalyzer:
+    def analyze_workflow(self, workflow):
+        # 3.1 特征提取
+        features = self._extract_workflow_features(workflow)
+
+        # 3.2 复杂度评分
+        complexity_score = self._calculate_complexity_score(features)
+
+        # 3.3 模式推荐
+        if complexity_score < MODE_COMPLEXITY_THRESHOLD_LOW:    # < 0.3
+            recommended_mode = ExecutionMode.LINEAR      # 线性模式
+        elif complexity_score > MODE_COMPLEXITY_THRESHOLD_HIGH: # > 0.7
+            recommended_mode = ExecutionMode.REACT       # 反应模式
+        else:
+            recommended_mode = ExecutionMode.HYBRID      # 混合模式
+
+执行模式类型:
+- LINEAR:  简单线性执行，适合单一操作任务
+- REACT:   反应式执行，适合复杂推理和错误恢复
+- HYBRID:  混合模式，根据任务类型选择执行方式
+```
+
+##### **阶段4: 执行模式应用**
+```python
+# WorkflowBuilder.build_workflow() -> 第四步
+workflow = self._apply_execution_mode(workflow, mode_analysis.recommended_mode)
+
+# 模式应用详细过程:
+def _apply_execution_mode(self, workflow, mode):
+    if mode == ExecutionMode.LINEAR:
+        # 线性模式优化:
+        # - 简化依赖关系，确保严格顺序执行
+        # - 限制重试次数，减少复杂性
+        # - 移除条件判断，提高执行效率
+        workflow = self._optimize_for_linear_execution(workflow)
+
+    elif mode == ExecutionMode.REACT:
+        # 反应模式优化:
+        # - 添加重试和超时机制
+        # - 启用反馈机制用于率定任务
+        # - 增强错误处理和恢复能力
+        workflow = self._optimize_for_react_execution(workflow)
+
+    elif mode == ExecutionMode.HYBRID:
+        # 混合模式优化:
+        # - 简单任务使用线性执行
+        # - 复杂任务使用反应式执行
+        # - 根据task_type动态选择execution_style
+        workflow = self._optimize_for_hybrid_execution(workflow)
+
+    return workflow
+```
+
+##### **阶段5: 工作流最终化**
+```python
+# WorkflowBuilder.build_workflow() -> 第五步
+workflow = self._finalize_workflow(workflow, mode_analysis, intent_result)
+
+# 最终化处理:
+def _finalize_workflow(self, workflow, mode_analysis, intent_result):
+    # 5.1 添加构建元数据
+    metadata = {
+        "build_timestamp": datetime.now().isoformat(),
+        "complexity_score": mode_analysis.complexity_score,
+        "execution_mode": mode_analysis.recommended_mode.value,
+        "intent_type": intent_result.intent_type.value,
+        "builder_version": "1.1",
+        # ... 更多元数据
+    }
+
+    # 5.2 工作流验证
+    validation = self.rag_planner.validate_workflow(workflow)
+    if not validation["is_valid"]:
+        metadata["validation_warnings"] = validation["errors"]
+
+    # 5.3 确保必需字段
+    if "workflow_id" not in workflow:
+        workflow["workflow_id"] = f"workflow_{int(time.time())}"
+
+    return workflow
+```
+
+#### 4. **Builder与HydroRAG集成示例**
+
+```python
+from builder import WorkflowBuilder
+from hydrorag import RAGSystem
+
+# 创建Builder实例，集成HydroRAG
+rag_system = RAGSystem()
+builder = WorkflowBuilder(
+    rag_system=rag_system,      # 传入RAG系统实例
+    enable_rag=True,            # 启用RAG增强
+    use_api_llm=True           # 使用API优先模式
+)
+
+# 构建智能工作流
+result = builder.build_workflow("率定GR4J模型并评估性能")
+
+if result.success:
+    # 查看构建结果
+    print(f"工作流名称: {result.workflow['name']}")
+    print(f"执行模式: {result.execution_mode.value}")
+    print(f"任务数量: {len(result.workflow['tasks'])}")
+
+    # 查看RAG知识增强信息
+    if result.planning_result.rag_context:
+        fragments = result.planning_result.rag_context.fragments
+        print(f"使用了 {len(fragments)} 个知识片段:")
+        for fragment in fragments:
+            print(f"  - {fragment.source}: {fragment.score:.3f}")
+
+    # 查看思维链推理过程
+    print(f"思维链推理步骤 ({len(result.planning_result.cot_steps)}):")
+    for step in result.planning_result.cot_steps:
+        print(f"  步骤{step.step_number}: {step.question}")
+        print(f"  结论: {step.conclusion}")
+        print(f"  置信度: {step.confidence:.2f}")
+
+    # 获取可执行工作流
+    executable_workflow = result.workflow
+```
+
+#### 5. **Builder工作流输出格式**
+
+Builder生成的工作流采用标准JSON格式，包含完整的执行信息：
+
+```json
+{
+  "workflow_id": "workflow_1727632800",
+  "name": "GR4J模型率定与评估工作流",
+  "description": "基于RAG知识增强的GR4J模型率定工作流",
+  "execution_mode": "react",
+  "tasks": [
+    {
+      "task_id": "task_001",
+      "name": "数据准备",
+      "action": "prepare_data",
+      "task_type": "simple",
+      "parameters": {
+        "data_path": "data/example_catchment.csv",
+        "period": "2010-2020"
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 300
+      },
+      "expected_output": "准备好的降雨径流数据"
+    },
+    {
+      "task_id": "task_002",
+      "name": "GR4J模型率定",
+      "action": "calibrate_model",
+      "task_type": "complex",
+      "parameters": {
+        "model_type": "GR4J",
+        "calibration_period": "2010-2015",
+        "validation_period": "2016-2020"
+      },
+      "dependencies": ["task_001"],
+      "conditions": {
+        "retry_count": 3,
+        "timeout": 1800,
+        "on_error": "retry_or_skip"
+      },
+      "feedback_enabled": true,
+      "expected_output": "率定的GR4J模型参数"
+    }
+  ],
+  "metadata": {
+    "build_timestamp": "2024-09-29T16:00:00",
+    "complexity_score": 0.75,
+    "execution_mode": "react",
+    "intent_type": "model_calibration",
+    "intent_confidence": 0.95,
+    "knowledge_fragments_used": 5,
+    "cot_steps_count": 3,
+    "builder_version": "1.1"
+  }
+}
+```
+
+#### 6. **Builder系统监控和诊断**
+
+```python
+# 获取Builder统计信息
+stats = builder.get_stats()
+print(f"总构建次数: {stats['total_builds']}")
+print(f"成功率: {stats['success_rate']:.2%}")
+print(f"平均构建时间: {stats['avg_build_time']:.2f}秒")
+print(f"执行模式分布: {stats['execution_mode_distribution']}")
+
+# 检查Builder就绪状态
+status = builder.is_ready()
+print(f"整体就绪: {status['overall_ready']}")
+print(f"LLM客户端: {status['llm_client_ready']}")
+print(f"RAG系统: {status['rag_system_ready']}")
+print(f"降级模式: {status['degraded_mode']}")
+
+# 测试Builder功能
+test_result = builder.test_build("测试GR4J模型参数查询")
+if test_result.success:
+    print("Builder测试通过")
+else:
+    print(f"Builder测试失败: {test_result.error_message}")
+```
+
+通过这种深度集成，HydroRAG为Builder提供了强大的知识检索能力，使得生成的工作流不仅结构合理，而且具备领域专业知识的支撑，大大提升了工作流的质量和执行成功率。
 
 ## 🐛 常见问题和故障排除
 

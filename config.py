@@ -107,7 +107,7 @@ CODER_TOP_P = 0.95                      # Top-p 采样参数
 
 # API优先配置
 EMBEDDING_USE_API_FIRST = True          # 优先使用 API 嵌入模型
-EMBEDDING_API_MODEL = "text-embedding-v1"    # API 嵌入模型名称
+EMBEDDING_API_MODEL = "text-embedding-v3"    # API 嵌入模型名称
 EMBEDDING_API_TIMEOUT = 30              # API 调用超时时间（秒）
 EMBEDDING_API_MAX_RETRIES = 2           # API 调用最大重试次数
 
