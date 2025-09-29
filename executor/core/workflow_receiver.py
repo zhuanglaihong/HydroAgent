@@ -25,6 +25,7 @@ from utils.filepath import process_workflow_paths
 
 class ValidationError(Exception):
     """工作流验证错误"""
+
     pass
 
 
@@ -61,7 +62,7 @@ class WorkflowReceiver:
             if isinstance(workflow_data, (str, Path)):
                 if Path(workflow_data).exists():
                     # 从文件读取
-                    with open(workflow_data, 'r', encoding='utf-8') as f:
+                    with open(workflow_data, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     self.logger.info(f"从文件加载工作流: {workflow_data}")
                 else:
@@ -78,14 +79,14 @@ class WorkflowReceiver:
             # data = process_workflow_paths(data)
 
             # 处理字段映射：execution_mode -> mode
-            if 'execution_mode' in data and 'mode' not in data:
-                data['mode'] = data.pop('execution_mode')
+            if "execution_mode" in data and "mode" not in data:
+                data["mode"] = data.pop("execution_mode")
 
             # 处理字段映射：targets -> target (取第一个目标)
-            if 'targets' in data and 'target' not in data:
-                targets = data.pop('targets')
+            if "targets" in data and "target" not in data:
+                targets = data.pop("targets")
                 if targets and len(targets) > 0:
-                    data['target'] = targets[0]
+                    data["target"] = targets[0]
 
             # 创建工作流对象
             workflow = Workflow(**data)
@@ -177,7 +178,9 @@ class WorkflowReceiver:
 
         return workflow
 
-    def convert_builder_to_executor_format(self, builder_workflow: Union[str, Dict]) -> Dict[str, Any]:
+    def convert_builder_to_executor_format(
+        self, builder_workflow: Union[str, Dict]
+    ) -> Dict[str, Any]:
         """
         将构建器工作流格式转换为执行器可接受的格式
 
@@ -196,14 +199,13 @@ class WorkflowReceiver:
 
         # 检查是否有复杂任务或模型率定
         has_complex_tasks = any(
-            task.get("task_type") in ["complex_reasoning", "complex"] or
-            task.get("action") == "calibrate_model"
+            task.get("task_type") in ["complex_reasoning", "complex"]
+            or task.get("action") == "calibrate_model"
             for task in builder_tasks
         )
 
         has_calibration = any(
-            task.get("action") == "calibrate_model"
-            for task in builder_tasks
+            task.get("action") == "calibrate_model" for task in builder_tasks
         )
 
         # 检查构建器推荐的执行模式
@@ -221,15 +223,14 @@ class WorkflowReceiver:
 
         # 基本映射
         executor_workflow = {
-            "workflow_id": builder_workflow.get("workflow_id", f"workflow_{int(time.time())}"),
+            "workflow_id": builder_workflow.get(
+                "workflow_id", f"workflow_{int(time.time())}"
+            ),
             "name": builder_workflow.get("name", "Generated Workflow"),
             "description": builder_workflow.get("description", ""),
             "mode": execution_mode,
-            "global_settings": {
-                "error_handling": error_handling,
-                "timeout": timeout
-            },
-            "tasks": []
+            "global_settings": {"error_handling": error_handling, "timeout": timeout},
+            "tasks": [],
         }
 
         # 如果是React模式且有模型率定，添加目标配置
@@ -240,7 +241,7 @@ class WorkflowReceiver:
                 "threshold": 0.6,
                 "comparison": ">=",
                 "max_iterations": 3,
-                "description": "模型率定目标NSE >= 0.6"
+                "description": "模型率定目标NSE >= 0.6",
             }
 
         # 转换任务格式
@@ -252,8 +253,9 @@ class WorkflowReceiver:
             action = task.get("action", "")
 
             # 如果是复杂推理类型或明确标记为复杂任务，设为complex
-            if (task_type_raw in ["complex_reasoning", "complex"] or
-                (has_complex_tasks and action == "calibrate_model")):
+            if task_type_raw in ["complex_reasoning", "complex"] or (
+                has_complex_tasks and action == "calibrate_model"
+            ):
                 task_type = "complex"
             else:
                 task_type = "simple"
@@ -268,7 +270,7 @@ class WorkflowReceiver:
                 "parameters": base_parameters,
                 "dependencies": task.get("dependencies", []),
                 "timeout": task.get("timeout", 60),
-                "retry_count": task.get("retry_attempts", 0)
+                "retry_count": task.get("retry_attempts", 0),
             }
 
             # 根据任务类型设置不同字段
@@ -281,7 +283,7 @@ class WorkflowReceiver:
                     "calibrate_model": "calibrate_model",
                     "evaluate_model": "evaluate_model",
                     "率定水文模型": "calibrate_model",
-                    "评估水文模型": "evaluate_model"
+                    "评估水文模型": "evaluate_model",
                 }
                 executor_task["tool_name"] = tool_mapping.get(action, action)
 
@@ -295,15 +297,21 @@ class WorkflowReceiver:
                     prep_task_id = dependencies[0] if dependencies else None
                     if prep_task_id:
                         # 添加必需的参数引用
-                        executor_task["parameters"]["data_dir"] = f"${{{prep_task_id}.outputs.data_dir}}"
+                        executor_task["parameters"][
+                            "data_dir"
+                        ] = f"${{{prep_task_id}.outputs.data_dir}}"
                         # 添加默认的basin_ids（从数据目录推断）
                         if "basin_ids" not in executor_task["parameters"]:
-                            executor_task["parameters"]["basin_ids"] = ["11532500"]  # 默认使用CAMELS basin ID
+                            executor_task["parameters"]["basin_ids"] = [
+                                "11532500"
+                            ]  # 默认使用CAMELS basin ID
                 elif action == "evaluate_model" and dependencies:
                     # evaluate_model需要从calibrate_model获取结果目录
                     calib_task_id = dependencies[0] if dependencies else None
                     if calib_task_id:
-                        executor_task["parameters"]["result_dir"] = f"${{{calib_task_id}.outputs.result_dir}}"
+                        executor_task["parameters"][
+                            "result_dir"
+                        ] = f"${{{calib_task_id}.outputs.result_dir}}"
                 elif action == "get_model_params":
                     # get_model_params工具只需要model_name参数，使用基础参数即可
                     # 确保有model_name参数
@@ -311,13 +319,17 @@ class WorkflowReceiver:
                         # 从原始参数的model字段提取
                         model_info = base_parameters.get("model", "GR4J")
                         if isinstance(model_info, dict):
-                            executor_task["parameters"]["model_name"] = model_info.get("name", "GR4J")
+                            executor_task["parameters"]["model_name"] = model_info.get(
+                                "name", "GR4J"
+                            )
                         else:
                             executor_task["parameters"]["model_name"] = str(model_info)
 
             else:
                 # 复杂任务需要description和knowledge_query字段
-                executor_task["description"] = task.get("description", f"复杂任务: {action}")
+                executor_task["description"] = task.get(
+                    "description", f"复杂任务: {action}"
+                )
                 executor_task["knowledge_query"] = action
 
                 # 为复杂任务添加额外的超时时间和重试配置
@@ -330,7 +342,9 @@ class WorkflowReceiver:
         executor_workflow = process_workflow_paths(executor_workflow)
 
         if self.enable_debug:
-            self.logger.debug(f"构建器工作流已转换为执行器格式: {executor_workflow['workflow_id']}")
+            self.logger.debug(
+                f"构建器工作流已转换为执行器格式: {executor_workflow['workflow_id']}"
+            )
 
         return executor_workflow
 
@@ -373,7 +387,7 @@ class WorkflowReceiver:
             workflow_dict = workflow.dict()
 
             # 保存到文件
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(workflow_dict, f, ensure_ascii=False, indent=2, default=str)
 
             self.logger.info(f"工作流已保存到: {file_path}")
@@ -404,13 +418,13 @@ class WorkflowReceiver:
                     "tool_name": "prepare_data",
                     "parameters": {
                         "data_dir": "data/camels_11532500",
-                        "target_data_scale": "D"
+                        "target_data_scale": "D",
                     },
                     "dependencies": [],
                     "success_criteria": {
                         "expected_outputs": ["processed_data_path"],
-                        "validation_rules": ["file_exists", "data_format_valid"]
-                    }
+                        "validation_rules": ["file_exists", "data_format_valid"],
+                    },
                 },
                 {
                     "task_id": "task_002",
@@ -421,13 +435,13 @@ class WorkflowReceiver:
                     "parameters": {
                         "model_name": "gr4j",
                         "data_dir": "${task_001.outputs.processed_data_path}",
-                        "calibrate_period": ["2013-01-01", "2018-12-31"]
+                        "calibrate_period": ["2013-01-01", "2018-12-31"],
                     },
                     "dependencies": ["task_001"],
                     "success_criteria": {
                         "expected_outputs": ["calibration_results", "model_parameters"],
-                        "validation_rules": ["nse_above_threshold"]
-                    }
+                        "validation_rules": ["nse_above_threshold"],
+                    },
                 },
                 {
                     "task_id": "task_003",
@@ -441,9 +455,9 @@ class WorkflowReceiver:
                     "dependencies": ["task_002"],
                     "success_criteria": {
                         "expected_outputs": ["evaluation_metrics"],
-                        "validation_rules": ["metrics_calculated"]
-                    }
-                }
+                        "validation_rules": ["metrics_calculated"],
+                    },
+                },
             ],
             "target": {
                 "type": "performance_goal",
@@ -451,14 +465,14 @@ class WorkflowReceiver:
                 "threshold": 0.7,
                 "comparison": ">=",
                 "max_iterations": 3,
-                "description": "NSE指标需要达到0.7以上"
+                "description": "NSE指标需要达到0.7以上",
             },
             "global_settings": {
                 "error_handling": "continue_on_error",
                 "logging_level": "INFO",
                 "timeout": 3600,
-                "checkpoint_enabled": True
-            }
+                "checkpoint_enabled": True,
+            },
         }
 
         return Workflow(**example_data)
@@ -468,13 +482,18 @@ class WorkflowReceiver:
         # 这里可以添加工具存在性验证
         # 例如检查tool_name是否在注册的工具列表中
         known_tools = {
-            "prepare_data", "calibrate_model", "evaluate_model", "get_model_params"
+            "prepare_data",
+            "calibrate_model",
+            "evaluate_model",
+            "get_model_params",
         }
 
         for task in tasks:
             if task.type.value == "simple" and task.tool_name:
                 if task.tool_name not in known_tools:
-                    self.logger.warning(f"未知工具: {task.tool_name} in task {task.task_id}")
+                    self.logger.warning(
+                        f"未知工具: {task.tool_name} in task {task.task_id}"
+                    )
 
     def _validate_parameter_references(self, tasks: List[Task]):
         """验证参数引用的正确性"""
@@ -485,12 +504,14 @@ class WorkflowReceiver:
                 if isinstance(value, str) and value.startswith("${"):
                     # 解析引用路径
                     ref_path = value[2:-1]  # 移除 ${ 和 }
-                    parts = ref_path.split('.')
+                    parts = ref_path.split(".")
 
                     if len(parts) >= 1:
                         referenced_task = parts[0]
                         if referenced_task not in task_ids:
-                            raise ValidationError(f"任务 {task.task_id} 引用了不存在的任务: {referenced_task}")
+                            raise ValidationError(
+                                f"任务 {task.task_id} 引用了不存在的任务: {referenced_task}"
+                            )
 
     def _validate_resource_requirements(self, workflow: Workflow):
         """验证资源需求"""

@@ -20,6 +20,7 @@ from .vector_store import VectorStore
 from .embeddings_manager import EmbeddingsManager
 from .query_processor import QueryProcessor
 from .rag_system import RAGSystem, create_rag_system, quick_setup
+from .knowledge_updater import KnowledgeUpdater
 
 __version__ = "2.0.0"
 __author__ = "HydroAgent Team"
@@ -37,12 +38,10 @@ __all__ = [
     "EmbeddingsManager",
     "QueryProcessor",
     "RAGSystem",
-
     # 配置函数
     "create_default_config",
     "default_config",
-
     # 便利函数
     "create_rag_system",
-    "quick_setup"
+    "quick_setup" "KnowledgeUpdater",
 ]

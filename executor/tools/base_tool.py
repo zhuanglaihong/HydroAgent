@@ -17,6 +17,7 @@ import logging
 
 class ToolResult(BaseModel):
     """工具执行结果"""
+
     success: bool = Field(..., description="是否成功")
     output: Dict[str, Any] = Field(default_factory=dict, description="输出数据")
     error: Optional[str] = Field(None, description="错误信息")
@@ -88,24 +89,23 @@ class BaseTool(ABC):
         """
         pass
 
-    def _create_success_result(self, output: Dict[str, Any] = None, execution_time: float = None) -> ToolResult:
+    def _create_success_result(
+        self, output: Dict[str, Any] = None, execution_time: float = None
+    ) -> ToolResult:
         """创建成功结果"""
         return ToolResult(
-            success=True,
-            output=output or {},
-            execution_time=execution_time
+            success=True, output=output or {}, execution_time=execution_time
         )
 
-    def _create_error_result(self, error_msg: str, execution_time: float = None) -> ToolResult:
+    def _create_error_result(
+        self, error_msg: str, execution_time: float = None
+    ) -> ToolResult:
         """创建错误结果"""
-        return ToolResult(
-            success=False,
-            error=error_msg,
-            execution_time=execution_time
-        )
+        return ToolResult(success=False, error=error_msg, execution_time=execution_time)
 
     def _measure_execution_time(func):
         """执行时间测量装饰器"""
+
         def wrapper(self, *args, **kwargs):
             start_time = datetime.now()
             try:
@@ -121,4 +121,5 @@ class BaseTool(ABC):
                 end_time = datetime.now()
                 execution_time = (end_time - start_time).total_seconds()
                 return self._create_error_result(str(e), execution_time)
+
         return wrapper

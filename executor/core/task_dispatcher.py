@@ -20,19 +20,23 @@ from ..models.result import TaskResult, ExecutionStatus
 
 class ExecutorType(str, Enum):
     """执行器类型"""
-    SIMPLE_EXECUTOR = "simple_executor"      # 简单任务执行器
-    COMPLEX_SOLVER = "complex_solver"        # 复杂任务解决器
+
+    SIMPLE_EXECUTOR = "simple_executor"  # 简单任务执行器
+    COMPLEX_SOLVER = "complex_solver"  # 复杂任务解决器
 
 
 class DispatchDecision(BaseModel):
     """分发决策"""
+
     task_id: str = Field(..., description="任务ID")
     executor_type: ExecutorType = Field(..., description="执行器类型")
     priority_score: int = Field(..., description="优先级分数")
     can_execute: bool = Field(..., description="是否可以执行")
     blocked_by: List[str] = Field(default_factory=list, description="被阻塞的依赖")
     estimated_duration: Optional[float] = Field(None, description="预估执行时间")
-    resource_requirements: Dict[str, Any] = Field(default_factory=dict, description="资源需求")
+    resource_requirements: Dict[str, Any] = Field(
+        default_factory=dict, description="资源需求"
+    )
 
 
 class TaskDispatcher:
@@ -56,7 +60,7 @@ class TaskDispatcher:
         # 执行器负载跟踪
         self.executor_load: Dict[ExecutorType, int] = {
             ExecutorType.SIMPLE_EXECUTOR: 0,
-            ExecutorType.COMPLEX_SOLVER: 0
+            ExecutorType.COMPLEX_SOLVER: 0,
         }
 
         self.logger.info("任务分发器初始化完成")
@@ -96,7 +100,7 @@ class TaskDispatcher:
             can_execute=can_execute,
             blocked_by=blocked_by,
             estimated_duration=estimated_duration,
-            resource_requirements=resource_requirements
+            resource_requirements=resource_requirements,
         )
 
         if self.enable_debug:
@@ -104,7 +108,9 @@ class TaskDispatcher:
 
         return decision
 
-    def dispatch_task(self, task: Task, context: Dict[str, Any] = None) -> Tuple[ExecutorType, Dict[str, Any]]:
+    def dispatch_task(
+        self, task: Task, context: Dict[str, Any] = None
+    ) -> Tuple[ExecutorType, Dict[str, Any]]:
         """
         分发任务到合适的执行器
 
@@ -123,7 +129,9 @@ class TaskDispatcher:
 
         # 检查是否可以执行
         if not decision.can_execute:
-            raise ValueError(f"任务 {task.task_id} 无法执行，被依赖阻塞: {decision.blocked_by}")
+            raise ValueError(
+                f"任务 {task.task_id} 无法执行，被依赖阻塞: {decision.blocked_by}"
+            )
 
         # 解析任务参数
         try:
@@ -139,7 +147,7 @@ class TaskDispatcher:
             "priority": decision.priority_score,
             "estimated_duration": decision.estimated_duration,
             "resource_requirements": decision.resource_requirements,
-            "context": context
+            "context": context,
         }
 
         # 更新执行器负载
@@ -174,7 +182,9 @@ class TaskDispatcher:
 
         return ready_tasks
 
-    def update_task_status(self, task_id: str, status: ExecutionStatus, result: TaskResult = None):
+    def update_task_status(
+        self, task_id: str, status: ExecutionStatus, result: TaskResult = None
+    ):
         """
         更新任务状态
 
@@ -190,7 +200,11 @@ class TaskDispatcher:
             self.task_results[task_id] = result
 
         # 如果任务完成，减少执行器负载
-        if status in [ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.SKIPPED]:
+        if status in [
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.SKIPPED,
+        ]:
             # 从两个执行器中找到并减少负载
             for executor_type in self.executor_load:
                 if self.executor_load[executor_type] > 0:
@@ -225,14 +239,16 @@ class TaskDispatcher:
         status_counts = {}
 
         for status in ExecutionStatus:
-            status_counts[status.value] = sum(1 for s in self.task_status.values() if s == status)
+            status_counts[status.value] = sum(
+                1 for s in self.task_status.values() if s == status
+            )
 
         return {
             "total_tasks": total_tasks,
             "status_distribution": status_counts,
             "executor_load": dict(self.executor_load),
             "completed_tasks": len(self.task_results),
-            "success_rate": self._calculate_success_rate()
+            "success_rate": self._calculate_success_rate(),
         }
 
     def _determine_executor_type(self, task: Task) -> ExecutorType:
@@ -291,10 +307,7 @@ class TaskDispatcher:
             Optional[float]: 预估时间（秒）
         """
         # 基础时间估算
-        base_times = {
-            TaskType.SIMPLE: 300,    # 5分钟
-            TaskType.COMPLEX: 1800   # 30分钟
-        }
+        base_times = {TaskType.SIMPLE: 300, TaskType.COMPLEX: 1800}  # 5分钟  # 30分钟
 
         base_time = base_times.get(task.type, 600)
 
@@ -304,7 +317,7 @@ class TaskDispatcher:
                 "prepare_data": 0.5,
                 "calibrate_model": 2.0,
                 "evaluate_model": 0.3,
-                "get_model_params": 0.1
+                "get_model_params": 0.1,
             }
             factor = tool_factors.get(task.tool_name, 1.0)
             base_time *= factor
@@ -329,24 +342,22 @@ class TaskDispatcher:
             "memory_mb": 512,
             "disk_mb": 100,
             "gpu_required": False,
-            "network_required": False
+            "network_required": False,
         }
 
         # 根据任务类型调整
         if task.type == TaskType.COMPLEX:
-            requirements.update({
-                "cpu_cores": 2,
-                "memory_mb": 2048,
-                "network_required": True  # 需要调用LLM API
-            })
+            requirements.update(
+                {
+                    "cpu_cores": 2,
+                    "memory_mb": 2048,
+                    "network_required": True,  # 需要调用LLM API
+                }
+            )
 
         # 根据具体工具调整
         if task.tool_name == "calibrate_model":
-            requirements.update({
-                "cpu_cores": 4,
-                "memory_mb": 4096,
-                "disk_mb": 1024
-            })
+            requirements.update({"cpu_cores": 4, "memory_mb": 4096, "disk_mb": 1024})
 
         return requirements
 
@@ -355,7 +366,9 @@ class TaskDispatcher:
         if not self.task_results:
             return 0.0
 
-        successful_tasks = sum(1 for result in self.task_results.values() if result.is_successful())
+        successful_tasks = sum(
+            1 for result in self.task_results.values() if result.is_successful()
+        )
         total_completed = len(self.task_results)
 
         return successful_tasks / total_completed if total_completed > 0 else 0.0

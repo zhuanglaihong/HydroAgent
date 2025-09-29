@@ -31,6 +31,7 @@ try:
         _get_pe_q_from_ts,
     )
     from hydromodel.trainers.calibrate_sceua import calibrate_by_sceua
+
     HYDROMODEL_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"水文模型模块导入失败: {e}")
@@ -43,7 +44,7 @@ class CalibrateModelTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="calibrate_model",
-            description="率定水文模型，使用SCE-UA算法优化模型参数"
+            description="率定水文模型，使用SCE-UA算法优化模型参数",
         )
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
@@ -84,22 +85,22 @@ class CalibrateModelTool(BaseTool):
                 "data_type": {
                     "type": "string",
                     "description": "数据类型",
-                    "default": "owndata"
+                    "default": "owndata",
                 },
                 "data_dir": {
                     "type": "string",
                     "description": "数据目录路径",
-                    "default": "data/camels_11532500"
+                    "default": "data/camels_11532500",
                 },
                 "result_dir": {
                     "type": "string",
                     "description": "结果保存目录，如果不提供则使用默认目录",
-                    "default": "result"
+                    "default": "result",
                 },
                 "exp_name": {
                     "type": "string",
                     "description": "实验名称",
-                    "default": "exp_calibration"
+                    "default": "exp_calibration",
                 },
                 "model": {
                     "type": "object",
@@ -109,48 +110,48 @@ class CalibrateModelTool(BaseTool):
                         "source_type": {"type": "string", "default": "sources"},
                         "source_book": {"type": "string", "default": "HF"},
                         "kernel_size": {"type": "integer", "default": 15},
-                        "time_interval_hours": {"type": "integer", "default": 24}
+                        "time_interval_hours": {"type": "integer", "default": 24},
                     },
                     "default": {
                         "name": "gr4j",
                         "source_type": "sources",
                         "source_book": "HF",
                         "kernel_size": 15,
-                        "time_interval_hours": 24
-                    }
+                        "time_interval_hours": 24,
+                    },
                 },
                 "basin_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "流域ID列表"
+                    "description": "流域ID列表",
                 },
                 "periods": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "整个时间段 [start_date, end_date]",
-                    "default": ["2000-01-01", "2023-12-31"]
+                    "default": ["2000-01-01", "2023-12-31"],
                 },
                 "calibrate_period": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "率定时间段 [start_date, end_date]",
-                    "default": ["2000-01-01", "2018-12-31"]
+                    "default": ["2000-01-01", "2018-12-31"],
                 },
                 "test_period": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "测试时间段 [start_date, end_date]",
-                    "default": ["2019-01-01", "2023-12-31"]
+                    "default": ["2019-01-01", "2023-12-31"],
                 },
                 "warmup": {
                     "type": "integer",
                     "description": "预热期长度",
-                    "default": 720
+                    "default": 720,
                 },
                 "cv_fold": {
                     "type": "integer",
                     "description": "交叉验证折数",
-                    "default": 1
+                    "default": 1,
                 },
                 "algorithm": {
                     "type": "object",
@@ -162,7 +163,7 @@ class CalibrateModelTool(BaseTool):
                         "ngs": {"type": "integer", "default": 30},
                         "kstop": {"type": "integer", "default": 5},
                         "peps": {"type": "number", "default": 0.05},
-                        "pcento": {"type": "number", "default": 0.05}
+                        "pcento": {"type": "number", "default": 0.05},
                     },
                     "default": {
                         "name": "SCE_UA",
@@ -171,8 +172,8 @@ class CalibrateModelTool(BaseTool):
                         "ngs": 30,
                         "kstop": 5,
                         "peps": 0.05,
-                        "pcento": 0.05
-                    }
+                        "pcento": 0.05,
+                    },
                 },
                 "loss": {
                     "type": "object",
@@ -180,21 +181,21 @@ class CalibrateModelTool(BaseTool):
                     "properties": {
                         "type": {"type": "string", "default": "time_series"},
                         "obj_func": {"type": "string", "default": "RMSE"},
-                        "events": {"type": ["null", "array"], "default": None}
+                        "events": {"type": ["null", "array"], "default": None},
                     },
                     "default": {
                         "type": "time_series",
                         "obj_func": "RMSE",
-                        "events": None
-                    }
+                        "events": None,
+                    },
                 },
                 "param_range_file": {
                     "type": "string",
-                    "description": "参数范围配置文件路径"
-                }
+                    "description": "参数范围配置文件路径",
+                },
             },
             "required": ["data_dir", "basin_ids"],
-            "additionalProperties": False
+            "additionalProperties": False,
         }
 
     def execute(self, parameters: Dict[str, Any]) -> ToolResult:
@@ -210,40 +211,44 @@ class CalibrateModelTool(BaseTool):
             data_dir = parameters["data_dir"]
             result_dir = parameters.get("result_dir")
             exp_name = parameters.get("exp_name", "exp_calibration")
-            model = parameters.get("model", {
-                "name": "gr4j",
-                "source_type": "sources",
-                "source_book": "HF",
-                "kernel_size": 15,
-                "time_interval_hours": 24
-            })
+            model = parameters.get(
+                "model",
+                {
+                    "name": "gr4j",
+                    "source_type": "sources",
+                    "source_book": "HF",
+                    "kernel_size": 15,
+                    "time_interval_hours": 24,
+                },
+            )
             basin_ids = parameters["basin_ids"]
             periods = parameters.get("periods", ["2000-01-01", "2023-12-31"])
-            calibrate_period = parameters.get("calibrate_period", ["2000-01-01", "2018-12-31"])
+            calibrate_period = parameters.get(
+                "calibrate_period", ["2000-01-01", "2018-12-31"]
+            )
             test_period = parameters.get("test_period", ["2019-01-01", "2023-12-31"])
             warmup = parameters.get("warmup", 720)
             cv_fold = parameters.get("cv_fold", 1)
-            algorithm = parameters.get("algorithm", {
-                "name": "SCE_UA",
-                "random_seed": 1234,
-                "rep": 100,
-                "ngs": 30,
-                "kstop": 5,
-                "peps": 0.05,
-                "pcento": 0.05
-            })
-            loss = parameters.get("loss", {
-                "type": "time_series",
-                "obj_func": "RMSE",
-                "events": None
-            })
+            algorithm = parameters.get(
+                "algorithm",
+                {
+                    "name": "SCE_UA",
+                    "random_seed": 1234,
+                    "rep": 100,
+                    "ngs": 30,
+                    "kstop": 5,
+                    "peps": 0.05,
+                    "pcento": 0.05,
+                },
+            )
+            loss = parameters.get(
+                "loss", {"type": "time_series", "obj_func": "RMSE", "events": None}
+            )
             param_range_file = parameters.get("param_range_file")
 
             # 设置结果目录
             if result_dir is None:
-                result_dir = os.path.join(
-                    str(repo_path), "result"
-                )
+                result_dir = os.path.join(str(repo_path), "result")
             if result_dir.endswith(exp_name):
                 result_dir = os.path.normpath(result_dir)
             else:
@@ -329,6 +334,7 @@ class CalibrateModelTool(BaseTool):
                 )
                 if param_range_file != dest_param_file:
                     import shutil
+
                     shutil.copy(param_range_file, dest_param_file)
 
             output = {
@@ -338,7 +344,7 @@ class CalibrateModelTool(BaseTool):
                 "exp_name": exp_name,
                 "model_name": model.get("name", "unknown"),
                 "basin_count": len(basin_ids),
-                "cv_fold": cv_fold
+                "cv_fold": cv_fold,
             }
 
             self.logger.info(f"模型率定成功完成，结果保存至: {where_save}")
@@ -346,6 +352,7 @@ class CalibrateModelTool(BaseTool):
 
         except Exception as e:
             import traceback
+
             error_trace = traceback.format_exc()
             error_msg = f"模型率定失败: {str(e)}"
             self.logger.error(f"{error_msg}\n{error_trace}")

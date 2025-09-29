@@ -13,7 +13,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_api_response(prompt: str, model: str = "qwen-turbo", temperature: float = 0.8) -> str:
+def get_api_response(
+    prompt: str, model: str = "qwen-turbo", temperature: float = 0.8
+) -> str:
     """
     调用外部API获取响应
 
@@ -33,6 +35,7 @@ def get_api_response(prompt: str, model: str = "qwen-turbo", temperature: float 
         # 尝试从definitions导入API Key
         try:
             from definitions import OPENAI_API_KEY
+
             api_key = OPENAI_API_KEY
         except ImportError:
             # 如果导入失败，尝试从环境变量获取
@@ -45,7 +48,7 @@ def get_api_response(prompt: str, model: str = "qwen-turbo", temperature: float 
         # 创建客户端
         client = OpenAI(
             api_key=api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
 
         # 调用API

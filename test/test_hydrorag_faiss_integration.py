@@ -443,7 +443,8 @@ class TestHydroRAGFaissIntegration:
                     )
 
                     if result["status"] == "success":
-                        logger.info(f"✓ 查询成功: {result['final_count']} 个结果")
+                        total_found = result.get('total_found', result.get('final_count', 0))
+                        logger.info(f"✓ 查询成功: {total_found} 个结果")
                         logger.info(f"  后端: {result.get('backend', 'unknown')}")
                         logger.info(f"  重排序: {result.get('rerank_enabled', False)}")
 

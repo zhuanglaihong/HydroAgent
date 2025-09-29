@@ -21,9 +21,9 @@ from .optimization_visualizer import OptimizationVisualizer
 from .statistics_visualizer import StatisticsVisualizer
 
 __all__ = [
-    'ResultVisualizer',
-    'ChartGenerator',
-    'HydroVisualizer',
-    'OptimizationVisualizer',
-    'StatisticsVisualizer'
+    "ResultVisualizer",
+    "ChartGenerator",
+    "HydroVisualizer",
+    "OptimizationVisualizer",
+    "StatisticsVisualizer",
 ]

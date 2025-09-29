@@ -37,26 +37,32 @@ class FaissVectorStore:
         self.embeddings_manager = embeddings_manager
 
         # 从配置中读取参数
-        self.db_path = Path(getattr(config, 'vector_db_dir', './vector_db'))
-        self.index_file = self.db_path / getattr(config, 'VECTOR_INDEX_FILE', 'faiss_index.index')
-        self.metadata_file = self.db_path / getattr(config, 'VECTOR_METADATA_FILE', 'metadata.json')
+        self.db_path = Path(getattr(config, "vector_db_dir", "./vector_db"))
+        self.index_file = self.db_path / getattr(
+            config, "VECTOR_INDEX_FILE", "faiss_index.index"
+        )
+        self.metadata_file = self.db_path / getattr(
+            config, "VECTOR_METADATA_FILE", "metadata.json"
+        )
 
         # FAISS配置
-        self.index_type = getattr(config, 'FAISS_INDEX_TYPE', 'Flat')
-        self.distance_function = getattr(config, 'VECTOR_DB_DISTANCE_FUNCTION', 'cosine')
-        self.ivf_nlist = getattr(config, 'FAISS_IVF_NLIST', 100)
-        self.hnsw_m = getattr(config, 'FAISS_HNSW_M', 16)
-        self.hnsw_ef_search = getattr(config, 'FAISS_HNSW_EF_SEARCH', 64)
-        self.enable_gpu = getattr(config, 'FAISS_ENABLE_GPU', False)
+        self.index_type = getattr(config, "FAISS_INDEX_TYPE", "Flat")
+        self.distance_function = getattr(
+            config, "VECTOR_DB_DISTANCE_FUNCTION", "cosine"
+        )
+        self.ivf_nlist = getattr(config, "FAISS_IVF_NLIST", 100)
+        self.hnsw_m = getattr(config, "FAISS_HNSW_M", 16)
+        self.hnsw_ef_search = getattr(config, "FAISS_HNSW_EF_SEARCH", 64)
+        self.enable_gpu = getattr(config, "FAISS_ENABLE_GPU", False)
 
         # 重排序配置
-        self.rerank_enabled = getattr(config, 'RERANK_ENABLED', True)
-        self.rerank_top_k = getattr(config, 'RERANK_TOP_K_CANDIDATES', 20)
+        self.rerank_enabled = getattr(config, "RERANK_ENABLED", True)
+        self.rerank_top_k = getattr(config, "RERANK_TOP_K_CANDIDATES", 20)
 
         # 初始化
         self.index = None
         self.documents = []  # 存储文档内容
-        self.metadata = []   # 存储元数据
+        self.metadata = []  # 存储元数据
         self.dimension = None
 
         # 确保目录存在
@@ -135,9 +141,12 @@ class FaissVectorStore:
             if self.enable_gpu:
                 try:
                     import faiss
+
                     if faiss.get_num_gpus() > 0:
                         logger.info("启用GPU加速")
-                        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), 0, self.index)
+                        self.index = faiss.index_cpu_to_gpu(
+                            faiss.StandardGpuResources(), 0, self.index
+                        )
                     else:
                         logger.warning("未找到GPU，使用CPU索引")
                 except Exception as e:
@@ -147,7 +156,9 @@ class FaissVectorStore:
             logger.info(f"FAISS索引创建成功，类型: {type(self.index).__name__}")
 
         except ImportError:
-            logger.error("FAISS库未安装，请安装: pip install faiss-cpu 或 pip install faiss-gpu")
+            logger.error(
+                "FAISS库未安装，请安装: pip install faiss-cpu 或 pip install faiss-gpu"
+            )
             raise
         except Exception as e:
             logger.error(f"创建FAISS索引失败: {e}")
@@ -178,8 +189,12 @@ class FaissVectorStore:
             embeddings_list = []
 
             for chunk in chunks_with_embeddings:
-                if (chunk.get("content") and chunk.get("content").strip() and
-                    chunk.get("has_embedding", False) and chunk.get("embedding")):
+                if (
+                    chunk.get("content")
+                    and chunk.get("content").strip()
+                    and chunk.get("has_embedding", False)
+                    and chunk.get("embedding")
+                ):
 
                     valid_chunks.append(chunk)
                     embeddings_list.append(chunk["embedding"])
@@ -198,7 +213,9 @@ class FaissVectorStore:
                 self.dimension = embeddings_array.shape[1]
                 self._create_index(self.dimension)
             elif embeddings_array.shape[1] != self.dimension:
-                logger.error(f"嵌入向量维度不匹配: 期望 {self.dimension}, 实际 {embeddings_array.shape[1]}")
+                logger.error(
+                    f"嵌入向量维度不匹配: 期望 {self.dimension}, 实际 {embeddings_array.shape[1]}"
+                )
                 return {"status": "error", "error": "嵌入向量维度不匹配"}
 
             # 归一化向量（用于余弦相似度）
@@ -206,7 +223,7 @@ class FaissVectorStore:
                 embeddings_array = self._normalize_vectors(embeddings_array)
 
             # 训练索引（如果需要）
-            if hasattr(self.index, 'is_trained') and not self.index.is_trained:
+            if hasattr(self.index, "is_trained") and not self.index.is_trained:
                 logger.info("训练FAISS索引...")
                 self.index.train(embeddings_array)
 
@@ -228,7 +245,7 @@ class FaissVectorStore:
                     "chunk_size": chunk.get("chunk_size", 0),
                     "embedding_model": chunk.get("embedding_model", ""),
                     "added_time": datetime.now().isoformat(),
-                    "original_metadata": chunk.get("metadata", {})
+                    "original_metadata": chunk.get("metadata", {}),
                 }
 
                 self.documents.append(chunk["content"])
@@ -243,7 +260,7 @@ class FaissVectorStore:
                 "status": "success",
                 "added": len(valid_chunks),
                 "skipped": len(chunks) - len(valid_chunks),
-                "total_count": len(self.documents)
+                "total_count": len(self.documents),
             }
 
         except Exception as e:
@@ -269,10 +286,14 @@ class FaissVectorStore:
             if chunks_need_embedding:
                 logger.info(f"{len(chunks_need_embedding)} 个文档块需要生成嵌入向量")
                 # 使用嵌入管理器生成嵌入向量
-                chunks_with_embeddings = self.embeddings_manager.embed_documents_chunks(chunks_need_embedding)
+                chunks_with_embeddings = self.embeddings_manager.embed_documents_chunks(
+                    chunks_need_embedding
+                )
 
                 # 更新原始列表
-                chunk_map = {chunk.get("chunk_id", ""): chunk for chunk in chunks_with_embeddings}
+                chunk_map = {
+                    chunk.get("chunk_id", ""): chunk for chunk in chunks_with_embeddings
+                }
                 for i, chunk in enumerate(chunks):
                     chunk_id = chunk.get("chunk_id", "")
                     if chunk_id in chunk_map:
@@ -295,7 +316,7 @@ class FaissVectorStore:
         query_text: str,
         n_results: int = 5,
         score_threshold: float = 0.0,
-        where: Optional[Dict[str, Any]] = None
+        where: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         查询相似文档（支持多级检索和重排序）
@@ -332,7 +353,11 @@ class FaissVectorStore:
                 query_vector = self._normalize_vectors(query_vector)
 
             # 第一阶段：粗排（获取更多候选）
-            search_k = min(n_results * 3, len(self.documents)) if self.rerank_enabled else n_results
+            search_k = (
+                min(n_results * 3, len(self.documents))
+                if self.rerank_enabled
+                else n_results
+            )
             distances, indices = self.index.search(query_vector, search_k)
 
             # 处理搜索结果
@@ -350,14 +375,16 @@ class FaissVectorStore:
                     score = float(distance)
 
                 if score >= score_threshold:
-                    candidates.append({
-                        "content": self.documents[idx],
-                        "score": score,
-                        "distance": float(distance),
-                        "metadata": self.metadata[idx],
-                        "index": idx,
-                        "rank": i + 1
-                    })
+                    candidates.append(
+                        {
+                            "content": self.documents[idx],
+                            "score": score,
+                            "distance": float(distance),
+                            "metadata": self.metadata[idx],
+                            "index": idx,
+                            "rank": i + 1,
+                        }
+                    )
 
             if not candidates:
                 return {
@@ -367,7 +394,7 @@ class FaissVectorStore:
                     "scores": [],
                     "metadatas": [],
                     "distances": [],
-                    "total_found": 0
+                    "total_found": 0,
                 }
 
             # 第二阶段：重排序（如果启用）
@@ -386,7 +413,7 @@ class FaissVectorStore:
                 "scores": [item["score"] for item in final_results],
                 "metadatas": [item["metadata"] for item in final_results],
                 "distances": [item["distance"] for item in final_results],
-                "total_found": len(final_results)
+                "total_found": len(final_results),
             }
 
             logger.info(f"查询完成，返回 {len(final_results)} 个结果")
@@ -396,7 +423,9 @@ class FaissVectorStore:
             logger.error(f"查询失败: {e}")
             return {"status": "error", "error": str(e)}
 
-    def _rerank_results(self, query: str, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _rerank_results(
+        self, query: str, candidates: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """重排序结果（基于文本相似度和多样性）"""
         try:
             # 计算文本相似度分数
@@ -409,7 +438,9 @@ class FaissVectorStore:
 
                 # 词汇重叠分数
                 if query_words and content_words:
-                    word_overlap = len(query_words & content_words) / len(query_words | content_words)
+                    word_overlap = len(query_words & content_words) / len(
+                        query_words | content_words
+                    )
                 else:
                     word_overlap = 0.0
 
@@ -418,7 +449,9 @@ class FaissVectorStore:
                 for word in query_words:
                     if len(word) > 2 and word in content_lower:
                         substring_score += 1.0
-                substring_score = substring_score / len(query_words) if query_words else 0.0
+                substring_score = (
+                    substring_score / len(query_words) if query_words else 0.0
+                )
 
                 # 长度惩罚（过短或过长的文本）
                 content_len = len(candidate["content"])
@@ -429,7 +462,9 @@ class FaissVectorStore:
                     length_penalty = 2000.0 / content_len
 
                 # 组合分数
-                text_score = (word_overlap * 0.4 + substring_score * 0.6) * length_penalty
+                text_score = (
+                    word_overlap * 0.4 + substring_score * 0.6
+                ) * length_penalty
 
                 # 结合向量相似度和文本相似度
                 candidate["rerank_score"] = candidate["score"] * 0.7 + text_score * 0.3
@@ -446,8 +481,11 @@ class FaissVectorStore:
                 chunk_id = candidate["metadata"].get("chunk_id", "")
 
                 # 检查源文件多样性（每个文件最多选择一定数量的块）
-                source_count = sum(1 for r in diverse_results
-                                 if r["metadata"].get("source_file") == source_file)
+                source_count = sum(
+                    1
+                    for r in diverse_results
+                    if r["metadata"].get("source_file") == source_file
+                )
 
                 if source_count < 2:  # 每个源文件最多2个结果
                     diverse_results.append(candidate)
@@ -473,7 +511,7 @@ class FaissVectorStore:
             # 保存FAISS索引
             # 如果是GPU索引，先转换为CPU
             index_to_save = self.index
-            if hasattr(self.index, 'index'):  # GPU索引
+            if hasattr(self.index, "index"):  # GPU索引
                 index_to_save = faiss.index_gpu_to_cpu(self.index)
 
             faiss.write_index(index_to_save, str(self.index_file))
@@ -491,11 +529,11 @@ class FaissVectorStore:
                     "ivf_nlist": self.ivf_nlist,
                     "hnsw_m": self.hnsw_m,
                     "hnsw_ef_search": self.hnsw_ef_search,
-                    "enable_gpu": self.enable_gpu
-                }
+                    "enable_gpu": self.enable_gpu,
+                },
             }
 
-            with open(self.metadata_file, 'w', encoding='utf-8') as f:
+            with open(self.metadata_file, "w", encoding="utf-8") as f:
                 json.dump(metadata_info, f, ensure_ascii=False, indent=2)
 
             logger.debug(f"索引已保存: {self.index_file}")
@@ -509,7 +547,7 @@ class FaissVectorStore:
             import faiss
 
             # 加载元数据
-            with open(self.metadata_file, 'r', encoding='utf-8') as f:
+            with open(self.metadata_file, "r", encoding="utf-8") as f:
                 metadata_info = json.load(f)
 
             self.documents = metadata_info.get("documents", [])
@@ -526,19 +564,25 @@ class FaissVectorStore:
 
             # 检查索引文档数量
             if self.index.ntotal != len(self.documents):
-                logger.error(f"索引中的文档数量({self.index.ntotal})与元数据不匹配({len(self.documents)})")
+                logger.error(
+                    f"索引中的文档数量({self.index.ntotal})与元数据不匹配({len(self.documents)})"
+                )
                 return False
 
             # GPU加速（如果启用）
             if self.enable_gpu:
                 try:
                     if faiss.get_num_gpus() > 0:
-                        self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), 0, self.index)
+                        self.index = faiss.index_cpu_to_gpu(
+                            faiss.StandardGpuResources(), 0, self.index
+                        )
                         logger.info("索引已转移到GPU")
                 except Exception as e:
                     logger.warning(f"GPU转换失败: {e}")
 
-            logger.info(f"成功加载索引: {len(self.documents)} 个文档, 维度: {self.dimension}")
+            logger.info(
+                f"成功加载索引: {len(self.documents)} 个文档, 维度: {self.dimension}"
+            )
             return True
 
         except Exception as e:
@@ -564,11 +608,7 @@ class FaissVectorStore:
 
             logger.info(f"集合已清空，删除了 {current_count} 个文档")
 
-            return {
-                "status": "success",
-                "deleted": current_count,
-                "remaining_count": 0
-            }
+            return {"status": "success", "deleted": current_count, "remaining_count": 0}
 
         except Exception as e:
             logger.error(f"清空集合失败: {e}")
@@ -602,8 +642,8 @@ class FaissVectorStore:
                     "hnsw_m": self.hnsw_m,
                     "hnsw_ef_search": self.hnsw_ef_search,
                     "enable_gpu": self.enable_gpu,
-                    "rerank_enabled": self.rerank_enabled
-                }
+                    "rerank_enabled": self.rerank_enabled,
+                },
             }
 
         except Exception as e:
@@ -622,20 +662,21 @@ class FaissVectorStore:
                 "index_type": self.index_type,
                 "distance_function": self.distance_function,
                 "backup_time": datetime.now().isoformat(),
-                "total_documents": len(self.documents)
+                "total_documents": len(self.documents),
             }
 
             # 保存备份数据
             backup_file = Path(backup_path)
             backup_file.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(backup_file, 'w', encoding='utf-8') as f:
+            with open(backup_file, "w", encoding="utf-8") as f:
                 json.dump(backup_data, f, ensure_ascii=False, indent=2)
 
             # 备份索引文件
             if self.index_file.exists():
-                index_backup = backup_file.with_suffix('.index')
+                index_backup = backup_file.with_suffix(".index")
                 import shutil
+
                 shutil.copy2(self.index_file, index_backup)
 
             logger.info(f"备份完成，包含 {len(self.documents)} 个文档")
@@ -643,7 +684,7 @@ class FaissVectorStore:
             return {
                 "status": "success",
                 "backup_file": str(backup_file),
-                "document_count": len(self.documents)
+                "document_count": len(self.documents),
             }
 
         except Exception as e:
@@ -654,6 +695,7 @@ class FaissVectorStore:
         """检查向量数据库是否可用"""
         try:
             import faiss
+
             return True
         except ImportError:
             return False
@@ -666,7 +708,7 @@ class FaissVectorStore:
                     return {
                         "id": doc_id,
                         "document": self.documents[i],
-                        "metadata": metadata
+                        "metadata": metadata,
                     }
             return None
 
@@ -685,7 +727,7 @@ class FaissVectorStore:
             logger.info(f"从备份恢复集合: {backup_path}")
 
             # 读取备份文件
-            with open(backup_path, 'r', encoding='utf-8') as f:
+            with open(backup_path, "r", encoding="utf-8") as f:
                 backup_data = json.load(f)
 
             # 清空当前数据
@@ -696,13 +738,16 @@ class FaissVectorStore:
             self.metadata = backup_data.get("metadata", [])
             self.dimension = backup_data.get("dimension")
             self.index_type = backup_data.get("index_type", self.index_type)
-            self.distance_function = backup_data.get("distance_function", self.distance_function)
+            self.distance_function = backup_data.get(
+                "distance_function", self.distance_function
+            )
 
             # 恢复索引文件
             backup_file = Path(backup_path)
-            index_backup = backup_file.with_suffix('.index')
+            index_backup = backup_file.with_suffix(".index")
             if index_backup.exists():
                 import shutil
+
                 shutil.copy2(index_backup, self.index_file)
                 self._load_index()
 
@@ -713,7 +758,7 @@ class FaissVectorStore:
                 "status": "success",
                 "restored_count": restored_count,
                 "backup_time": backup_data.get("backup_time", ""),
-                "current_count": len(self.documents)
+                "current_count": len(self.documents),
             }
 
         except Exception as e:

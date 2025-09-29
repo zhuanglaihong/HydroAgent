@@ -30,6 +30,7 @@ except ImportError:
 
 class ToolCall(BaseModel):
     """工具调用定义"""
+
     step_id: int = Field(..., description="步骤ID")
     tool_name: str = Field(..., description="工具名称")
     parameters: Dict[str, Any] = Field(..., description="工具参数")
@@ -39,6 +40,7 @@ class ToolCall(BaseModel):
 
 class SolutionPlan(BaseModel):
     """解决方案计划"""
+
     task_id: str = Field(..., description="任务ID")
     solution_type: str = Field(..., description="解决方案类型")
     description: str = Field(..., description="解决方案描述")
@@ -54,8 +56,8 @@ class ComplexTaskSolver:
         self,
         simple_executor: SimpleTaskExecutor,
         llm_client: BaseLLMClient = None,
-        rag_system = None,
-        enable_debug: bool = False
+        rag_system=None,
+        enable_debug: bool = False,
     ):
         """
         初始化复杂任务解决器
@@ -77,7 +79,9 @@ class ComplexTaskSolver:
 
         self.logger.info("复杂任务解决器初始化完成")
 
-    def solve_complex_task(self, task: Task, context: Dict[str, Any] = None) -> TaskResult:
+    def solve_complex_task(
+        self, task: Task, context: Dict[str, Any] = None
+    ) -> TaskResult:
         """
         解决复杂任务
 
@@ -94,8 +98,7 @@ class ComplexTaskSolver:
         # 验证任务类型
         if task.type != TaskType.COMPLEX:
             return self._create_error_result(
-                task.task_id,
-                f"任务类型错误，期望 {TaskType.COMPLEX}，实际 {task.type}"
+                task.task_id, f"任务类型错误，期望 {TaskType.COMPLEX}，实际 {task.type}"
             )
 
         try:
@@ -103,7 +106,7 @@ class ComplexTaskSolver:
             task_result = TaskResult(
                 task_id=task.task_id,
                 status=ExecutionStatus.RUNNING,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
             self.logger.info(f"开始解决复杂任务: {task.task_id} - {task.name}")
@@ -115,10 +118,7 @@ class ComplexTaskSolver:
             solution_plan = self._generate_solution_plan(task, knowledge_chunks)
 
             if not solution_plan:
-                return self._create_error_result(
-                    task.task_id,
-                    "无法生成有效的解决方案"
-                )
+                return self._create_error_result(task.task_id, "无法生成有效的解决方案")
 
             # 步骤3: 执行解决方案
             execution_result = self._execute_solution_plan(solution_plan, context)
@@ -129,12 +129,14 @@ class ComplexTaskSolver:
             task_result.error = execution_result.get("error")
 
             # 添加解决方案信息到元数据
-            task_result.metadata.update({
-                "solution_type": solution_plan.solution_type,
-                "steps_count": len(solution_plan.steps),
-                "confidence": solution_plan.confidence,
-                "knowledge_chunks_used": len(knowledge_chunks)
-            })
+            task_result.metadata.update(
+                {
+                    "solution_type": solution_plan.solution_type,
+                    "steps_count": len(solution_plan.steps),
+                    "confidence": solution_plan.confidence,
+                    "knowledge_chunks_used": len(knowledge_chunks),
+                }
+            )
 
             task_result.end_time = datetime.now()
             task_result.calculate_duration()
@@ -142,7 +144,9 @@ class ComplexTaskSolver:
             if task_result.status == ExecutionStatus.COMPLETED:
                 self.logger.info(f"复杂任务 {task.task_id} 解决成功")
             else:
-                self.logger.error(f"复杂任务 {task.task_id} 解决失败: {task_result.error}")
+                self.logger.error(
+                    f"复杂任务 {task.task_id} 解决失败: {task_result.error}"
+                )
 
             return task_result
 
@@ -175,7 +179,9 @@ class ComplexTaskSolver:
             self.logger.warning(f"知识库检索失败: {e}")
             return self._get_default_knowledge(task)
 
-    def _generate_solution_plan(self, task: Task, knowledge_chunks: List[Dict[str, Any]]) -> Optional[SolutionPlan]:
+    def _generate_solution_plan(
+        self, task: Task, knowledge_chunks: List[Dict[str, Any]]
+    ) -> Optional[SolutionPlan]:
         """生成解决方案计划"""
         try:
             # 构建提示词
@@ -184,21 +190,27 @@ class ComplexTaskSolver:
             # 调用LLM生成解决方案
             messages = [
                 LLMMessage(role="system", content=self._get_system_prompt()),
-                LLMMessage(role="user", content=prompt)
+                LLMMessage(role="user", content=prompt),
             ]
 
             # 使用推理模式生成解决方案
-            response = self.llm_client.chat(messages, task_type="reasoning", temperature=0.3, max_tokens=2000)
+            response = self.llm_client.chat(
+                messages, task_type="reasoning", temperature=0.3, max_tokens=2000
+            )
 
             if not response.success:
                 self.logger.error(f"LLM调用失败: {response.error}")
                 return None
 
             # 解析响应
-            solution_plan = self._parse_solution_response(task.task_id, response.content)
+            solution_plan = self._parse_solution_response(
+                task.task_id, response.content
+            )
 
             if solution_plan:
-                self.logger.info(f"生成解决方案成功，包含 {len(solution_plan.steps)} 个步骤")
+                self.logger.info(
+                    f"生成解决方案成功，包含 {len(solution_plan.steps)} 个步骤"
+                )
             else:
                 self.logger.error("解决方案解析失败")
 
@@ -208,7 +220,9 @@ class ComplexTaskSolver:
             self.logger.error(f"生成解决方案失败: {e}")
             return None
 
-    def _execute_solution_plan(self, solution_plan: SolutionPlan, context: Dict[str, Any]) -> Dict[str, Any]:
+    def _execute_solution_plan(
+        self, solution_plan: SolutionPlan, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """执行解决方案计划"""
         try:
             outputs = {}
@@ -219,31 +233,43 @@ class ComplexTaskSolver:
                 self.logger.info(f"执行步骤 {step.step_id}: {step.description}")
 
                 # 检查执行条件
-                if step.condition and not self._evaluate_condition(step.condition, current_context):
+                if step.condition and not self._evaluate_condition(
+                    step.condition, current_context
+                ):
                     self.logger.info(f"步骤 {step.step_id} 条件不满足，跳过执行")
                     continue
 
                 # 解析参数中的引用
-                self.logger.debug(f"当前步骤 {step.step_id} 上下文: {list(current_context.keys())}")
+                self.logger.debug(
+                    f"当前步骤 {step.step_id} 上下文: {list(current_context.keys())}"
+                )
                 for key, value in current_context.items():
-                    if isinstance(value, dict) and 'output' in value:
-                        self.logger.debug(f"  {key}.output: {list(value['output'].keys())}")
-                resolved_params = self._resolve_step_parameters(step.parameters, current_context)
+                    if isinstance(value, dict) and "output" in value:
+                        self.logger.debug(
+                            f"  {key}.output: {list(value['output'].keys())}"
+                        )
+                resolved_params = self._resolve_step_parameters(
+                    step.parameters, current_context
+                )
 
                 # 判断是否需要代码生成
                 if self._is_code_generation_step(step):
                     # 使用代码生成模式
-                    tool_result = self._execute_code_generation_step(step, resolved_params, current_context)
+                    tool_result = self._execute_code_generation_step(
+                        step, resolved_params, current_context
+                    )
                 else:
                     # 调用简单任务执行器执行工具
-                    tool_result = self.simple_executor.tool_registry.call_tool(step.tool_name, resolved_params)
+                    tool_result = self.simple_executor.tool_registry.call_tool(
+                        step.tool_name, resolved_params
+                    )
 
                 step_result = {
                     "step_id": step.step_id,
                     "tool_name": step.tool_name,
                     "success": tool_result.success,
                     "output": tool_result.output,
-                    "error": tool_result.error
+                    "error": tool_result.error,
                 }
 
                 step_results.append(step_result)
@@ -252,22 +278,24 @@ class ComplexTaskSolver:
                     # 更新上下文，供后续步骤使用
                     current_context[f"step_{step.step_id}"] = {
                         "success": True,
-                        "output": tool_result.output
+                        "output": tool_result.output,
                     }
                     outputs.update(tool_result.output)
                 else:
-                    self.logger.error(f"步骤 {step.step_id} 执行失败: {tool_result.error}")
+                    self.logger.error(
+                        f"步骤 {step.step_id} 执行失败: {tool_result.error}"
+                    )
                     return {
                         "status": ExecutionStatus.FAILED,
                         "outputs": outputs,
                         "error": f"步骤 {step.step_id} 执行失败: {tool_result.error}",
-                        "step_results": step_results
+                        "step_results": step_results,
                     }
 
             return {
                 "status": ExecutionStatus.COMPLETED,
                 "outputs": outputs,
-                "step_results": step_results
+                "step_results": step_results,
             }
 
         except Exception as e:
@@ -275,7 +303,7 @@ class ComplexTaskSolver:
             return {
                 "status": ExecutionStatus.FAILED,
                 "outputs": {},
-                "error": f"执行解决方案失败: {str(e)}"
+                "error": f"执行解决方案失败: {str(e)}",
             }
 
     def _get_system_prompt(self) -> str:
@@ -311,9 +339,13 @@ class ComplexTaskSolver:
       "description": "率定模型"
     }}
   ]
-}}""".format(tools=self._format_available_tools())
+}}""".format(
+            tools=self._format_available_tools()
+        )
 
-    def _build_solution_prompt(self, task: Task, knowledge_chunks: List[Dict[str, Any]]) -> str:
+    def _build_solution_prompt(
+        self, task: Task, knowledge_chunks: List[Dict[str, Any]]
+    ) -> str:
         """构建解决方案提示词"""
         # 检查可用的数据目录
         available_data_dirs = self._get_available_data_directories()
@@ -339,7 +371,9 @@ class ComplexTaskSolver:
 """
         return prompt
 
-    def _parse_solution_response(self, task_id: str, response_content: str) -> Optional[SolutionPlan]:
+    def _parse_solution_response(
+        self, task_id: str, response_content: str
+    ) -> Optional[SolutionPlan]:
         """解析LLM响应为解决方案计划"""
         try:
             # 尝试提取JSON部分
@@ -368,7 +402,7 @@ class ComplexTaskSolver:
                     tool_name=step_data["tool_name"],
                     parameters=step_data["parameters"],
                     description=step_data.get("description", ""),
-                    condition=step_data.get("condition")
+                    condition=step_data.get("condition"),
                 )
                 tool_calls.append(tool_call)
 
@@ -377,7 +411,7 @@ class ComplexTaskSolver:
                 task_id=task_id,
                 solution_type=solution_data.get("solution_type", "tool_sequence"),
                 description=solution_data.get("description", ""),
-                steps=tool_calls
+                steps=tool_calls,
             )
 
             return solution_plan
@@ -389,7 +423,7 @@ class ComplexTaskSolver:
 
     def _get_available_tools(self) -> Dict[str, Any]:
         """获取可用工具信息"""
-        if hasattr(self.simple_executor, 'tool_registry'):
+        if hasattr(self.simple_executor, "tool_registry"):
             return self.simple_executor.tool_registry.export_tool_definitions()
         return {}
 
@@ -419,13 +453,13 @@ class ComplexTaskSolver:
             {
                 "content": "水文模型率定通常包括数据准备、模型配置、参数优化和结果评估等步骤",
                 "source": "default_knowledge",
-                "relevance": 0.8
+                "relevance": 0.8,
             },
             {
                 "content": "GR4J模型需要日尺度的降雨和蒸发数据，以及径流观测数据",
                 "source": "default_knowledge",
-                "relevance": 0.7
-            }
+                "relevance": 0.7,
+            },
         ]
 
     def _format_knowledge_chunks(self, knowledge_chunks: List[Dict[str, Any]]) -> str:
@@ -441,12 +475,18 @@ class ComplexTaskSolver:
 
         return "\n".join(formatted)
 
-    def _resolve_step_parameters(self, parameters: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    def _resolve_step_parameters(
+        self, parameters: Dict[str, Any], context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """解析步骤参数中的引用"""
         resolved = {}
 
         for key, value in parameters.items():
-            if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+            if (
+                isinstance(value, str)
+                and value.startswith("${")
+                and value.endswith("}")
+            ):
                 # 解析引用
                 ref_path = value[2:-1]  # 移除 ${ 和 }
                 resolved_value = self._resolve_reference(ref_path, context)
@@ -458,7 +498,7 @@ class ComplexTaskSolver:
 
     def _resolve_reference(self, ref_path: str, context: Dict[str, Any]) -> Any:
         """解析参数引用"""
-        parts = ref_path.split('.')
+        parts = ref_path.split(".")
         value = context
         current_path = []
 
@@ -468,8 +508,10 @@ class ComplexTaskSolver:
                 value = value[part]
             else:
                 # 提供更详细的错误信息
-                available_keys = list(value.keys()) if isinstance(value, dict) else "不是字典类型"
-                current_path_str = '.'.join(current_path)
+                available_keys = (
+                    list(value.keys()) if isinstance(value, dict) else "不是字典类型"
+                )
+                current_path_str = ".".join(current_path)
                 self.logger.error(f"引用解析失败: {ref_path}")
                 self.logger.error(f"  - 失败位置: {current_path_str}")
                 self.logger.error(f"  - 当前值类型: {type(value)}")
@@ -492,60 +534,88 @@ class ComplexTaskSolver:
         """判断是否为代码生成步骤"""
         # 根据工具名称或描述判断是否需要代码生成
         code_generation_tools = [
-            "generate_code", "write_script", "create_function",
-            "modify_code", "code_optimization"
+            "generate_code",
+            "write_script",
+            "create_function",
+            "modify_code",
+            "code_optimization",
         ]
 
         code_keywords = [
-            "生成代码", "编写脚本", "创建函数",
-            "修改代码", "代码优化", "code", "script"
+            "生成代码",
+            "编写脚本",
+            "创建函数",
+            "修改代码",
+            "代码优化",
+            "code",
+            "script",
         ]
 
-        return (
-            step.tool_name in code_generation_tools or
-            any(keyword in step.description.lower() for keyword in code_keywords)
+        return step.tool_name in code_generation_tools or any(
+            keyword in step.description.lower() for keyword in code_keywords
         )
 
-    def _execute_code_generation_step(self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any]) -> Any:
+    def _execute_code_generation_step(
+        self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any]
+    ) -> Any:
         """执行代码生成步骤"""
         try:
             # 构建代码生成提示
-            code_prompt = self._build_code_generation_prompt(step, resolved_params, context)
+            code_prompt = self._build_code_generation_prompt(
+                step, resolved_params, context
+            )
 
             # 使用代码生成模式调用LLM
             messages = [
-                LLMMessage(role="system", content="你是一个专业的Python代码生成助手。请生成符合要求的高质量代码。"),
-                LLMMessage(role="user", content=code_prompt)
+                LLMMessage(
+                    role="system",
+                    content="你是一个专业的Python代码生成助手。请生成符合要求的高质量代码。",
+                ),
+                LLMMessage(role="user", content=code_prompt),
             ]
 
-            response = self.llm_client.chat(messages, task_type="coding", temperature=0.1, max_tokens=2000)
+            response = self.llm_client.chat(
+                messages, task_type="coding", temperature=0.1, max_tokens=2000
+            )
 
             if response.success:
                 # 模拟工具调用结果格式
-                return type('ToolResult', (), {
-                    'success': True,
-                    'output': {
-                        'generated_code': response.content,
-                        'step_description': step.description,
-                        'model_used': response.metadata.get('model_used', 'unknown')
+                return type(
+                    "ToolResult",
+                    (),
+                    {
+                        "success": True,
+                        "output": {
+                            "generated_code": response.content,
+                            "step_description": step.description,
+                            "model_used": response.metadata.get(
+                                "model_used", "unknown"
+                            ),
+                        },
+                        "error": None,
                     },
-                    'error': None
-                })()
+                )()
             else:
-                return type('ToolResult', (), {
-                    'success': False,
-                    'output': {},
-                    'error': f"代码生成失败: {response.error}"
-                })()
+                return type(
+                    "ToolResult",
+                    (),
+                    {
+                        "success": False,
+                        "output": {},
+                        "error": f"代码生成失败: {response.error}",
+                    },
+                )()
 
         except Exception as e:
-            return type('ToolResult', (), {
-                'success': False,
-                'output': {},
-                'error': f"代码生成异常: {str(e)}"
-            })()
+            return type(
+                "ToolResult",
+                (),
+                {"success": False, "output": {}, "error": f"代码生成异常: {str(e)}"},
+            )()
 
-    def _build_code_generation_prompt(self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any]) -> str:
+    def _build_code_generation_prompt(
+        self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any]
+    ) -> str:
         """构建代码生成提示词"""
         prompt = f"""任务描述: {step.description}
 
@@ -582,7 +652,7 @@ class ComplexTaskSolver:
 
         formatted = []
         for key, value in context.items():
-            if isinstance(value, dict) and 'output' in value:
+            if isinstance(value, dict) and "output" in value:
                 formatted.append(f"- {key}: {value['output']}")
             else:
                 formatted.append(f"- {key}: {value}")
@@ -625,5 +695,5 @@ class ComplexTaskSolver:
             status=ExecutionStatus.FAILED,
             start_time=datetime.now(),
             end_time=datetime.now(),
-            error=error_msg
+            error=error_msg,
         )

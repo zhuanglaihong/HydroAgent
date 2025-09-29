@@ -70,8 +70,8 @@ class ChartGenerator:
             """
 
             # 添加任务详情表格
-            for task in data['task_results']:
-                status_color = "#28a745" if task['status'] == "COMPLETED" else "#dc3545"
+            for task in data["task_results"]:
+                status_color = "#28a745" if task["status"] == "COMPLETED" else "#dc3545"
                 html += f"""
             <tr>
                 <td>{task['task_id']}</td>
@@ -83,9 +83,14 @@ class ChartGenerator:
                 """
 
             # 准备图表数据
-            task_labels = [task['task_id'] for task in data['task_results']]
-            task_durations = [task.get('duration', 0) or 0 for task in data['task_results']]
-            task_colors = ['#28a745' if task['status'] == 'COMPLETED' else '#dc3545' for task in data['task_results']]
+            task_labels = [task["task_id"] for task in data["task_results"]]
+            task_durations = [
+                task.get("duration", 0) or 0 for task in data["task_results"]
+            ]
+            task_colors = [
+                "#28a745" if task["status"] == "COMPLETED" else "#dc3545"
+                for task in data["task_results"]
+            ]
 
             html += f"""
         </table>
@@ -169,13 +174,13 @@ class ChartGenerator:
         <div class="timeline">
             """
 
-            if data['tasks']:
-                for task in data['tasks']:
+            if data["tasks"]:
+                for task in data["tasks"]:
                     status_class = {
-                        'COMPLETED': 'timeline-success',
-                        'FAILED': 'timeline-failed',
-                        'RUNNING': 'timeline-running'
-                    }.get(task['status'], 'timeline-failed')
+                        "COMPLETED": "timeline-success",
+                        "FAILED": "timeline-failed",
+                        "RUNNING": "timeline-running",
+                    }.get(task["status"], "timeline-failed")
 
                     html += f"""
             <div class="timeline-item {status_class}">
@@ -265,8 +270,8 @@ class ChartGenerator:
     def generate_react_iterations_chart(self, data: Dict[str, Any]) -> Optional[str]:
         """生成React迭代图表"""
         try:
-            iterations = data.get('iterations', [])
-            target = data.get('target', {})
+            iterations = data.get("iterations", [])
+            target = data.get("target", {})
 
             html = f"""
 <!DOCTYPE html>
@@ -308,8 +313,10 @@ class ChartGenerator:
             """
 
             for iteration in iterations:
-                achieved_color = "#28a745" if iteration.get('target_achieved') else "#dc3545"
-                achieved_text = "是" if iteration.get('target_achieved') else "否"
+                achieved_color = (
+                    "#28a745" if iteration.get("target_achieved") else "#dc3545"
+                )
+                achieved_text = "是" if iteration.get("target_achieved") else "否"
 
                 html += f"""
             <tr>
@@ -324,8 +331,8 @@ class ChartGenerator:
 
             # 准备图表数据
             iteration_labels = [f"迭代{iter['iteration']}" for iter in iterations]
-            current_metrics = [iter.get('current_metric') for iter in iterations]
-            target_value = target.get('threshold') if target else None
+            current_metrics = [iter.get("current_metric") for iter in iterations]
+            target_value = target.get("threshold") if target else None
 
             html += f"""
         </table>
@@ -396,13 +403,12 @@ class ChartGenerator:
     def generate_metrics_chart(self, data: Dict[str, Any]) -> Optional[str]:
         """生成指标图表"""
         try:
-            metrics = data.get('metrics', {})
+            metrics = data.get("metrics", {})
 
             if not metrics:
-                return self.generate_placeholder_chart({
-                    "title": data['title'],
-                    "message": "暂无性能指标数据"
-                })
+                return self.generate_placeholder_chart(
+                    {"title": data["title"], "message": "暂无性能指标数据"}
+                )
 
             html = f"""
 <!DOCTYPE html>

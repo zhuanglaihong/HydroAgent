@@ -18,19 +18,21 @@ logger = logging.getLogger(__name__)
 
 class ExecutionMode(Enum):
     """执行模式枚举"""
-    LINEAR = "linear"           # 线性执行：严格按依赖顺序执行
-    REACT = "react"            # 反应式执行：支持动态决策和循环
-    HYBRID = "hybrid"          # 混合模式：结合线性和反应式
+
+    LINEAR = "linear"  # 线性执行：严格按依赖顺序执行
+    REACT = "react"  # 反应式执行：支持动态决策和循环
+    HYBRID = "hybrid"  # 混合模式：结合线性和反应式
 
 
 @dataclass
 class ModeAnalysisResult:
     """模式分析结果"""
+
     recommended_mode: ExecutionMode
-    confidence: float                    # 推荐置信度 (0.0 - 1.0)
-    reasoning: str                      # 推荐理由
-    complexity_score: float             # 复杂度评分 (0.0 - 1.0)
-    features: Dict[str, bool]           # 检测到的特征
+    confidence: float  # 推荐置信度 (0.0 - 1.0)
+    reasoning: str  # 推荐理由
+    complexity_score: float  # 复杂度评分 (0.0 - 1.0)
+    features: Dict[str, bool]  # 检测到的特征
     metadata: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -46,12 +48,12 @@ class ExecutionModeAnalyzer:
     def __init__(self):
         """初始化分析器"""
         self.complexity_weights = {
-            "task_count": 0.1,          # 任务数量权重
-            "dependency_depth": 0.2,     # 依赖深度权重
-            "branch_count": 0.15,        # 分支数量权重
-            "loop_count": 0.25,          # 循环数量权重
-            "condition_count": 0.15,     # 条件数量权重
-            "complex_task_ratio": 0.15   # 复杂任务比例权重
+            "task_count": 0.1,  # 任务数量权重
+            "dependency_depth": 0.2,  # 依赖深度权重
+            "branch_count": 0.15,  # 分支数量权重
+            "loop_count": 0.25,  # 循环数量权重
+            "condition_count": 0.15,  # 条件数量权重
+            "complex_task_ratio": 0.15,  # 复杂任务比例权重
         }
 
     def analyze_workflow(self, workflow: Dict[str, Any]) -> ModeAnalysisResult:
@@ -72,7 +74,7 @@ class ExecutionModeAnalyzer:
                     confidence=1.0,
                     reasoning="空工作流，使用线性模式",
                     complexity_score=0.0,
-                    features={}
+                    features={},
                 )
 
             # 特征检测
@@ -82,7 +84,9 @@ class ExecutionModeAnalyzer:
             complexity_score = self._calculate_complexity(tasks, features)
 
             # 模式推荐
-            mode, confidence, reasoning = self._recommend_mode(features, complexity_score)
+            mode, confidence, reasoning = self._recommend_mode(
+                features, complexity_score
+            )
 
             return ModeAnalysisResult(
                 recommended_mode=mode,
@@ -92,8 +96,8 @@ class ExecutionModeAnalyzer:
                 features=features,
                 metadata={
                     "task_count": len(tasks),
-                    "workflow_id": workflow.get("workflow_id", "unknown")
-                }
+                    "workflow_id": workflow.get("workflow_id", "unknown"),
+                },
             )
 
         except Exception as e:
@@ -103,7 +107,7 @@ class ExecutionModeAnalyzer:
                 confidence=0.5,
                 reasoning=f"分析失败，使用默认线性模式: {str(e)}",
                 complexity_score=0.0,
-                features={}
+                features={},
             )
 
     def _detect_features(self, tasks: List[Dict[str, Any]]) -> Dict[str, bool]:
@@ -116,7 +120,7 @@ class ExecutionModeAnalyzer:
             "has_error_handling": False,
             "has_dynamic_params": False,
             "requires_feedback": False,
-            "has_model_calibration": False
+            "has_model_calibration": False,
         }
 
         # 分析每个任务
@@ -155,11 +159,15 @@ class ExecutionModeAnalyzer:
 
         # 检测并行分支
         dependency_graph = self._build_dependency_graph(tasks)
-        features["has_parallel_branches"] = self._has_parallel_execution(dependency_graph)
+        features["has_parallel_branches"] = self._has_parallel_execution(
+            dependency_graph
+        )
 
         return features
 
-    def _calculate_complexity(self, tasks: List[Dict[str, Any]], features: Dict[str, bool]) -> float:
+    def _calculate_complexity(
+        self, tasks: List[Dict[str, Any]], features: Dict[str, bool]
+    ) -> float:
         """计算复杂度评分"""
         scores = {}
 
@@ -177,67 +185,81 @@ class ExecutionModeAnalyzer:
         scores["branch_count"] = min(branch_count / 3.0, 1.0)
 
         # 循环数量评分
-        loop_count = sum(1 for task in tasks if task.get("conditions", {}).get("retry_count", 0) > 1)
+        loop_count = sum(
+            1 for task in tasks if task.get("conditions", {}).get("retry_count", 0) > 1
+        )
         scores["loop_count"] = min(loop_count / 2.0, 1.0)
 
         # 条件数量评分
-        condition_count = sum(1 for task in tasks if task.get("conditions", {}).get("if"))
+        condition_count = sum(
+            1 for task in tasks if task.get("conditions", {}).get("if")
+        )
         scores["condition_count"] = min(condition_count / 3.0, 1.0)
 
         # 复杂任务比例评分
-        complex_tasks = sum(1 for task in tasks if task.get("task_type") == "complex_reasoning")
+        complex_tasks = sum(
+            1 for task in tasks if task.get("task_type") == "complex_reasoning"
+        )
         complex_ratio = complex_tasks / len(tasks) if tasks else 0
         scores["complex_task_ratio"] = complex_ratio
 
         # 加权求和
         weighted_score = sum(
-            scores[key] * self.complexity_weights[key]
-            for key in scores
+            scores[key] * self.complexity_weights[key] for key in scores
         )
 
         return min(weighted_score, 1.0)
 
-    def _recommend_mode(self, features: Dict[str, bool], complexity_score: float) -> tuple:
+    def _recommend_mode(
+        self, features: Dict[str, bool], complexity_score: float
+    ) -> tuple:
         """推荐执行模式"""
 
         # 高复杂度特征检查
         high_complexity_features = [
-            "has_loops", "has_conditions", "requires_feedback",
-            "has_model_calibration", "has_dynamic_params"
+            "has_loops",
+            "has_conditions",
+            "requires_feedback",
+            "has_model_calibration",
+            "has_dynamic_params",
         ]
 
-        high_complexity_count = sum(1 for feature in high_complexity_features if features.get(feature, False))
+        high_complexity_count = sum(
+            1 for feature in high_complexity_features if features.get(feature, False)
+        )
 
         # 决策逻辑
         if complexity_score >= 0.7 or high_complexity_count >= 3:
             return (
                 ExecutionMode.REACT,
                 0.9,
-                f"高复杂度工作流(评分: {complexity_score:.2f})，包含{high_complexity_count}个高复杂度特征，推荐REACT模式"
+                f"高复杂度工作流(评分: {complexity_score:.2f})，包含{high_complexity_count}个高复杂度特征，推荐REACT模式",
             )
 
         elif features.get("has_model_calibration") or features.get("requires_feedback"):
             return (
                 ExecutionMode.REACT,
                 0.8,
-                "包含模型率定或需要反馈循环，推荐REACT模式"
+                "包含模型率定或需要反馈循环，推荐REACT模式",
             )
 
         elif complexity_score >= 0.4 or features.get("has_parallel_branches"):
             return (
                 ExecutionMode.HYBRID,
                 0.7,
-                f"中等复杂度工作流(评分: {complexity_score:.2f})，推荐HYBRID模式"
+                f"中等复杂度工作流(评分: {complexity_score:.2f})，推荐HYBRID模式",
             )
 
         else:
             return (
                 ExecutionMode.LINEAR,
                 0.8,
-                f"低复杂度工作流(评分: {complexity_score:.2f})，推荐LINEAR模式"
+                f"低复杂度工作流(评分: {complexity_score:.2f})，推荐LINEAR模式",
             )
 
-    def _build_dependency_graph(self, tasks: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    def _build_dependency_graph(
+        self, tasks: List[Dict[str, Any]]
+    ) -> Dict[str, List[str]]:
         """构建依赖图"""
         graph = {}
         for task in tasks:
@@ -250,15 +272,17 @@ class ExecutionModeAnalyzer:
         """检测是否有并行执行"""
         # 找到没有依赖的任务
         independent_tasks = [
-            task_id for task_id, deps in dependency_graph.items()
-            if not deps
+            task_id for task_id, deps in dependency_graph.items() if not deps
         ]
 
         # 如果有多个独立任务，说明可以并行执行
         return len(independent_tasks) > 1
 
-    def _calculate_max_dependency_depth(self, dependency_graph: Dict[str, List[str]]) -> int:
+    def _calculate_max_dependency_depth(
+        self, dependency_graph: Dict[str, List[str]]
+    ) -> int:
         """计算最大依赖深度"""
+
         def get_depth(task_id: str, visited: set = None) -> int:
             if visited is None:
                 visited = set()
@@ -305,8 +329,7 @@ class ExecutionModeAnalyzer:
 
         # 从没有依赖的任务开始
         independent_tasks = [
-            task_id for task_id, deps in dependency_graph.items()
-            if not deps
+            task_id for task_id, deps in dependency_graph.items() if not deps
         ]
 
         for task_id in independent_tasks:
@@ -332,7 +355,7 @@ class ExecutionModeAnalyzer:
             ExecutionMode.HYBRID.value: (
                 "混合执行模式：结合线性和反应式的优点，对简单任务使用线性执行，"
                 "对复杂任务使用反应式执行，平衡效率和灵活性"
-            )
+            ),
         }
 
 

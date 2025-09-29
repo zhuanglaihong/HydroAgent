@@ -190,8 +190,8 @@ chunks_result.txt
 .qodo/
 *.log
 documents/processed/
-documents/vector_db/
 documents/backup/
+documents/backups/
 documents/*.json
 output/
 /.claude/

@@ -26,7 +26,13 @@ class QwenAPIEmbeddings:
     兼容LangChain嵌入接口
     """
 
-    def __init__(self, client, model: str = "text-embedding-v1", max_retries: int = 3, retry_delay: float = 1.0):
+    def __init__(
+        self,
+        client,
+        model: str = "text-embedding-v1",
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+    ):
         """
         初始化Qwen API嵌入模型
 
@@ -81,16 +87,15 @@ class QwenAPIEmbeddings:
         """
         for attempt in range(self.max_retries + 1):
             try:
-                response = self.client.embeddings.create(
-                    input=text,
-                    model=self.model
-                )
+                response = self.client.embeddings.create(input=text, model=self.model)
                 return response.data[0].embedding
 
             except Exception as e:
                 if attempt < self.max_retries:
-                    logger.warning(f"API调用失败 (尝试 {attempt + 1}/{self.max_retries + 1}): {e}")
-                    time.sleep(self.retry_delay * (2 ** attempt))  # 指数退避
+                    logger.warning(
+                        f"API调用失败 (尝试 {attempt + 1}/{self.max_retries + 1}): {e}"
+                    )
+                    time.sleep(self.retry_delay * (2**attempt))  # 指数退避
                 else:
                     logger.error(f"API调用最终失败: {e}")
                     raise
@@ -113,20 +118,30 @@ class EmbeddingsManager:
         self.current_model_type = None  # 'api' or 'ollama'
 
         # 从config中读取参数
-        self.use_api_first = getattr(config, 'EMBEDDING_USE_API_FIRST', True)
-        self.api_timeout = getattr(config, 'EMBEDDING_API_TIMEOUT', 30)
-        self.ollama_timeout = getattr(config, 'EMBEDDING_FALLBACK_TIMEOUT', 60)
-        self.auto_fallback = getattr(config, 'EMBEDDING_AUTO_FALLBACK', True)
+        self.use_api_first = getattr(config, "EMBEDDING_USE_API_FIRST", True)
+        self.api_timeout = getattr(config, "EMBEDDING_API_TIMEOUT", 30)
+        self.ollama_timeout = getattr(config, "EMBEDDING_FALLBACK_TIMEOUT", 60)
+        self.auto_fallback = getattr(config, "EMBEDDING_AUTO_FALLBACK", True)
 
         # API配置
-        self.api_key = getattr(config, 'openai_api_key', None)
-        self.api_base_url = getattr(config, 'openai_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
-        self.api_model_name = getattr(config, 'EMBEDDING_API_MODEL', 'text-embedding-v1')
+        self.api_key = getattr(config, "openai_api_key", None)
+        self.api_base_url = getattr(
+            config,
+            "openai_base_url",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        self.api_model_name = getattr(
+            config, "EMBEDDING_API_MODEL", "text-embedding-v1"
+        )
 
         # Ollama配置
-        self.ollama_model_name = getattr(config, 'EMBEDDING_FALLBACK_MODEL', 'bge-large:335m')
-        self.ollama_base_url = getattr(config, 'ollama_base_url', 'http://localhost:11434')
-        self.device = getattr(config, 'EMBEDDING_DEVICE', 'cpu')
+        self.ollama_model_name = getattr(
+            config, "EMBEDDING_FALLBACK_MODEL", "bge-large:335m"
+        )
+        self.ollama_base_url = getattr(
+            config, "ollama_base_url", "http://localhost:11434"
+        )
+        self.device = getattr(config, "EMBEDDING_DEVICE", "cpu")
 
         # 状态跟踪
         self.api_available = False
@@ -141,7 +156,7 @@ class EmbeddingsManager:
         logger.info(f"API模型可用: {self.api_available}")
         logger.info(f"Ollama模型可用: {self.ollama_available}")
         logger.info(f"当前使用: {self.current_model_type}")
-    
+
     def _initialize_models(self):
         """初始化嵌入模型 - 同时尝试初始化API和Ollama模型"""
         try:
@@ -149,7 +164,11 @@ class EmbeddingsManager:
 
             # 并行初始化API和Ollama模型
             with ThreadPoolExecutor(max_workers=2) as executor:
-                api_future = executor.submit(self._try_qwen_api_embeddings) if self.use_api_first else None
+                api_future = (
+                    executor.submit(self._try_qwen_api_embeddings)
+                    if self.use_api_first
+                    else None
+                )
                 ollama_future = executor.submit(self._try_ollama_embeddings)
 
                 # 等待API模型初始化（如果启用）
@@ -182,17 +201,17 @@ class EmbeddingsManager:
         """设置当前使用的模型"""
         if self.use_api_first and self.api_available:
             self.current_model = self.api_model
-            self.current_model_type = 'api'
+            self.current_model_type = "api"
             logger.info("当前使用API嵌入模型")
         elif self.ollama_available:
             self.current_model = self.ollama_model
-            self.current_model_type = 'ollama'
+            self.current_model_type = "ollama"
             logger.info("当前使用Ollama嵌入模型")
         else:
             self.current_model = None
             self.current_model_type = None
             logger.warning("没有可用的嵌入模型")
-    
+
     def _try_qwen_api_embeddings(self) -> bool:
         """尝试使用Qwen API嵌入模型"""
         try:
@@ -211,17 +230,14 @@ class EmbeddingsManager:
                 return False
 
             # 创建OpenAI客户端（用于Qwen API）
-            client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.api_base_url
-            )
+            client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
 
             # 创建API嵌入包装器
             self.api_model = QwenAPIEmbeddings(
                 client=client,
                 model=self.api_model_name,
                 max_retries=1,  # 降低重试次数以快速失败
-                retry_delay=0.5
+                retry_delay=0.5,
             )
 
             logger.info("Qwen API嵌入模型初始化成功")
@@ -268,11 +284,15 @@ class EmbeddingsManager:
                 "mxbai-embed-large",
                 "bge-large:335m",
                 "bge-large",
-                "all-minilm"
+                "all-minilm",
             ]
 
             for preferred in preferred_models:
-                matching_models = [model for model in available_models if preferred.lower() in model.lower()]
+                matching_models = [
+                    model
+                    for model in available_models
+                    if preferred.lower() in model.lower()
+                ]
                 if matching_models:
                     embedding_model = matching_models[0]
                     logger.info(f"找到嵌入模型: {embedding_model}")
@@ -280,7 +300,14 @@ class EmbeddingsManager:
 
             if not embedding_model:
                 # 查找其他可用的嵌入模型
-                embedding_models = [model for model in available_models if any(name in model.lower() for name in ['embed', 'bge', 'sentence', 'gte', 'nomic'])]
+                embedding_models = [
+                    model
+                    for model in available_models
+                    if any(
+                        name in model.lower()
+                        for name in ["embed", "bge", "sentence", "gte", "nomic"]
+                    )
+                ]
                 if embedding_models:
                     embedding_model = embedding_models[0]
                     logger.info(f"找到其他嵌入模型: {embedding_model}")
@@ -290,8 +317,7 @@ class EmbeddingsManager:
 
             # 初始化Ollama嵌入模型
             self.ollama_model = OllamaEmbeddings(
-                model=embedding_model,
-                base_url=self.ollama_base_url
+                model=embedding_model, base_url=self.ollama_base_url
             )
 
             logger.info(f"Ollama嵌入模型初始化成功: {embedding_model}")
@@ -310,7 +336,7 @@ class EmbeddingsManager:
             logger.warning(f"Ollama嵌入模型初始化失败: {e}")
             self.ollama_model = None
             return False
-    
+
     def _check_ollama_models(self) -> list:
         """检查可用的Ollama模型"""
         try:
@@ -321,7 +347,7 @@ class EmbeddingsManager:
 
             if response.status_code == 200:
                 data = response.json()
-                models = [model['name'] for model in data.get('models', [])]
+                models = [model["name"] for model in data.get("models", [])]
                 logger.info(f"发现Ollama模型: {models}")
                 return models
             else:
@@ -334,7 +360,7 @@ class EmbeddingsManager:
         except Exception as e:
             logger.warning(f"检查Ollama模型时出错: {e}")
             return []
-    
+
     def _test_model_with_timeout(self, model, timeout: int = 5) -> bool:
         """带超时的测试嵌入模型"""
         try:
@@ -365,7 +391,7 @@ class EmbeddingsManager:
         except Exception as e:
             logger.error(f"测试嵌入模型失败: {e}")
             return False
-    
+
     def embed_text(self, text: str) -> Optional[List[float]]:
         """
         对单个文本进行嵌入（支持超时和自动降级）
@@ -391,10 +417,14 @@ class EmbeddingsManager:
                 return None
 
             # 尝试使用当前模型
-            if self.current_model_type == 'api':
-                return self._embed_with_timeout(self.current_model, text, self.api_timeout)
-            elif self.current_model_type == 'ollama':
-                return self._embed_with_timeout(self.current_model, text, self.ollama_timeout)
+            if self.current_model_type == "api":
+                return self._embed_with_timeout(
+                    self.current_model, text, self.api_timeout
+                )
+            elif self.current_model_type == "ollama":
+                return self._embed_with_timeout(
+                    self.current_model, text, self.ollama_timeout
+                )
             else:
                 logger.error("未知的模型类型")
                 return None
@@ -406,7 +436,9 @@ class EmbeddingsManager:
                 return self._try_fallback_embedding(text)
             return None
 
-    def _embed_with_timeout(self, model, text: str, timeout: int) -> Optional[List[float]]:
+    def _embed_with_timeout(
+        self, model, text: str, timeout: int
+    ) -> Optional[List[float]]:
         """带超时的嵌入处理"""
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
@@ -423,31 +455,35 @@ class EmbeddingsManager:
                 except FutureTimeoutError:
                     logger.error(f"嵌入请求超时（{timeout}秒）")
                     # 记录API失败时间
-                    if self.current_model_type == 'api':
+                    if self.current_model_type == "api":
                         self.last_api_failure_time = time.time()
                     return None
 
         except Exception as e:
             logger.error(f"嵌入处理失败: {e}")
-            if self.current_model_type == 'api':
+            if self.current_model_type == "api":
                 self.last_api_failure_time = time.time()
             return None
 
     def _try_fallback_embedding(self, text: str) -> Optional[List[float]]:
         """尝试使用备用模型"""
         try:
-            if self.current_model_type == 'api' and self.ollama_available:
+            if self.current_model_type == "api" and self.ollama_available:
                 logger.info("API失败，切换到Ollama模型")
                 self.current_model = self.ollama_model
-                self.current_model_type = 'ollama'
-                return self._embed_with_timeout(self.current_model, text, self.ollama_timeout)
-            elif self.current_model_type == 'ollama' and self.api_available:
+                self.current_model_type = "ollama"
+                return self._embed_with_timeout(
+                    self.current_model, text, self.ollama_timeout
+                )
+            elif self.current_model_type == "ollama" and self.api_available:
                 # 检查API是否已经冷却
                 if time.time() - self.last_api_failure_time > self.api_retry_interval:
                     logger.info("Ollama失败，重试API模型")
                     self.current_model = self.api_model
-                    self.current_model_type = 'api'
-                    return self._embed_with_timeout(self.current_model, text, self.api_timeout)
+                    self.current_model_type = "api"
+                    return self._embed_with_timeout(
+                        self.current_model, text, self.api_timeout
+                    )
 
             logger.error("所有嵌入模型都不可用")
             return None
@@ -464,17 +500,19 @@ class EmbeddingsManager:
                 self._set_current_model()
 
             # 如果使用API优先策略，检查是否需要重试API
-            if (self.use_api_first and
-                self.current_model_type == 'ollama' and
-                self.api_available and
-                time.time() - self.last_api_failure_time > self.api_retry_interval):
+            if (
+                self.use_api_first
+                and self.current_model_type == "ollama"
+                and self.api_available
+                and time.time() - self.last_api_failure_time > self.api_retry_interval
+            ):
                 logger.info("尝试重新使用API模型")
                 self.current_model = self.api_model
-                self.current_model_type = 'api'
+                self.current_model_type = "api"
 
         except Exception as e:
             logger.error(f"模型切换检查失败: {e}")
-    
+
     def embed_texts(self, texts: List[str]) -> List[Optional[List[float]]]:
         """
         对多个文本进行批量嵌入（支持超时和自动降级）
@@ -533,12 +571,14 @@ class EmbeddingsManager:
             logger.error(f"批量文本嵌入失败: {e}")
             return [None] * len(texts)
 
-    def _embed_documents_with_timeout(self, texts: List[str]) -> List[Optional[List[float]]]:
+    def _embed_documents_with_timeout(
+        self, texts: List[str]
+    ) -> List[Optional[List[float]]]:
         """带超时的批量文档嵌入"""
         try:
-            if self.current_model_type == 'api':
+            if self.current_model_type == "api":
                 timeout = self.api_timeout
-            elif self.current_model_type == 'ollama':
+            elif self.current_model_type == "ollama":
                 timeout = self.ollama_timeout
             else:
                 timeout = 30  # 默认超时
@@ -552,13 +592,15 @@ class EmbeddingsManager:
                     if isinstance(embeddings, list) and len(embeddings) == len(texts):
                         return embeddings
                     else:
-                        logger.error(f"批量嵌入结果格式错误: {type(embeddings)}, 长度: {len(embeddings) if isinstance(embeddings, list) else 'N/A'}")
+                        logger.error(
+                            f"批量嵌入结果格式错误: {type(embeddings)}, 长度: {len(embeddings) if isinstance(embeddings, list) else 'N/A'}"
+                        )
                         return [None] * len(texts)
 
                 except FutureTimeoutError:
                     logger.error(f"批量嵌入请求超时（{timeout}秒）")
                     # 记录API失败时间
-                    if self.current_model_type == 'api':
+                    if self.current_model_type == "api":
                         self.last_api_failure_time = time.time()
 
                     # 尝试使用备用模型
@@ -568,7 +610,7 @@ class EmbeddingsManager:
 
         except Exception as e:
             logger.error(f"批量嵌入处理失败: {e}")
-            if self.current_model_type == 'api':
+            if self.current_model_type == "api":
                 self.last_api_failure_time = time.time()
 
             # 尝试使用备用模型
@@ -576,20 +618,22 @@ class EmbeddingsManager:
                 return self._try_fallback_batch_embedding(texts)
             return [None] * len(texts)
 
-    def _try_fallback_batch_embedding(self, texts: List[str]) -> List[Optional[List[float]]]:
+    def _try_fallback_batch_embedding(
+        self, texts: List[str]
+    ) -> List[Optional[List[float]]]:
         """尝试使用备用模型进行批量嵌入"""
         try:
-            if self.current_model_type == 'api' and self.ollama_available:
+            if self.current_model_type == "api" and self.ollama_available:
                 logger.info("API批量嵌入失败，切换到Ollama模型")
                 self.current_model = self.ollama_model
-                self.current_model_type = 'ollama'
+                self.current_model_type = "ollama"
                 return self._embed_documents_with_timeout(texts)
-            elif self.current_model_type == 'ollama' and self.api_available:
+            elif self.current_model_type == "ollama" and self.api_available:
                 # 检查API是否已经冷却
                 if time.time() - self.last_api_failure_time > self.api_retry_interval:
                     logger.info("Ollama批量嵌入失败，重试API模型")
                     self.current_model = self.api_model
-                    self.current_model_type = 'api'
+                    self.current_model_type = "api"
                     return self._embed_documents_with_timeout(texts)
 
             logger.error("所有模型都不可用于批量嵌入")
@@ -598,8 +642,10 @@ class EmbeddingsManager:
         except Exception as e:
             logger.error(f"备用批量嵌入失败: {e}")
             return [None] * len(texts)
-    
-    def embed_documents_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+
+    def embed_documents_chunks(
+        self, chunks: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """
         对文档块进行嵌入处理（支持超时和自动降级）
 
@@ -635,7 +681,9 @@ class EmbeddingsManager:
 
                 processed_chunks.append(processed_chunk)
 
-            success_count = sum(1 for chunk in processed_chunks if chunk.get("has_embedding", False))
+            success_count = sum(
+                1 for chunk in processed_chunks if chunk.get("has_embedding", False)
+            )
             logger.info(f"文档块嵌入完成，成功 {success_count}/{len(chunks)} 个")
 
             return processed_chunks
@@ -644,152 +692,152 @@ class EmbeddingsManager:
             logger.error(f"文档块嵌入处理失败: {e}")
             # 返回原始块，但标记嵌入失败
             return [
-                {**chunk, "embedding": None, "has_embedding": False}
-                for chunk in chunks
+                {**chunk, "embedding": None, "has_embedding": False} for chunk in chunks
             ]
 
     def _get_current_model_name(self) -> str:
         """获取当前使用的模型名称"""
-        if self.current_model_type == 'api':
+        if self.current_model_type == "api":
             return f"api-{self.api_model_name}"
-        elif self.current_model_type == 'ollama':
+        elif self.current_model_type == "ollama":
             return f"ollama-{self.ollama_model_name}"
         else:
             return "unknown"
-    
-    def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
+
+    def calculate_similarity(
+        self, embedding1: List[float], embedding2: List[float]
+    ) -> float:
         """
         计算两个嵌入向量的相似度
-        
+
         Args:
             embedding1: 第一个嵌入向量
             embedding2: 第二个嵌入向量
-            
+
         Returns:
             float: 余弦相似度，范围[-1, 1]
         """
         try:
             if not embedding1 or not embedding2:
                 return 0.0
-            
+
             if len(embedding1) != len(embedding2):
                 logger.error("嵌入向量维度不匹配")
                 return 0.0
-            
+
             # 转换为numpy数组
             vec1 = np.array(embedding1)
             vec2 = np.array(embedding2)
-            
+
             # 计算余弦相似度
             dot_product = np.dot(vec1, vec2)
             norm1 = np.linalg.norm(vec1)
             norm2 = np.linalg.norm(vec2)
-            
+
             if norm1 == 0 or norm2 == 0:
                 return 0.0
-            
+
             similarity = dot_product / (norm1 * norm2)
             return float(similarity)
-            
+
         except Exception as e:
             logger.error(f"计算相似度失败: {e}")
             return 0.0
-    
+
     def find_most_similar(
-        self, 
-        query_embedding: List[float], 
-        candidate_embeddings: List[List[float]], 
-        top_k: int = 5
+        self,
+        query_embedding: List[float],
+        candidate_embeddings: List[List[float]],
+        top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """
         找到最相似的嵌入向量
-        
+
         Args:
             query_embedding: 查询向量
             candidate_embeddings: 候选向量列表
             top_k: 返回前k个最相似的
-            
+
         Returns:
             List[Dict[str, Any]]: 相似度结果列表
         """
         try:
             if not query_embedding or not candidate_embeddings:
                 return []
-            
+
             similarities = []
-            
+
             for i, candidate in enumerate(candidate_embeddings):
                 similarity = self.calculate_similarity(query_embedding, candidate)
-                similarities.append({
-                    "index": i,
-                    "similarity": similarity
-                })
-            
+                similarities.append({"index": i, "similarity": similarity})
+
             # 按相似度排序
             similarities.sort(key=lambda x: x["similarity"], reverse=True)
-            
+
             # 返回前k个
             return similarities[:top_k]
-            
+
         except Exception as e:
             logger.error(f"查找相似向量失败: {e}")
             return []
-    
+
     def save_embeddings(self, embeddings: List[List[float]], file_path: str):
         """
         保存嵌入向量到文件
-        
+
         Args:
             embeddings: 嵌入向量列表
             file_path: 保存路径
         """
         try:
             import pickle
-            
+
             data = {
                 "embeddings": embeddings,
                 "model_name": self.model_name,
                 "embedding_dim": len(embeddings[0]) if embeddings else 0,
-                "count": len(embeddings)
+                "count": len(embeddings),
             }
-            
-            with open(file_path, 'wb') as f:
+
+            with open(file_path, "wb") as f:
                 pickle.dump(data, f)
-            
+
             logger.info(f"嵌入向量已保存到: {file_path}")
-            
+
         except Exception as e:
             logger.error(f"保存嵌入向量失败: {e}")
-    
+
     def load_embeddings(self, file_path: str) -> Optional[List[List[float]]]:
         """
         从文件加载嵌入向量
-        
+
         Args:
             file_path: 文件路径
-            
+
         Returns:
             List[List[float]]: 嵌入向量列表
         """
         try:
             import pickle
-            
-            with open(file_path, 'rb') as f:
+
+            with open(file_path, "rb") as f:
                 data = pickle.load(f)
-            
+
             embeddings = data.get("embeddings", [])
             model_name = data.get("model_name", "")
-            
+
             if model_name != self.model_name:
-                logger.warning(f"加载的嵌入向量使用的模型({model_name})与当前模型({self.model_name})不同")
-            
+                logger.warning(
+                    f"加载的嵌入向量使用的模型({model_name})与当前模型({self.model_name})不同"
+                )
+
             logger.info(f"从文件加载了 {len(embeddings)} 个嵌入向量")
             return embeddings
-            
+
         except Exception as e:
             logger.error(f"加载嵌入向量失败: {e}")
             return None
-    
+
     def get_model_info(self) -> Dict[str, Any]:
         """获取模型信息"""
         return {
@@ -802,13 +850,13 @@ class EmbeddingsManager:
             "use_api_first": self.use_api_first,
             "auto_fallback": self.auto_fallback,
             "api_timeout": self.api_timeout,
-            "ollama_timeout": self.ollama_timeout
+            "ollama_timeout": self.ollama_timeout,
         }
-    
+
     def is_available(self) -> bool:
         """检查嵌入模型是否可用"""
         return self.api_available or self.ollama_available
-    
+
     def get_embedding_dimension(self) -> int:
         """获取嵌入向量维度"""
         try:

@@ -30,7 +30,7 @@ class ReactExecutor:
         simple_executor: SimpleTaskExecutor,
         complex_solver: ComplexTaskSolver = None,
         llm_client: BaseLLMClient = None,
-        enable_debug: bool = False
+        enable_debug: bool = False,
     ):
         """
         初始化React执行器
@@ -71,7 +71,7 @@ class ReactExecutor:
         result = WorkflowResult(
             execution_id=f"react_{workflow.workflow_id}_{int(datetime.now().timestamp())}",
             workflow_id=workflow.workflow_id,
-            status=ExecutionStatus.RUNNING
+            status=ExecutionStatus.RUNNING,
         )
 
         target = workflow.target
@@ -79,7 +79,9 @@ class ReactExecutor:
         current_iteration = 0
         target_achieved = False
 
-        self.logger.info(f"开始React执行: 目标={target.metric} {target.comparison} {target.threshold}")
+        self.logger.info(
+            f"开始React执行: 目标={target.metric} {target.comparison} {target.threshold}"
+        )
 
         while current_iteration < max_iterations and not target_achieved:
             current_iteration += 1
@@ -91,16 +93,24 @@ class ReactExecutor:
                 start_time=datetime.now(),
                 target_achieved=False,
                 current_metric=None,
-                target_metric=target.threshold
+                target_metric=target.threshold,
             )
 
             try:
                 # 执行一轮工作流
-                iteration_result = self._execute_workflow_iteration(workflow, result, current_iteration)
+                iteration_result = self._execute_workflow_iteration(
+                    workflow, result, current_iteration
+                )
 
                 # 评估目标达成情况
-                current_metric = self._extract_target_metric(iteration_result, target.metric)
-                target_achieved = target.is_achieved(current_metric) if current_metric is not None else False
+                current_metric = self._extract_target_metric(
+                    iteration_result, target.metric
+                )
+                target_achieved = (
+                    target.is_achieved(current_metric)
+                    if current_metric is not None
+                    else False
+                )
 
                 # 更新迭代记录
                 iteration.end_time = datetime.now()
@@ -116,7 +126,9 @@ class ReactExecutor:
 
                     # 如果还有迭代机会，调整参数
                     if current_iteration < max_iterations:
-                        adjustments = self._generate_adjustments(workflow, iteration_result, target, current_metric)
+                        adjustments = self._generate_adjustments(
+                            workflow, iteration_result, target, current_metric
+                        )
                         iteration.adjustments_made = adjustments
                         workflow = self._apply_adjustments(workflow, adjustments)
                         self.logger.info(f"应用调整策略: {adjustments}")
@@ -136,24 +148,33 @@ class ReactExecutor:
 
         # 完成执行
         result.target_achieved = target_achieved
-        result.status = ExecutionStatus.COMPLETED if target_achieved else ExecutionStatus.FAILED
+        result.status = (
+            ExecutionStatus.COMPLETED if target_achieved else ExecutionStatus.FAILED
+        )
         result.end_time = datetime.now()
         result.calculate_total_duration()
 
         # 生成最终报告
         result.final_report = self._generate_final_report(workflow, result)
 
-        self.logger.info(f"React执行完成: 迭代{len(result.react_iterations)}次, 目标达成={target_achieved}")
+        self.logger.info(
+            f"React执行完成: 迭代{len(result.react_iterations)}次, 目标达成={target_achieved}"
+        )
 
         return result
 
-    def _execute_workflow_iteration(self, workflow: Workflow, overall_result: WorkflowResult, iteration_number: int = 1) -> WorkflowResult:
+    def _execute_workflow_iteration(
+        self,
+        workflow: Workflow,
+        overall_result: WorkflowResult,
+        iteration_number: int = 1,
+    ) -> WorkflowResult:
         """执行一次工作流迭代"""
         # 创建本次迭代的结果对象
         iteration_result = WorkflowResult(
             execution_id=f"{overall_result.execution_id}_iter",
             workflow_id=workflow.workflow_id,
-            status=ExecutionStatus.RUNNING
+            status=ExecutionStatus.RUNNING,
         )
 
         # 构建依赖图
@@ -175,13 +196,18 @@ class ReactExecutor:
                         iteration_result.add_task_result(task_result)
 
                         # 检查是否失败且设置了遇错停止
-                        if (not task_result.is_successful() and
-                            workflow.global_settings.error_handling.value == "stop_on_error"):
+                        if (
+                            not task_result.is_successful()
+                            and workflow.global_settings.error_handling.value
+                            == "stop_on_error"
+                        ):
                             self.logger.error(f"任务 {task_id} 失败，停止执行")
                             iteration_result.status = ExecutionStatus.FAILED
                             return iteration_result
                     else:
-                        self.logger.info(f"根据条件跳过任务 {task_id} (迭代 {iteration_number})")
+                        self.logger.info(
+                            f"根据条件跳过任务 {task_id} (迭代 {iteration_number})"
+                        )
 
         iteration_result.status = ExecutionStatus.COMPLETED
         return iteration_result
@@ -191,20 +217,33 @@ class ReactExecutor:
         try:
             # 分发任务
             from .task_dispatcher import ExecutorType
-            executor_type, execution_params = self.task_dispatcher.dispatch_task(task, result.task_results)
+
+            executor_type, execution_params = self.task_dispatcher.dispatch_task(
+                task, result.task_results
+            )
 
             # 根据executor_type调用相应的执行器
             if executor_type == ExecutorType.SIMPLE_EXECUTOR:
-                task_result = self.simple_executor.execute_task(task, result.task_results)
+                task_result = self.simple_executor.execute_task(
+                    task, result.task_results
+                )
             elif executor_type == ExecutorType.COMPLEX_SOLVER:
                 if self.complex_solver:
-                    task_result = self.complex_solver.solve_complex_task(task, result.task_results)
+                    task_result = self.complex_solver.solve_complex_task(
+                        task, result.task_results
+                    )
                 else:
-                    task_result = self._create_placeholder_result(task, "复杂任务解决器未初始化")
+                    task_result = self._create_placeholder_result(
+                        task, "复杂任务解决器未初始化"
+                    )
             else:
-                task_result = self._create_placeholder_result(task, f"未知执行器类型: {executor_type}")
+                task_result = self._create_placeholder_result(
+                    task, f"未知执行器类型: {executor_type}"
+                )
 
-            self.logger.info(f"任务 {task.task_id} 执行完成，状态: {task_result.status}")
+            self.logger.info(
+                f"任务 {task.task_id} 执行完成，状态: {task_result.status}"
+            )
 
         except Exception as e:
             from datetime import datetime
@@ -215,37 +254,41 @@ class ReactExecutor:
                 status=ExecutionStatus.FAILED,
                 start_time=datetime.now(),
                 end_time=datetime.now(),
-                error=str(e)
+                error=str(e),
             )
             self.logger.error(f"任务 {task.task_id} 执行失败: {e}")
 
         finally:
             # 更新分发器状态
-            self.task_dispatcher.update_task_status(task.task_id, task_result.status, task_result)
+            self.task_dispatcher.update_task_status(
+                task.task_id, task_result.status, task_result
+            )
 
         return task_result
 
     def _should_execute_task(self, task, iteration_number: int) -> bool:
         """检查任务是否应该在当前迭代中执行"""
         # 检查任务的执行条件
-        if hasattr(task, 'conditions') and task.conditions:
+        if hasattr(task, "conditions") and task.conditions:
             # 检查是否有迭代条件
-            if 'execute_iterations' in task.conditions:
-                execute_iterations = task.conditions['execute_iterations']
+            if "execute_iterations" in task.conditions:
+                execute_iterations = task.conditions["execute_iterations"]
                 if isinstance(execute_iterations, list):
                     return iteration_number in execute_iterations
                 elif isinstance(execute_iterations, str):
-                    if execute_iterations == 'first_only':
+                    if execute_iterations == "first_only":
                         return iteration_number == 1
-                    elif execute_iterations == 'all':
+                    elif execute_iterations == "all":
                         return True
-                    elif execute_iterations == 'skip_first':
+                    elif execute_iterations == "skip_first":
                         return iteration_number > 1
 
         # 默认所有迭代都执行
         return True
 
-    def _extract_target_metric(self, result: WorkflowResult, metric_name: str) -> Optional[float]:
+    def _extract_target_metric(
+        self, result: WorkflowResult, metric_name: str
+    ) -> Optional[float]:
         """从执行结果中提取目标指标"""
         try:
             # 在所有任务结果中查找指标
@@ -264,37 +307,46 @@ class ReactExecutor:
 
                 # 方法3: 检查evaluation_results中的test_metrics
                 outputs = task_result.outputs
-                if 'evaluation_results' in outputs:
-                    eval_results = outputs['evaluation_results']
+                if "evaluation_results" in outputs:
+                    eval_results = outputs["evaluation_results"]
                     if isinstance(eval_results, dict):
                         # 检查test_metrics (优先使用测试期指标)
-                        if 'test_metrics' in eval_results:
-                            test_metrics = eval_results['test_metrics']
+                        if "test_metrics" in eval_results:
+                            test_metrics = eval_results["test_metrics"]
                             if isinstance(test_metrics, dict):
                                 # 尝试不同的大小写组合
                                 metric_variations = [
                                     metric_name.upper(),  # NSE
                                     metric_name.lower(),  # nse
                                     metric_name.capitalize(),  # Nse
-                                    metric_name  # 原始名称
+                                    metric_name,  # 原始名称
                                 ]
                                 for variant in metric_variations:
                                     if variant in test_metrics:
                                         value = test_metrics[variant]
                                         if isinstance(value, (int, float)):
-                                            self.logger.info(f"找到目标指标 {metric_name}={value} (在test_metrics.{variant})")
+                                            self.logger.info(
+                                                f"找到目标指标 {metric_name}={value} (在test_metrics.{variant})"
+                                            )
                                             return float(value)
 
                         # 检查train_metrics (备选)
-                        if 'train_metrics' in eval_results:
-                            train_metrics = eval_results['train_metrics']
+                        if "train_metrics" in eval_results:
+                            train_metrics = eval_results["train_metrics"]
                             if isinstance(train_metrics, dict):
-                                metric_variations = [metric_name.upper(), metric_name.lower(), metric_name.capitalize(), metric_name]
+                                metric_variations = [
+                                    metric_name.upper(),
+                                    metric_name.lower(),
+                                    metric_name.capitalize(),
+                                    metric_name,
+                                ]
                                 for variant in metric_variations:
                                     if variant in train_metrics:
                                         value = train_metrics[variant]
                                         if isinstance(value, (int, float)):
-                                            self.logger.info(f"找到目标指标 {metric_name}={value} (在train_metrics.{variant})")
+                                            self.logger.info(
+                                                f"找到目标指标 {metric_name}={value} (在train_metrics.{variant})"
+                                            )
                                             return float(value)
 
             self.logger.warning(f"未找到目标指标: {metric_name}")
@@ -309,7 +361,7 @@ class ReactExecutor:
         workflow: Workflow,
         result: WorkflowResult,
         target,
-        current_metric: Optional[float]
+        current_metric: Optional[float],
     ) -> List[str]:
         """生成参数调整策略"""
         adjustments = []
@@ -323,7 +375,10 @@ class ReactExecutor:
                 # 根据差距大小决定调整策略
                 if gap_ratio > 0.3:  # 差距较大
                     adjustments.append("大幅度参数调整")
-                    if target.metric.upper() == "NSE" and current_metric < target.threshold:
+                    if (
+                        target.metric.upper() == "NSE"
+                        and current_metric < target.threshold
+                    ):
                         adjustments.append("增加率定迭代次数")
                         adjustments.append("调整参数搜索范围")
                 elif gap_ratio > 0.1:  # 差距中等
@@ -334,7 +389,8 @@ class ReactExecutor:
 
             # 基于失败的任务生成调整策略
             failed_tasks = [
-                task_result for task_result in result.task_results.values()
+                task_result
+                for task_result in result.task_results.values()
                 if not task_result.is_successful()
             ]
 
@@ -351,7 +407,9 @@ class ReactExecutor:
 
         return adjustments
 
-    def _apply_adjustments(self, workflow: Workflow, adjustments: List[str]) -> Workflow:
+    def _apply_adjustments(
+        self, workflow: Workflow, adjustments: List[str]
+    ) -> Workflow:
         """应用调整策略到工作流"""
         # 创建工作流的深拷贝
         adjusted_workflow = copy.deepcopy(workflow)
@@ -378,7 +436,10 @@ class ReactExecutor:
     def _adjust_calibration_iterations(self, workflow: Workflow):
         """调整率定迭代次数"""
         for task in workflow.tasks:
-            if task.tool_name == "calibrate_model" and "max_iterations" in task.parameters:
+            if (
+                task.tool_name == "calibrate_model"
+                and "max_iterations" in task.parameters
+            ):
                 current_iterations = task.parameters.get("max_iterations", 1000)
                 task.parameters["max_iterations"] = min(current_iterations * 1.5, 2000)
 
@@ -402,19 +463,25 @@ class ReactExecutor:
 
         # 分析执行结果
         total_iterations = len(result.react_iterations)
-        successful_iterations = sum(1 for it in result.react_iterations if it.target_achieved)
+        successful_iterations = sum(
+            1 for it in result.react_iterations if it.target_achieved
+        )
 
         key_achievements = []
         encountered_issues = []
         recommendations = []
 
         if result.target_achieved:
-            key_achievements.append(f"成功达成目标: {workflow.target.metric} >= {workflow.target.threshold}")
+            key_achievements.append(
+                f"成功达成目标: {workflow.target.metric} >= {workflow.target.threshold}"
+            )
             final_metric = result.react_iterations[-1].current_metric
             key_achievements.append(f"最终指标值: {final_metric}")
             key_achievements.append(f"总共迭代: {total_iterations} 次")
         else:
-            encountered_issues.append(f"未能达成目标: {workflow.target.metric} >= {workflow.target.threshold}")
+            encountered_issues.append(
+                f"未能达成目标: {workflow.target.metric} >= {workflow.target.threshold}"
+            )
             encountered_issues.append(f"达到最大迭代次数: {total_iterations}")
 
             # 建议
@@ -424,10 +491,14 @@ class ReactExecutor:
         return FinalReport(
             overall_success=result.target_achieved,
             target_achieved=result.target_achieved,
-            final_metric_value=result.react_iterations[-1].current_metric if result.react_iterations else None,
+            final_metric_value=(
+                result.react_iterations[-1].current_metric
+                if result.react_iterations
+                else None
+            ),
             key_achievements=key_achievements,
             encountered_issues=encountered_issues,
-            recommendations=recommendations
+            recommendations=recommendations,
         )
 
     def _create_placeholder_result(self, task, message: str):
@@ -440,5 +511,5 @@ class ReactExecutor:
             status=ExecutionStatus.FAILED,
             start_time=datetime.now(),
             end_time=datetime.now(),
-            error=message
+            error=message,
         )

@@ -23,6 +23,7 @@ from .base_tool import BaseTool, ToolResult
 # 尝试导入水文模型模块
 try:
     from hydromodel.models.model_config import MODEL_PARAM_DICT
+
     HYDROMODEL_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"水文模型模块导入失败: {e}")
@@ -35,8 +36,7 @@ class GetModelParamsTool(BaseTool):
 
     def __init__(self):
         super().__init__(
-            name="get_model_params",
-            description="获取指定水文模型的参数名称和范围信息"
+            name="get_model_params", description="获取指定水文模型的参数名称和范围信息"
         )
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
@@ -71,11 +71,19 @@ class GetModelParamsTool(BaseTool):
                 "model_name": {
                     "type": "string",
                     "description": "模型名称，如 'gr4j', 'xaj', 'sac-sma' 等",
-                    "examples": ["gr4j", "xaj", "sac-sma", "gr1y", "gr2m", "gr5j", "gr6j"]
+                    "examples": [
+                        "gr4j",
+                        "xaj",
+                        "sac-sma",
+                        "gr1y",
+                        "gr2m",
+                        "gr5j",
+                        "gr6j",
+                    ],
                 }
             },
             "required": ["model_name"],
-            "additionalProperties": False
+            "additionalProperties": False,
         }
 
     def execute(self, parameters: Dict[str, Any]) -> ToolResult:
@@ -105,7 +113,7 @@ class GetModelParamsTool(BaseTool):
                 "param_count": len(param_info.get("param_name", [])),
                 "description": f"{model_name.upper()} 模型参数信息",
                 # 添加兼容性字段，用于工作流引用
-                "param_range_file": f"{model_name}_param_ranges.json"
+                "param_range_file": f"{model_name}_param_ranges.json",
             }
 
             # 添加详细的参数信息
@@ -115,13 +123,15 @@ class GetModelParamsTool(BaseTool):
                 param_ranges = param_info["param_range"]
 
                 for i, (name, range_info) in enumerate(zip(param_names, param_ranges)):
-                    param_details.append({
-                        "index": i + 1,
-                        "name": name,
-                        "min_value": range_info[0] if len(range_info) > 0 else None,
-                        "max_value": range_info[1] if len(range_info) > 1 else None,
-                        "range": range_info
-                    })
+                    param_details.append(
+                        {
+                            "index": i + 1,
+                            "name": name,
+                            "min_value": range_info[0] if len(range_info) > 0 else None,
+                            "max_value": range_info[1] if len(range_info) > 1 else None,
+                            "range": range_info,
+                        }
+                    )
 
                 output["param_details"] = param_details
                 # 添加适合模型校准工具使用的字段

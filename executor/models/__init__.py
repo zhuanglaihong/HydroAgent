@@ -16,12 +16,21 @@ from .result import (
     ExecutionStatus,
     ExecutionMetrics,
     ReactIteration,
-    FinalReport
+    FinalReport,
 )
 
 __all__ = [
-    'Workflow', 'WorkflowTarget', 'WorkflowSettings',
-    'Task', 'TaskType', 'TaskPriority', 'SuccessCriteria',
-    'TaskResult', 'WorkflowResult', 'ExecutionStatus', 'ExecutionMetrics',
-    'ReactIteration', 'FinalReport'
+    "Workflow",
+    "WorkflowTarget",
+    "WorkflowSettings",
+    "Task",
+    "TaskType",
+    "TaskPriority",
+    "SuccessCriteria",
+    "TaskResult",
+    "WorkflowResult",
+    "ExecutionStatus",
+    "ExecutionMetrics",
+    "ReactIteration",
+    "FinalReport",
 ]

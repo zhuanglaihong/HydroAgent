@@ -1,0 +1,3076 @@
+{
+  "documents": [
+    "### 解决方案",
+    "### 解决方案```json\n{\n \"workflow_id\": \"quick_prototype\",\n \"name\": \"快速原型验证\",\n \"description\": \"快速测试配置，用于开发和调试\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 600\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare\",\n \"name\": \"快速数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"/path/to/test/data\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 60,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"calibrate\",\n \"name\": \"快速率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/test/data\",\n \"exp_name\": \"quick_test\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"test_basin\"],\n \"periods\": [\"2018-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2018-01-01\", \"2019-12-31\"],\n \"test_period\": [\"2020-01-01\", \"2020-12-31\"],\n \"warmup\": 90,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"rep\": 50,\n \"ngs\": 10,\n \"kstop\": 3\n }\n },\n \"dependencies\": [\"prepare\"],\n \"timeout\": 300,\n \"retry_count\": 0\n }\n ]\n}\n```",
+    "### 解决方案",
+    "### 解决方案```json\n{\n \"workflow_id\": \"quick_prototype\",\n \"name\": \"快速原型验证\",\n \"description\": \"快速测试配置，用于开发和调试\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 600\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare\",\n \"name\": \"快速数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"/path/to/test/data\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 60,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"calibrate\",\n \"name\": \"快速率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/test/data\",\n \"exp_name\": \"quick_test\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"test_basin\"],\n \"periods\": [\"2018-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2018-01-01\", \"2019-12-31\"],\n \"test_period\": [\"2020-01-01\", \"2020-12-31\"],\n \"warmup\": 90,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"rep\": 50,\n \"ngs\": 10,\n \"kstop\": 3\n }\n },\n \"dependencies\": [\"prepare\"],\n \"timeout\": 300,\n \"retry_count\": 0\n }\n ]\n}\n```",
+    "### 预期结果\n\n\n- 训练期 NSE: 0.65-0.85\n- 验证期 NSE: 0.55-0.75\n- 执行时间: 20-40分钟",
+    "### 场景描述\n\n\n同时率定GR4J和新安江(XAJ)模型，比较它们在同一流域的性能。",
+    "### 解决方案",
+    "### 解决方案```json\n{\n \"workflow_id\": \"quick_prototype\",\n \"name\": \"快速原型验证\",\n \"description\": \"快速测试配置，用于开发和调试\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 600\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare\",\n \"name\": \"快速数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"/path/to/test/data\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 60,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"calibrate\",\n \"name\": \"快速率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/test/data\",\n \"exp_name\": \"quick_test\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"test_basin\"],\n \"periods\": [\"2018-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2018-01-01\", \"2019-12-31\"],\n \"test_period\": [\"2020-01-01\", \"2020-12-31\"],\n \"warmup\": 90,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"rep\": 50,\n \"ngs\": 10,\n \"kstop\": 3\n }\n },\n \"dependencies\": [\"prepare\"],\n \"timeout\": 300,\n \"retry_count\": 0\n }\n ]\n}\n```",
+    "### 场景描述\n\n\n使用GR2M模型进行月尺度的长期径流预测，适用于水资源规划。",
+    "### 解决方案",
+    "### 解决方案```json\n{\n \"workflow_id\": \"quick_prototype\",\n \"name\": \"快速原型验证\",\n \"description\": \"快速测试配置，用于开发和调试\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 600\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare\",\n \"name\": \"快速数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"/path/to/test/data\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 60,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"calibrate\",\n \"name\": \"快速率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/test/data\",\n \"exp_name\": \"quick_test\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"test_basin\"],\n \"periods\": [\"2018-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2018-01-01\", \"2019-12-31\"],\n \"test_period\": [\"2020-01-01\", \"2020-12-31\"],\n \"warmup\": 90,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"rep\": 50,\n \"ngs\": 10,\n \"kstop\": 3\n }\n },\n \"dependencies\": [\"prepare\"],\n \"timeout\": 300,\n \"retry_count\": 0\n }\n ]\n}\n```",
+    "### 场景描述\n\n\n用于快速测试和验证的轻量级配置，适用于开发阶段的快速迭代。",
+    "### 解决方案",
+    "### 解决方案```json\n{\n \"workflow_id\": \"quick_prototype\",\n \"name\": \"快速原型验证\",\n \"description\": \"快速测试配置，用于开发和调试\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 600\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare\",\n \"name\": \"快速数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"/path/to/test/data\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 60,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"calibrate\",\n \"name\": \"快速率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/test/data\",\n \"exp_name\": \"quick_test\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"test_basin\"],\n \"periods\": [\"2018-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2018-01-01\", \"2019-12-31\"],\n \"test_period\": [\"2020-01-01\", \"2020-12-31\"],\n \"warmup\": 90,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"rep\": 50,\n \"ngs\": 10,\n \"kstop\": 3\n }\n },\n \"dependencies\": [\"prepare\"],\n \"timeout\": 300,\n \"retry_count\": 0\n }\n ]\n}\n```",
+    "### 场景描述\n\n\n用于生产环境的高精度率定配置，追求最佳性能和稳定性。",
+    "### 关键配置差异\n\n\n```json\n\"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 1000, // 更多迭代\n \"ngs\": 50, // 更大群体\n \"kstop\": 20, // 更严格停止条件\n \"peps\": 0.001, // 更高精度\n \"pcento\": 0.001\n},\n\"warmup\": 730, // 2年预热期\n\"timeout\": 3600 // 1小时超时\n```",
+    "### 场景描述\n\n\n使用交叉验证评估模型在不同时间段的稳定性和泛化能力。",
+    "### 解决方案\n\n\n```json\n{\n \"workflow_id\": \"cross_validation_stability\",\n \"name\": \"交叉验证稳定性测试\",\n \"description\": \"使用交叉验证评估模型稳定性\",\n \"mode\": \"sequential\",\n \"tasks\": [\n {\n \"task_id\": \"calibrate_cv\",\n \"name\": \"交叉验证率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"cv_fold\": 5, // 5折交叉验证\n \"algorithm\": {\n \"rep\": 300,\n \"random_seed\": 42 // 固定种子确保可重现\n }\n },\n \"timeout\": 7200 // 需要更长时间\n }\n ]\n}\n```",
+    "### 根据数据量选择\n\n\n- **< 5年数据**: 场景4 (快速原型)\n- **5-15年数据**: 场景1 (标准率定)\n- **> 15年数据**: 场景5 (高精度) 或 场景6 (交叉验证)",
+    "### 根据计算资源选择\n\n\n- **有限资源**: 场景4, rep=50-100\n- **中等资源**: 场景1, rep=300-500\n- **充足资源**: 场景5, rep=1000+",
+    "### 根据应用目的选择\n\n\n- **快速测试**: 场景4\n- **日常研究**: 场景1\n- **模型比较**: 场景2\n- **长期规划**: 场景3\n- **生产应用**: 场景5\n- **论文发表**: 场景6",
+    "### 不同场景的预期性能\n\n\n| 场景 | 训练期NSE | 验证期NSE | 执行时间 | 资源需求 |\n|------|-----------|-----------|----------|----------|\n| 快速原型 | 0.50-0.70 | 0.40-0.60 | 5-10分钟 | 低 |\n| 标准率定 | 0.65-0.80 | 0.55-0.70 | 20-40分钟 | 中 |\n| 高精度 | 0.70-0.85 | 0.60-0.75 | 60-120分钟 | 高 |\n| 交叉验证 | 0.60-0.75 | 0.55-0.70 | 120-300分钟 | 高 |",
+    "### 质量控制标准\n\n\n- 训练期和验证期NSE差值 < 0.15\n- 参数值在合理物理范围内\n- 算法收敛稳定(kstop达到停止条件)",
+    "## 完整工作流JSON示例",
+    "## 完整工作流JSON示例```json\n{\n \"workflow_id\": \"complete_model_calibration\",\n \"name\": \"完整模型率定工作流\",\n \"description\": \"从数据准备到模型评估的端到端率定流程\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"stop_on_error\",\n \"timeout\": 3600\n },\n \"tasks\": [\n {\n \"task_id\": \"task_1\",\n \"name\": \"准备数据\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/basin/data\",\n \"target_data_scale\": \"D\"\n },\n \"dependencies\": [],\n \"timeout\": 120,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"task_2\",\n \"name\": \"获取模型参数信息\",\n \"type\": \"simple\",\n \"tool_name\": \"get_model_params\",\n \"parameters\": {\n \"model_name\": \"gr4j\"\n },\n \"dependencies\": [\"task_1\"],\n \"timeout\": 60,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"task_3\",\n \"name\": \"率定模型\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/basin/data\",\n \"exp_name\": \"gr4j_calibration\",\n \"model\": {\n \"name\": \"gr4j\",\n \"source_type\": \"sources\",\n \"source_book\": \"HF\",\n \"kernel_size\": 15,\n \"time_interval_hours\": 24\n },\n \"basin_ids\": [\"basin_001\"],\n \"periods\": [\"2000-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2000-01-01\", \"2015-12-31\"],\n \"test_period\": [\"2016-01-01\", \"2020-12-31\"],\n \"warmup\": 365,\n \"cv_fold\": 1,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 500,\n \"ngs\": 30,\n \"kstop\": 10,\n \"peps\": 0.01,\n \"pcento\": 0.01\n },\n \"loss\": {\n \"type\": \"time_series\",\n \"obj_func\": \"NSE\",\n \"events\": null\n }\n },\n \"dependencies\": [\"task_1\", \"task_2\"],\n \"timeout\": 1800,\n \"retry_count\": 0\n },\n {\n \"task_id\": \"task_4\",\n \"name\": \"评估模型性能\",\n \"type\": \"simple\",\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"/path/to/results/gr4j_calibration\",\n \"exp_name\": \"gr4j_evaluation\",\n \"cv_fold\": 1\n },\n \"dependencies\": [\"task_3\"],\n \"timeout\": 300,\n \"retry_count\": 1\n }\n ]\n}\n```",
+    "### 第二步：获取模型参数信息 (get_model_params)\n\n\n**目的**: 了解目标模型的参数结构，为率定做准备\n\n**关键参数配置**:\n```json\n{\n \"tool_name\": \"get_model_params\",\n \"parameters\": {\n \"model_name\": \"gr4j\"\n },\n \"dependencies\": [\"task_prepare_data\"],\n \"timeout\": 60,\n \"retry_count\": 1\n}\n```\n\n**输出**: 模型参数名称、范围和数量信息",
+    "### 第三步：模型参数率定 (calibrate_model)\n\n\n**目的**: 使用优化算法找到最优参数组合\n\n**关键参数配置**:\n```json\n{\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"path/to/your/data\",\n \"exp_name\": \"calibration_experiment\",\n \"model\": {\n \"name\": \"gr4j\",\n \"source_type\": \"sources\",\n \"source_book\": \"HF\",\n \"kernel_size\": 15,\n \"time_interval_hours\": 24\n },\n \"basin_ids\": [\"your_basin_id\"],\n \"periods\": [\"2000-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2000-01-01\", \"2015-12-31\"],\n \"test_period\": [\"2016-01-01\", \"2020-12-31\"],\n \"warmup\": 365,\n \"cv_fold\": 1,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 500,\n \"ngs\": 30,\n \"kstop\": 10,\n \"peps\": 0.01,\n \"pcento\": 0.01\n },\n \"loss\": {\n \"type\": \"time_series\",\n \"obj_func\": \"NSE\",\n \"events\": null\n }\n },\n \"dependencies\": [\"task_prepare_data\", \"task_get_params\"],\n \"timeout\": 1800,\n \"retry_count\": 0\n}\n```\n\n**输出**: 率定完成的模型参数和配置文件",
+    "### 第四步：模型性能评估 (evaluate_model)\n\n\n**目的**: 评估率定后的模型在训练期和验证期的性能\n\n**关键参数配置**:\n```json\n{\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"path/to/calibration/results\",\n \"exp_name\": \"evaluation_experiment\",\n \"cv_fold\": 1\n },\n \"dependencies\": [\"task_calibrate_model\"],\n \"timeout\": 300,\n \"retry_count\": 1\n}\n```\n\n**输出**: 各种性能指标(NSE, R2, RMSE等)和模拟结果",
+    "## 完整工作流JSON示例",
+    "## 完整工作流JSON示例```json\n{\n \"workflow_id\": \"complete_model_calibration\",\n \"name\": \"完整模型率定工作流\",\n \"description\": \"从数据准备到模型评估的端到端率定流程\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"stop_on_error\",\n \"timeout\": 3600\n },\n \"tasks\": [\n {\n \"task_id\": \"task_1\",\n \"name\": \"准备数据\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/basin/data\",\n \"target_data_scale\": \"D\"\n },\n \"dependencies\": [],\n \"timeout\": 120,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"task_2\",\n \"name\": \"获取模型参数信息\",\n \"type\": \"simple\",\n \"tool_name\": \"get_model_params\",\n \"parameters\": {\n \"model_name\": \"gr4j\"\n },\n \"dependencies\": [\"task_1\"],\n \"timeout\": 60,\n \"retry_count\": 1\n },\n {\n \"task_id\": \"task_3\",\n \"name\": \"率定模型\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/path/to/basin/data\",\n \"exp_name\": \"gr4j_calibration\",\n \"model\": {\n \"name\": \"gr4j\",\n \"source_type\": \"sources\",\n \"source_book\": \"HF\",\n \"kernel_size\": 15,\n \"time_interval_hours\": 24\n },\n \"basin_ids\": [\"basin_001\"],\n \"periods\": [\"2000-01-01\", \"2020-12-31\"],\n \"calibrate_period\": [\"2000-01-01\", \"2015-12-31\"],\n \"test_period\": [\"2016-01-01\", \"2020-12-31\"],\n \"warmup\": 365,\n \"cv_fold\": 1,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 500,\n \"ngs\": 30,\n \"kstop\": 10,\n \"peps\": 0.01,\n \"pcento\": 0.01\n },\n \"loss\": {\n \"type\": \"time_series\",\n \"obj_func\": \"NSE\",\n \"events\": null\n }\n },\n \"dependencies\": [\"task_1\", \"task_2\"],\n \"timeout\": 1800,\n \"retry_count\": 0\n },\n {\n \"task_id\": \"task_4\",\n \"name\": \"评估模型性能\",\n \"type\": \"simple\",\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"/path/to/results/gr4j_calibration\",\n \"exp_name\": \"gr4j_evaluation\",\n \"cv_fold\": 1\n },\n \"dependencies\": [\"task_3\"],\n \"timeout\": 300,\n \"retry_count\": 1\n }\n ]\n}\n```",
+    "## 时间配置建议\n\n\n\n- **数据准备**: 通常1-3分钟，设置timeout=120秒\n- **获取参数**: 几秒钟内完成，设置timeout=60秒\n- **模型率定**: 取决于算法参数和数据量，建议15-30分钟，设置timeout=1800秒\n- **模型评估**: 通常2-5分钟，设置timeout=300秒",
+    "## 关键成功因素\n\n\n\n1. **数据质量**: 确保时序数据完整性和格式正确性\n2. **时间段划分**: 合理的率定期和验证期划分(通常70%-30%)\n3. **预热期设置**: 日尺度模型建议设置1年(365天)预热期\n4. **算法参数**: SCE-UA算法建议rep=500以上获得稳定结果\n5. **目标函数选择**: NSE适用于径流模拟，RMSE适用于关注峰值",
+    "## 预期结果\n\n\n\n成功的率定工作流应该产生：\n- 训练期NSE > 0.6 (良好), > 0.75 (很好)\n- 验证期NSE > 0.5 (可接受), > 0.65 (良好)\n- 训练期和验证期性能差异 < 0.15",
+    "## 故障排除提示\n\n\n\n- **数据准备失败**: 检查数据目录路径和文件格式\n- **率定收敛慢**: 增加rep参数或调整kstop、peps参数\n- **评估失败**: 确认率定结果目录路径正确\n- **性能差**: 检查数据质量、时间段划分和预热期设置",
+    "## GR4J模型介绍\n\n\n\nGR4J（Génie Rural à 4 paramètres Journalier）是一个概念性日尺度降雨径流模型，由法国农业工程研究所开发。该模型具有结构简单、参数少、计算效率高的特点。",
+    "### 模型参数\n\n\n\nGR4J模型包含4个参数：\n\n1. **X1 (mm)**: 土壤最大蓄水容量参数\n - 控制产流过程中的土壤蓄水能力\n - 典型范围：10-3000 mm\n\n2. **X2 (mm)**: 地下水交换系数\n - 控制地下水与河道的水量交换\n - 可为正值（地下水补给河道）或负值（河道补给地下水）\n\n3. **X3 (mm)**: 汇流水库最大蓄水容量参数\n - 控制慢速汇流过程\n - 典型范围：1-500 mm\n\n4. **X4 (天)**: 单位线时间常数\n - 控制快速汇流的时间特征\n - 典型范围：0.5-4.0 天",
+    "## 模型率定方法\n\n\n\n模型率定是通过优化算法调整模型参数，使模型输出与观测数据匹配的过程。常用的优化算法包括SCE-UA、遗传算法等。",
+    "### SCE-UA算法\n\n\nShuffled Complex Evolution算法是一种全局优化算法，特别适用于水文模型参数率定：\n\n- **特点**: 结合了单纯形法、复合形法和随机搜索的优点\n- **优势**: 能够跳出局部最优，找到全局最优解\n- **应用**: 广泛应用于各种水文模型的参数优化\n\n模型评估指标包括NSE、RMSE、MAE等。NSE值越接近1表示模型性能越好。",
+    "### 完整参数配置\n\n```json\n{\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\", // 数据类型\n \"data_dir\": \"{DATASET_DIR}/camels_11532500\",\n \"result_dir\": \"{RESULT_DIR}\",\n \"exp_name\": \"calibration_experiment\",\n\n// 时间配置\n \"cv_fold\": 1,\n \"warmup\": 720, // 预热期（天）\n \"periods\": [\"2000-01-01\", \"2023-12-31\"],\n \"train_period\": [\"2000-01-01\", \"2018-12-31\"],\n \"test_period\": [\"2019-01-01\", \"2023-12-31\"],\n\n// 流域配置\n \"basin_ids\": [\"11532500\"],\n\n// 模型配置\n \"model\": {\n \"name\": \"gr4j\", // 模型名称\n \"source_type\": \"sources\", // 源码类型\n \"source_book\": \"HF\", // 源码库\n \"kernel_size\": 15, // 核大小\n \"time_interval_hours\": 24 // 时间间隔\n },\n\n// 参数范围文件\n \"param_range_file\": \"{PROJECT_DIR}/hydromodel/models/param.yaml\",\n\n// 优化算法\n \"algorithm\": {\n \"name\": \"SCE_UA\", // 算法名称\n \"random_seed\": 1234,\n \"rep\": 30, // 重复次数\n \"ngs\": 10, // 复合体数量\n \"kstop\": 3, // 停止代数\n \"peps\": 0.1, // 收敛精度\n \"pcento\": 0.1 // 百分比收敛\n },\n\n// 损失函数\n \"loss\": {\n \"type\": \"time_series\",\n \"obj_func\": \"RMSE\", // NSE, RMSE, KGE\n \"events\": null\n }\n }\n}\n```",
+    "## 核心工具概览\n\n\n\nHydroAgent提供4个核心工具，支持完整的水文建模工作流：\n\n1. **get_model_params** - 获取模型参数信息\n2. **prepare_data** - 数据准备和预处理\n3. **calibrate_model** - 模型参数率定\n4. **evaluate_model** - 模型性能评估",
+    "### 功能描述\n\n\n获取指定水文模型的参数信息，包括参数名称、范围、默认值等。",
+    "### 参数配置\n\n\n```json\n{\n \"tool_name\": \"get_model_params\",\n \"parameters\": {\n \"model_name\": \"gr4j\", // 模型名称\n \"include_ranges\": true, // 是否包含参数范围\n \"include_descriptions\": true // 是否包含参数描述\n }\n}\n```",
+    "### 支持的模型\n\n\n- `gr1y`, `gr2m`, `gr4j`, `gr5j`, `gr6j`\n- `xaj`\n- 自定义模型（需要参数配置文件）",
+    "### 输出示例\n\n\n```json\n{\n \"model_name\": \"gr4j\",\n \"parameters\": {\n \"x1\": {\"range\": [1, 3000], \"description\": \"土壤水容量\"},\n \"x2\": {\"range\": [-30, 30], \"description\": \"地下水交换系数\"},\n \"x3\": {\"range\": [1, 1000], \"description\": \"汇流水库容量\"},\n \"x4\": {\"range\": [1, 240], \"description\": \"单位线时间常数\"}\n }\n}\n```",
+    "### 使用场景\n\n\n- 工作流设计前了解模型结构\n- 参数敏感性分析准备\n- 自定义参数范围设置",
+    "### 功能描述\n\n\n处理和验证水文时间序列数据，转换为模型可用的标准格式。",
+    "### 参数配置\n\n\n```json\n{\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"{DATASET_DIR}/camels_11532500\",\n \"target_data_scale\": \"D\", // 时间尺度: D/M/Y\n \"basin_ids\": [\"11532500\"], // 流域ID列表（可选）\n \"start_date\": \"2000-01-01\", // 开始日期（可选）\n \"end_date\": \"2023-12-31\", // 结束日期（可选）\n \"validate_data\": true, // 数据验证开关\n \"fill_missing\": false // 缺失值填充开关\n }\n}\n```",
+    "#### 输入文件结构\n\n\n```\ndata_dir/\n├── basin_11532500.csv # 主要时间序列\n├── basin_11532500_monthly.csv # 月尺度数据（可选）\n├── basin_11532500_yearly.csv # 年尺度数据（可选）\n└── basin_attributes.csv # 流域属性\n```",
+    "#### CSV格式要求\n\n\n```csv\ndate,prcp,tmean,pet,streamflow\n2000-01-01,2.5,5.2,1.8,10.5\n2000-01-02,0.0,6.1,2.1,9.8\n2000-01-03,1.2,4.8,1.5,9.2\n```\n\n**必需列**：\n- `date`: 日期（YYYY-MM-DD格式）\n- `prcp`: 降水量（mm）\n- `tmean`: 平均温度（°C）\n- `pet`: 潜在蒸散发（mm）\n- `streamflow`: 径流量（mm或m³/s）",
+    "### 输出结果\n\n\n```json\n{\n \"status\": \"success\",\n \"processed_files\": [\"attributes.nc\", \"timeseries.nc\"],\n \"data_summary\": {\n \"time_range\": [\"2000-01-01\", \"2023-12-31\"],\n \"total_records\": 8766,\n \"missing_data_percentage\": 0.05,\n \"data_quality_score\": 0.95\n }\n}\n```",
+    "### 数据验证规则\n\n\n1. **时间连续性**: 检查日期序列完整性\n2. **数值合理性**: 降水和径流非负值检查\n3. **缺失值比例**: 超过20%缺失值会发出警告\n4. **异常值检测**: 使用3σ准则检测极值",
+    "### 功能描述\n\n\n使用优化算法自动率定水文模型参数，最小化观测与模拟值之间的差异。",
+    "### 完整参数配置\n\n```json\n{\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\", // 数据类型\n \"data_dir\": \"{DATASET_DIR}/camels_11532500\",\n \"result_dir\": \"{RESULT_DIR}\",\n \"exp_name\": \"calibration_experiment\",\n\n// 时间配置\n \"cv_fold\": 1,\n \"warmup\": 720, // 预热期（天）\n \"periods\": [\"2000-01-01\", \"2023-12-31\"],\n \"train_period\": [\"2000-01-01\", \"2018-12-31\"],\n \"test_period\": [\"2019-01-01\", \"2023-12-31\"],\n\n// 流域配置\n \"basin_ids\": [\"11532500\"],\n\n// 模型配置\n \"model\": {\n \"name\": \"gr4j\", // 模型名称\n \"source_type\": \"sources\", // 源码类型\n \"source_book\": \"HF\", // 源码库\n \"kernel_size\": 15, // 核大小\n \"time_interval_hours\": 24 // 时间间隔\n },\n\n// 参数范围文件\n \"param_range_file\": \"{PROJECT_DIR}/hydromodel/models/param.yaml\",\n\n// 优化算法\n \"algorithm\": {\n \"name\": \"SCE_UA\", // 算法名称\n \"random_seed\": 1234,\n \"rep\": 30, // 重复次数\n \"ngs\": 10, // 复合体数量\n \"kstop\": 3, // 停止代数\n \"peps\": 0.1, // 收敛精度\n \"pcento\": 0.1 // 百分比收敛\n },\n\n// 损失函数\n \"loss\": {\n \"type\": \"time_series\",\n \"obj_func\": \"RMSE\", // NSE, RMSE, KGE\n \"events\": null\n }\n }\n}\n```",
+    "#### SCE-UA算法（推荐）\n\n\n```json\n{\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"rep\": 30, // 复合体数量，越大收敛越好但耗时越长\n \"ngs\": 10, // 每个复合体中的点数\n \"kstop\": 3, // 连续停止代数\n \"peps\": 0.1, // 收敛判据\n \"pcento\": 0.1 // 百分比收敛判据\n }\n}\n```",
+    "#### 遗传算法\n\n\n```json\n{\n \"algorithm\": {\n \"name\": \"GA\",\n \"pop_size\": 50,\n \"max_generations\": 100,\n \"crossover_rate\": 0.8,\n \"mutation_rate\": 0.1\n }\n}\n```",
+    "### 输出结果\n\n\n```json\n{\n \"status\": \"success\",\n \"calibrated_parameters\": {\n \"x1\": 156.23,\n \"x2\": -0.45,\n \"x3\": 78.91,\n \"x4\": 1.67\n },\n \"objective_value\": 45.67,\n \"training_metrics\": {\n \"NSE\": 0.82,\n \"RMSE\": 45.67,\n \"R2\": 0.85\n }\n}\n```",
+    "### 功能描述\n\n\n评估已率定模型在测试期的性能，计算多种评估指标。",
+    "### 参数配置\n\n\n```json\n{\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"{RESULT_DIR}/calibration_experiment\",\n \"metrics\": [\"NSE\", \"RMSE\", \"R2\", \"KGE\", \"Bias\"],\n \"generate_plots\": true, // 生成结果图表\n \"save_detailed_results\": true // 保存详细结果\n }\n}\n```",
+    "#### Nash-Sutcliffe效率系数 (NSE)\n\n\n- **范围**: (-∞, 1]\n- **最优值**: 1\n- **解释**: 1表示完美拟合，0表示模拟精度等于均值，负值表示模拟效果差于均值",
+    "#### 决定系数 (R²)\n\n\n- **范围**: [0, 1]\n- **最优值**: 1\n- **解释**: 表示模拟值与观测值的线性相关程度",
+    "#### 均方根误差 (RMSE)\n\n\n- **范围**: [0, +∞)\n- **最优值**: 0\n- **解释**: 越小表示预测精度越高",
+    "#### Kling-Gupta效率 (KGE)\n\n\n- **范围**: (-∞, 1]\n- **最优值**: 1\n- **解释**: 综合考虑相关性、偏差和变异性的指标",
+    "### 输出结果\n\n\n```json\n{\n \"status\": \"success\",\n \"evaluation_results\": {\n \"train_metrics\": {\n \"NSE\": 0.82,\n \"RMSE\": 45.67,\n \"R2\": 0.85,\n \"KGE\": 0.79,\n \"Bias\": -2.34\n },\n \"test_metrics\": {\n \"NSE\": 0.75,\n \"RMSE\": 52.18,\n \"R2\": 0.81,\n \"KGE\": 0.72,\n \"Bias\": 3.45\n }\n },\n \"performance_assessment\": \"Good\",\n \"generated_files\": [\n \"evaluation_report.html\",\n \"timeseries_plot.png\",\n \"scatter_plot.png\"\n ]\n}\n```",
+    "### 标准工作流序列\n\n\n```\nprepare_data → calibrate_model → evaluate_model\n```",
+    "### 高级工作流示例\n\n\n```json\n{\n \"tasks\": [\n {\n \"task_id\": \"get_params\",\n \"tool_name\": \"get_model_params\",\n \"parameters\": {\"model_name\": \"gr4j\"}\n },\n {\n \"task_id\": \"prepare\",\n \"tool_name\": \"prepare_data\",\n \"dependencies\": [],\n \"conditions\": {\"execute_iterations\": \"first_only\"}\n },\n {\n \"task_id\": \"calibrate\",\n \"tool_name\": \"calibrate_model\",\n \"dependencies\": [\"prepare\"]\n },\n {\n \"task_id\": \"evaluate\",\n \"tool_name\": \"evaluate_model\",\n \"dependencies\": [\"calibrate\"]\n }\n ]\n}\n```",
+    "### 率定效率优化\n\n\n1. **算法参数调整**：\n - 小流域：rep=20, ngs=8\n - 大流域：rep=50, ngs=15\n\n2. **数据预处理**：\n - 使用合适的warmup期（通常365-730天）\n - 确保数据质量，减少缺失值\n\n3. **参数范围设置**：\n - 基于物理意义设置合理范围\n - 避免过宽的参数空间",
+    "### 内存和计算优化\n\n\n1. **并行处理**：多个流域可并行率定\n2. **数据缓存**：重复使用处理过的数据\n3. **结果存储**：合理设置结果保存级别",
+    "### 数据相关问题\n\n\n1. **\"缺少必需列\"**：检查CSV文件列名是否正确\n2. **\"数据格式错误\"**：确保日期格式为YYYY-MM-DD\n3. **\"缺失值过多\"**：考虑数据预处理或更换数据源",
+    "### 率定相关问题\n\n\n1. **\"收敛失败\"**：增加rep和ngs参数值\n2. **\"参数超出范围\"**：检查param_range_file配置\n3. **\"内存不足\"**：减少并行任务数或数据量",
+    "### 评估相关问题\n\n\n1. **\"无法找到率定结果\"**：检查result_dir路径\n2. **\"指标计算异常\"**：验证观测数据完整性\n3. **\"图表生成失败\"**：检查matplotlib依赖安装",
+    "## 最佳实践总结\n\n\n\n1. **数据准备**：确保高质量的输入数据\n2. **模型选择**：根据流域特征选择合适模型\n3. **算法配置**：平衡精度和效率\n4. **结果验证**：多个指标综合评估\n5. **文档记录**：保存完整的配置和结果信息",
+    "## 概述\n\n\n本文档提供了HydroAgent中四个核心工具的最佳使用实践，包括推荐参数配置、常见陷阱和优化技巧。遵循这些实践可以显著提高工作流的成功率和结果质量。",
+    "### 推荐用法\n\n\n```json\n{\n \"tool_name\": \"get_model_params\",\n \"parameters\": {\n \"model_name\": \"gr4j\" // 使用小写，支持: gr4j, gr2m, gr5j, gr6j, xaj, hymod\n },\n \"timeout\": 60,\n \"retry_count\": 1\n}\n```",
+    "### 支持的模型及参数数量\n\n\n- **gr4j**: 4个参数 (X1: 土壤蓄水容量, X2: 地下水交换系数, X3: 最大地下水蓄水容量, X4: 单位线时间参数)\n- **gr2m**: 2个参数 (月尺度简化模型)\n- **gr5j**: 5个参数 (扩展的GR4J)\n- **gr6j**: 6个参数 (进一步扩展)\n- **xaj**: 15个参数 (新安江模型，适用于湿润地区)\n- **hymod**: 5个参数 (概念性模型)",
+    "### 最佳实践\n\n\n- 总是在率定前调用此工具了解参数结构\n- 使用返回的参数范围信息指导率定算法设置\n- 对于新模型，先查看参数说明再进行率定",
+    "### 常见错误\n\n\n- 模型名称大小写错误 ❌ `\"GR4J\"` → ✅ `\"gr4j\"`\n- 使用不支持的模型名称",
+    "#### 日尺度数据处理\n\n\n```json\n{\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"/absolute/path/to/basin/data\",\n \"target_data_scale\": \"D\" // 日尺度\n },\n \"timeout\": 180, // 大数据集可能需要更长时间\n \"retry_count\": 2\n}\n```",
+    "#### 月尺度数据处理\n\n\n```json\n{\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"/absolute/path/to/basin/data\",\n \"target_data_scale\": \"M\" // 月尺度\n },\n \"timeout\": 120,\n \"retry_count\": 2\n}\n```",
+    "### 数据目录结构要求\n\n\n```\nbasin_data/\n├── basin_12345.csv # 时序数据文件\n├── attributes.nc # 流域属性文件(可选)\n└── timeseries.nc # 已处理的时序文件(如果存在会被重新生成)\n```",
+    "### CSV文件格式要求\n\n\n```csv\ndate,prcp,pet,flow,et\n1980-01-01,4.5,2.1,10.5,1.8\n1980-01-02,0.0,2.3,9.2,2.0\n```",
+    "### 最佳实践\n\n\n- 使用绝对路径，避免相对路径问题\n- 确保CSV文件包含必需列：date, prcp, pet, flow\n- 日期格式使用ISO标准：YYYY-MM-DD\n- 对于大型数据集，适当增加timeout时间\n- 数据预处理失败时，检查文件编码(推荐UTF-8)",
+    "### 常见错误\n\n\n- 使用相对路径导致找不到文件\n- CSV缺少必需的列名\n- 日期格式不正确\n- 数据中有过多的缺失值",
+    "### 标准日尺度率定配置\n\n\n```json\n{\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"/absolute/path/to/basin/data\",\n \"exp_name\": \"gr4j_daily_calibration\",\n \"model\": {\n \"name\": \"gr4j\",\n \"source_type\": \"sources\",\n \"source_book\": \"HF\",\n \"kernel_size\": 15,\n \"time_interval_hours\": 24\n },\n \"basin_ids\": [\"basin_12345\"],\n \"periods\": [\"2000-01-01\", \"2020-12-31\"], // 总时间段\n \"calibrate_period\": [\"2000-01-01\", \"2015-12-31\"], // 率定期(75%)\n \"test_period\": [\"2016-01-01\", \"2020-12-31\"], // 验证期(25%)\n \"warmup\": 365, // 1年预热期\n \"cv_fold\": 1, // 无交叉验证\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 500, // 推荐500-1000获得稳定结果\n \"ngs\": 30, // 群体数量\n \"kstop\": 10, // 停止准则\n \"peps\": 0.01, // 收敛精度\n \"pcento\": 0.01 // 收敛百分比\n },\n \"loss\": {\n \"type\": \"time_series\",\n \"obj_func\": \"NSE\", // 推荐使用NSE\n \"events\": null\n }\n },\n \"timeout\": 1800, // 30分钟，根据数据量调整\n \"retry_count\": 0 // 率定通常不重试\n}\n```",
+    "#### 快速测试 (开发阶段)\n\n\n```json\n\"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 100,\n \"ngs\": 20,\n \"kstop\": 5,\n \"peps\": 0.05,\n \"pcento\": 0.05\n}\n```",
+    "#### 高精度率定 (生产环境)\n\n\n```json\n\"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 1000,\n \"ngs\": 50,\n \"kstop\": 15,\n \"peps\": 0.005,\n \"pcento\": 0.005\n}\n```",
+    "### 时间段划分最佳实践\n\n\n- **预热期**: 日尺度建议1年(365天)，月尺度建议12个月\n- **率定期**: 占总时间的70%-80%\n- **验证期**: 占总时间的20%-30%\n- **避免**: 验证期太短(<2年)或率定期太短(<5年)",
+    "### 目标函数选择指导\n\n\n- **NSE**: 综合性能评估，适用于大部分径流模拟\n- **RMSE**: 关注绝对误差，适用于极值事件\n- **KGE**: 平衡偏差、相关性和变异性",
+    "### 最佳实践\n\n\n- 始终设置预热期，避免模型初始状态影响\n- 使用固定随机种子确保结果可重现\n- 根据计算资源调整rep参数\n- 对于多流域，考虑使用批处理模式",
+    "### 标准评估配置\n\n\n```json\n{\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"/path/to/calibration/results\",\n \"exp_name\": \"detailed_evaluation\",\n \"cv_fold\": 1\n },\n \"timeout\": 300,\n \"retry_count\": 1\n}\n```",
+    "#### NSE值解释\n\n\n- **NSE > 0.75**: 很好的模拟效果\n- **0.65 < NSE ≤ 0.75**: 良好的模拟效果\n- **0.50 < NSE ≤ 0.65**: 可接受的模拟效果\n- **NSE ≤ 0.50**: 不可接受的模拟效果",
+    "#### R²值解释\n\n\n- **R² > 0.80**: 强相关性\n- **0.60 < R² ≤ 0.80**: 中等相关性\n- **R² ≤ 0.60**: 弱相关性",
+    "### 最佳实践\n\n\n- 总是在率定完成后立即评估\n- 检查训练期和验证期性能差异\n- 保存评估结果用于模型比较\n- 关注多个指标，不仅仅是NSE",
+    "### 标准4步骤工作流\n\n\n```\n1. prepare_data → 2. get_model_params → 3. calibrate_model → 4. evaluate_model\n```",
+    "### 依赖关系设计\n\n\n```json\n\"dependencies\": {\n \"task_2\": [\"task_1\"], // get_model_params 依赖 prepare_data\n \"task_3\": [\"task_1\", \"task_2\"], // calibrate_model 依赖前两步\n \"task_4\": [\"task_3\"] // evaluate_model 依赖 calibrate_model\n}\n```",
+    "### 错误处理策略\n\n\n```json\n\"global_settings\": {\n \"error_handling\": \"stop_on_error\", // 率定工作流建议停止于错误\n \"timeout\": 3600, // 全局超时1小时\n \"max_parallel_tasks\": 1 // 顺序执行确保依赖关系\n}\n```",
+    "### 计算资源管理\n\n\n1. **内存**: 大流域数据建议预留4GB+内存\n2. **CPU**: SCE-UA可利用多核，设置ngs=CPU核数×2\n3. **存储**: 确保结果目录有足够空间(1-2GB per experiment)",
+    "### 时间优化\n\n\n1. **并行化**: 多流域可并行处理\n2. **缓存**: 重用已处理的数据\n3. **渐进式**: 先快速测试，再精细率定",
+    "### 数据质量\n\n\n- [ ] 时序数据完整性检查\n- [ ] 异常值识别和处理\n- [ ] 时间段连续性验证",
+    "### 配置检查\n\n\n- [ ] 路径存在性验证\n- [ ] 参数范围合理性检查\n- [ ] 时间段逻辑一致性",
+    "### 结果验证\n\n\n- [ ] NSE值合理性(>0.5)\n- [ ] 训练/验证期性能一致性\n- [ ] 参数值在合理范围内",
+    "## 概述\n\n\n本指南提供了使用HydroAgent水文建模工具时可能遇到的常见问题、错误诊断方法和解决方案。按照错误类型分类，提供系统性的故障排除流程。",
+    "#### 1.1 数据文件找不到\n\n\n**错误信息**: `FileNotFoundError: [Errno 2] No such file or directory`\n\n**可能原因**:\n- 数据目录路径不正确\n- 文件名不匹配预期格式\n- 权限不足\n\n**诊断步骤**:\n```bash",
+    "# 检查目录是否存在\n\n\nls -la /path/to/data/directory",
+    "# 检查文件权限\n\n\nls -la /path/to/data/directory/basin_*.csv",
+    "# 检查文件格式\n\n\nhead -5 /path/to/data/directory/basin_*.csv\n```\n\n**解决方案**:\n1. 确认使用绝对路径\n2. 检查文件名格式：`basin_{basin_id}.csv`\n3. 确保文件可读权限\n4. 验证CSV文件包含必需列：date, prcp, pet, flow",
+    "#### 1.2 数据格式错误\n\n\n**错误信息**: `KeyError: 'prcp'` 或 `ValueError: time data does not match format`\n\n**诊断检查清单**:\n```python",
+    "# 检查CSV文件头部\n\n\nimport pandas as pd\ndf = pd.read_csv('basin_12345.csv')\nprint(df.columns.tolist()) # 应包含: ['date', 'prcp', 'pet', 'flow']\nprint(df.head())\nprint(df.dtypes)\n```\n\n**标准CSV格式要求**:\n```csv\ndate,prcp,pet,flow,et\n2000-01-01,4.26,1.89,12.5,1.2\n2000-01-02,0.0,2.11,11.8,1.8\n```\n\n**解决方案**:\n1. 确保列名准确：`date`, `prcp`, `pet`, `flow`\n2. 日期格式使用ISO标准：`YYYY-MM-DD`\n3. 数值列不包含非数字字符\n4. 检查编码格式(推荐UTF-8)",
+    "#### 1.3 数据质量问题\n\n\n**错误信息**: 工具执行成功但结果质量差(NSE < 0.3)\n\n**诊断方法**:\n```python",
+    "# 数据质量检查\n\n\nimport pandas as pd\nimport numpy as np\n\ndf = pd.read_csv('basin_12345.csv')\nprint(f\"数据长度: {len(df)}\")\nprint(f\"降水缺失率: {df['prcp'].isna().sum() / len(df) * 100:.2f}%\")\nprint(f\"流量缺失率: {df['flow'].isna().sum() / len(df) * 100:.2f}%\")\nprint(f\"降水极值: {df['prcp'].min():.2f} - {df['prcp'].max():.2f}\")\nprint(f\"流量极值: {df['flow'].min():.2f} - {df['flow'].max():.2f}\")\n```\n\n**质量控制标准**:\n- 缺失数据 < 10%\n- 降水量非负值\n- 流量非负值\n- 数据时间序列连续",
+    "#### 2.1 优化算法不收敛\n\n\n**错误信息**: 率定完成但性能很差，或算法提前停止\n\n**诊断参数检查**:\n```json\n{\n \"algorithm\": {\n \"rep\": \"是否太小? 建议 > 300\",\n \"kstop\": \"是否太严格? 建议5-15\",\n \"peps\": \"是否太严格? 建议0.01-0.05\",\n \"pcento\": \"是否太严格? 建议0.01-0.05\"\n }\n}\n```\n\n**解决方案**:\n1. **增加迭代次数**: `rep: 500-1000`\n2. **放宽收敛条件**: `peps: 0.05, pcento: 0.05`\n3. **调整群体大小**: `ngs: 20-50`\n4. **检查参数范围**: 确保物理合理性",
+    "#### 2.2 内存不足错误\n\n\n**错误信息**: `MemoryError` 或系统响应缓慢\n\n**内存需求估算**:\n- 小型数据集(< 10年): 2GB RAM\n- 中型数据集(10-20年): 4GB RAM\n- 大型数据集(> 20年): 8GB+ RAM\n\n**解决方案**:\n1. **减少数据量**: 缩短时间序列长度\n2. **降低算法参数**: 减小`rep`和`ngs`值\n3. **分批处理**: 将大任务分解为小任务\n4. **增加系统内存**: 硬件升级",
+    "#### 2.3 参数值异常\n\n\n**错误信息**: 参数超出合理物理范围\n\n**GR4J参数合理范围**:\n```\nX1 (土壤蓄水容量): 10-3000 mm\nX2 (地下水交换系数): -10-10 mm/day\nX3 (最大地下水蓄水容量): 10-1000 mm\nX4 (单位线时间参数): 0.5-10 days\n```\n\n**解决方案**:\n1. 检查参数范围配置文件\n2. 增加率定迭代次数\n3. 使用多个随机种子测试稳定性\n4. 检查数据质量和预处理过程",
+    "#### 3.1 路径配置错误\n\n\n**错误信息**: 各种路径相关的FileNotFoundError\n\n**路径配置最佳实践**:\n```json\n{\n \"正确\": \"/absolute/path/to/data\",\n \"错误\": \"./relative/path/to/data\",\n \"错误\": \"relative/path/to/data\",\n \"Windows正确\": \"C:/Users/data/basin\",\n \"Windows错误\": \"C:\\\\Users\\\\data\\\\basin\"\n}\n```\n\n**路径验证方法**:\n```python\nimport os\nfrom pathlib import Path\n\ndata_dir = \"/path/to/your/data\"\nprint(f\"路径存在: {os.path.exists(data_dir)}\")\nprint(f\"是目录: {os.path.isdir(data_dir)}\")\nprint(f\"可读: {os.access(data_dir, os.R_OK)}\")",
+    "# 列出目录内容\n\n\nif os.path.exists(data_dir):\n print(\"目录内容:\", os.listdir(data_dir))\n```",
+    "#### 3.2 权限错误\n\n\n**错误信息**: `PermissionError: [Errno 13] Permission denied`\n\n**解决方案**:\n```bash",
+    "# Linux/Mac\n\n\nchmod 755 /path/to/data/directory\nchmod 644 /path/to/data/directory/*.csv",
+    "# 检查当前用户权限\n\n\nls -la /path/to/data/directory\n```",
+    "#### 4.1 Python包依赖错误\n\n\n**错误信息**: `ImportError` 或 `ModuleNotFoundError`\n\n**必需依赖检查**:\n```python",
+    "# 检查关键依赖\n\n\nimport sys\nrequired_packages = ['numpy', 'pandas', 'xarray', 'netcdf4', 'scipy']\n\nfor package in required_packages:\n try:\n __import__(package)\n print(f\"✓ {package}\")\n except ImportError:\n print(f\"✗ {package} - 需要安装\")\n```\n\n**解决方案**:\n```bash",
+    "# 更新依赖\n\n\nuv sync",
+    "# 或\n\n\npip install -r requirements.txt\n```",
+    "#### 4.2 环境配置错误\n\n\n**错误信息**: 水文模型库导入失败\n\n**环境检查**:\n```python",
+    "# 检查hydromodel可用性\n\n\ntry:\n from hydromodel.models.model_config import MODEL_PARAM_DICT\n print(\"✓ hydromodel 可用\")\n print(f\"支持的模型: {list(MODEL_PARAM_DICT.keys())}\")\nexcept ImportError as e:\n print(f\"✗ hydromodel 不可用: {e}\")\n```",
+    "#### 5.1 任务超时\n\n\n**错误信息**: `TimeoutError` 或任务被强制终止\n\n**超时时间建议**:\n```json\n{\n \"prepare_data\": 180, // 3分钟\n \"get_model_params\": 60, // 1分钟\n \"calibrate_model\": 3600, // 1小时\n \"evaluate_model\": 300 // 5分钟\n}\n```\n\n**根据数据量调整**:\n- 小数据集 (< 5年): 基础时间 × 0.5\n- 中数据集 (5-15年): 基础时间 × 1.0\n- 大数据集 (> 15年): 基础时间 × 2.0",
+    "#### 5.2 依赖关系错误\n\n\n**错误信息**: 任务执行顺序错误或依赖不满足\n\n**正确依赖设置**:\n```json\n{\n \"task_1\": {\"dependencies\": []},\n \"task_2\": {\"dependencies\": [\"task_1\"]},\n \"task_3\": {\"dependencies\": [\"task_1\", \"task_2\"]},\n \"task_4\": {\"dependencies\": [\"task_3\"]}\n}\n```\n\n**验证方法**:\n```python",
+    "# 检查工作流依赖图\n\n\ndef validate_dependencies(workflow):\n tasks = {task[\"task_id\"]: task for task in workflow[\"tasks\"]}\n for task in workflow[\"tasks\"]:\n for dep in task.get(\"dependencies\", []):\n if dep not in tasks:\n print(f\"错误: {task['task_id']} 依赖不存在的任务 {dep}\")\n```",
+    "#### 6.1 模型性能差\n\n\n**症状**: NSE < 0.5, R² < 0.6\n\n**诊断流程**:\n1. **检查数据质量** (见1.3节)\n2. **验证时间段划分**:\n - 率定期是否足够长(> 5年)\n - 验证期是否合理(> 2年)\n - 预热期是否充分(日尺度 ≥ 1年)\n\n3. **检查模型适用性**:\n - 流域特征与模型假设匹配\n - 气候条件是否适合所选模型\n\n**解决策略**:\n```json\n// 增加率定强度\n{\n \"algorithm\": {\n \"rep\": 1000,\n \"ngs\": 50,\n \"kstop\": 15\n },\n \"warmup\": 730 // 增加预热期\n}\n```",
+    "#### 6.2 结果不稳定\n\n\n**症状**: 重复运行结果差异很大\n\n**稳定性测试**:\n```json\n// 使用不同随机种子测试\n{\n \"test_seeds\": [1234, 5678, 9012, 3456, 7890],\n \"algorithm\": {\n \"random_seed\": \"依次使用各个种子\"\n }\n}\n```\n\n**提高稳定性**:\n1. 增加`rep`参数\n2. 使用多次运行平均结果\n3. 检查数据质量和预处理一致性",
+    "### 开始故障排除前的5分钟检查\n\n\n- [ ] 文件路径是否为绝对路径\n- [ ] CSV文件是否包含必需列名\n- [ ] 数据目录是否可访问\n- [ ] 时间段设置是否合理\n- [ ] 内存和磁盘空间是否充足",
+    "### 数据质量快速验证\n\n\n```bash",
+    "# 快速检查脚本\n\n\nhead -5 /path/to/basin_*.csv # 检查格式\nwc -l /path/to/basin_*.csv # 检查数据量\ngrep -c \",\" /path/to/basin_*.csv # 检查分隔符\n```",
+    "### 性能基准对比\n\n\n| 指标 | 可接受 | 良好 | 优秀 |\n|------|--------|------|------|\n| NSE训练期 | > 0.50 | > 0.65 | > 0.75 |\n| NSE验证期 | > 0.40 | > 0.55 | > 0.65 |\n| 训练验证差异 | < 0.20 | < 0.15 | < 0.10 |",
+    "### 日志分析\n\n\n```python",
+    "# 查看详细错误日志\n\n\nimport logging\nlogging.basicConfig(level=logging.DEBUG)",
+    "# 在工作流中启用调试模式\n\n\n{\n \"global_settings\": {\n \"debug_mode\": True,\n \"log_level\": \"DEBUG\"\n }\n}\n```",
+    "### 性能分析\n\n\n```python",
+    "# 内存使用监控\n\n\nimport psutil\nimport os\n\ndef monitor_memory():\n process = psutil.Process(os.getpid())\n memory_mb = process.memory_info().rss / 1024 / 1024\n print(f\"内存使用: {memory_mb:.2f} MB\")\n```",
+    "### 问题报告模板\n\n\n当需要寻求帮助时，请包含以下信息：\n1. 错误信息完整文本\n2. 数据基本信息(时间范围、流域数量)\n3. 使用的参数配置\n4. 系统环境(OS、内存、Python版本)\n5. 已尝试的解决方案",
+    "# HydroAgent 工作流示例库\n\n\n\n本文档提供HydroAgent系统中各种工作流的详细示例和使用指南。所有示例均基于实际测试通过的工作流配置。",
+    "## 数据路径配置\n\n\n\n在使用工作流前，请根据`definitions.py`中的路径定义配置数据路径：\n\n```python",
+    "# 主要路径配置\n\n\nPROJECT_DIR = \"D:\\\\MCP\\\\HydroAgent\" # 项目根目录\nDATASET_DIR = \"D:\\\\MCP\\\\HydroAgent\\\\data\" # 数据集目录\nRESULT_DIR = \"D:\\\\MCP\\\\HydroAgent\\\\result\" # 结果输出目录\n```",
+    "### 基本配置\n\n\n```json\n{\n \"workflow_id\": \"react_hydro_optimization\",\n \"name\": \"React模式水文模型自动优化工作流\",\n \"execution_mode\": \"react\",\n \"targets\": [{\n \"type\": \"performance_goal\",\n \"metric\": \"nse\",\n \"threshold\": 0.7,\n \"comparison\": \">=\",\n \"max_iterations\": 5\n }]\n}\n```",
+    "#### 1. 数据准备任务（条件执行）\n\n\n```json\n{\n \"task_id\": \"task_prepare\",\n \"name\": \"准备水文数据\",\n \"tool_name\": \"prepare_data\",\n \"type\": \"simple\",\n \"parameters\": {\n \"data_dir\": \"{DATASET_DIR}/camels_11532500\",\n \"target_data_scale\": \"D\"\n },\n \"conditions\": {\n \"execute_iterations\": \"first_only\"\n }\n}\n```\n\n**特性**：\n- `execute_iterations: \"first_only\"` - 只在第一次迭代执行\n- 支持的条件值：`\"all\"`, `\"first_only\"`, `\"skip_first\"`, `[1,3,5]`",
+    "#### 2. 模型率定任务\n\n\n```json\n{\n \"task_id\": \"task_calibrate\",\n \"name\": \"率定GR4J模型\",\n \"tool_name\": \"calibrate_model\",\n \"type\": \"simple\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"{DATASET_DIR}/camels_11532500\",\n \"result_dir\": \"{RESULT_DIR}\",\n \"model\": {\n \"name\": \"gr4j\",\n \"source_type\": \"sources\",\n \"source_book\": \"HF\"\n },\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"rep\": 30,\n \"ngs\": 10\n }\n },\n \"dependencies\": [\"task_prepare\"]\n}\n```",
+    "#### 3. 模型评估任务\n\n\n```json\n{\n \"task_id\": \"task_evaluate\",\n \"name\": \"评估模型性能\",\n \"tool_name\": \"evaluate_model\",\n \"type\": \"simple\",\n \"parameters\": {\n \"result_dir\": \"{RESULT_DIR}/react_optimization\"\n },\n \"dependencies\": [\"task_calibrate\"]\n}\n```",
+    "### React配置\n\n\n```json\n{\n \"react_config\": {\n \"enable_feedback\": true,\n \"max_iterations\": 5,\n \"timeout_minutes\": 5,\n \"target_metric\": \"nse\",\n \"target_threshold\": 0.7,\n \"iteration_strategy\": \"parameter_adjustment\",\n \"feedback_source\": \"task_evaluate\",\n \"adjustment_tasks\": [\"task_calibrate\"],\n \"monitoring_tasks\": [\"task_evaluate\"]\n }\n}\n```",
+    "### 简单顺序工作流\n\n\n```json\n{\n \"workflow_id\": \"sequential_hydro_basic\",\n \"name\": \"顺序执行水文建模工作流\",\n \"execution_mode\": \"sequential\",\n \"tasks\": [\n {\n \"task_id\": \"prepare\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"{DATASET_DIR}/camels_11532500\"\n }\n },\n {\n \"task_id\": \"calibrate\",\n \"tool_name\": \"calibrate_model\",\n \"dependencies\": [\"prepare\"]\n },\n {\n \"task_id\": \"evaluate\",\n \"tool_name\": \"evaluate_model\",\n \"dependencies\": [\"calibrate\"]\n }\n ]\n}\n```",
+    "### GR系列模型\n\n\n- **GR1Y**: 年尺度雨径流模型\n- **GR2M**: 月尺度雨径流模型\n- **GR4J**: 日尺度雨径流模型（推荐）\n- **GR5J**: 增强版日尺度模型\n- **GR6J**: 高级日尺度模型",
+    "### XAJ模型\n\n\n```json\n{\n \"model\": {\n \"name\": \"xaj\",\n \"source_type\": \"sources\",\n \"source_book\": \"HF\"\n }\n}\n```",
+    "### SCE-UA算法（推荐）\n\n\n```json\n{\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 1234,\n \"rep\": 30, // 重复次数\n \"ngs\": 10, // 复合体数量\n \"kstop\": 3, // 停止条件\n \"peps\": 0.1, // 收敛精度\n \"pcento\": 0.1 // 百分比收敛\n }\n}\n```",
+    "### GA算法\n\n\n```json\n{\n \"algorithm\": {\n \"name\": \"GA\",\n \"pop_size\": 50,\n \"max_generations\": 100,\n \"crossover_rate\": 0.8,\n \"mutation_rate\": 0.1\n }\n}\n```",
+    "### 支持的评估指标\n\n\n- **NSE**: Nash-Sutcliffe效率系数（推荐）\n- **R2**: 决定系数\n- **RMSE**: 均方根误差\n- **KGE**: Kling-Gupta效率\n- **Bias**: 偏差\n- **Corr**: 相关系数",
+    "### 损失函数配置\n\n\n```json\n{\n \"loss\": {\n \"type\": \"time_series\",\n \"obj_func\": \"RMSE\", // 或 \"NSE\", \"KGE\"\n \"events\": null\n }\n}\n```",
+    "### 输入数据结构\n\n\n```\ndata_dir/\n├── basin_[id].csv # 主要时间序列数据\n├── basin_[id]_monthly.csv # 月尺度数据（可选）\n├── basin_[id]_yearly.csv # 年尺度数据（可选）\n└── basin_attributes.csv # 流域属性数据\n```",
+    "### CSV文件格式\n\n\n```csv\ndate,prcp,tmean,pet,streamflow\n2000-01-01,2.5,5.2,1.8,10.5\n2000-01-02,0.0,6.1,2.1,9.8\n```",
+    "## 路径变量替换\n\n\n\n工作流支持以下路径变量自动替换：\n- `{PROJECT_DIR}` → definitions.py中的PROJECT_DIR\n- `{DATASET_DIR}` → definitions.py中的DATASET_DIR\n- `{RESULT_DIR}` → definitions.py中的RESULT_DIR",
+    "### Sequential模式\n\n\n- 按依赖关系顺序执行任务\n- 适合标准的建模流程\n- 不支持迭代优化",
+    "### React模式\n\n\n- 目标导向的迭代执行\n- 自动评估目标达成情况\n- 支持参数调整和重新率定\n- 智能跳过不必要的重复任务",
+    "## 最佳实践\n\n\n\n1. **数据准备优化**: 使用条件执行避免重复数据处理\n2. **路径配置**: 使用路径变量确保可移植性\n3. **目标设置**: NSE >= 0.7 是水文模型的合理目标\n4. **算法选择**: SCE-UA算法在大多数情况下表现良好\n5. **超时控制**: 设置合理的任务和工作流超时时间",
+    "### 常见问题\n\n\n1. **路径不存在**: 检查definitions.py中的路径配置\n2. **数据格式错误**: 确保CSV文件包含必需的列\n3. **模型收敛失败**: 调整算法参数或增加迭代次数\n4. **内存不足**: 减少算法的rep和ngs参数值",
+    "### 调试建议\n\n\n1. 使用`--debug`参数运行工作流\n2. 查看详细的日志文件\n3. 验证输入数据的完整性\n4. 检查模型参数范围配置",
+    "## 模板5：交叉验证稳定性测试",
+    "## 模板5：交叉验证稳定性测试",
+    "## 模板5：交叉验证稳定性测试```json\n{\n \"workflow_id\": \"cross_validation_{{timestamp}}\",\n \"name\": \"交叉验证稳定性测试\",\n \"description\": \"使用5折交叉验证评估模型稳定性和泛化能力\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 10800\n },\n \"metadata\": {\n \"template_version\": \"1.0\",\n \"recommended_for\": [\"模型稳定性评估\", \"论文发表\", \"方法验证\"],\n \"cross_validation_folds\": 5\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare_cv_data\",\n \"name\": \"交叉验证数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"{{DATA_DIR}}\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 180\n },\n {\n \"task_id\": \"cv_calibrate\",\n \"name\": \"5折交叉验证率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"{{DATA_DIR}}\",\n \"exp_name\": \"cv_analysis_{{BASIN_ID}}\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"{{BASIN_ID}}\"],\n \"periods\": [\"{{CV_START_DATE}}\", \"{{CV_END_DATE}}\"],\n \"warmup\": 365,\n \"cv_fold\": 5,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 42,\n \"rep\": 400,\n \"ngs\": 25\n }\n },\n \"dependencies\": [\"prepare_cv_data\"],\n \"timeout\": 9000\n },\n {\n \"task_id\": \"cv_evaluate\",\n \"name\": \"交叉验证评估\",\n \"type\": \"simple\",\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"{{RESULT_DIR}}/cv_analysis_{{BASIN_ID}}\",\n \"cv_fold\": 5\n },\n \"dependencies\": [\"cv_calibrate\"],\n \"timeout\": 600\n }\n ]\n}\n```",
+    "## 模板5：交叉验证稳定性测试",
+    "## 模板5：交叉验证稳定性测试```json\n{\n \"workflow_id\": \"cross_validation_{{timestamp}}\",\n \"name\": \"交叉验证稳定性测试\",\n \"description\": \"使用5折交叉验证评估模型稳定性和泛化能力\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 10800\n },\n \"metadata\": {\n \"template_version\": \"1.0\",\n \"recommended_for\": [\"模型稳定性评估\", \"论文发表\", \"方法验证\"],\n \"cross_validation_folds\": 5\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare_cv_data\",\n \"name\": \"交叉验证数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"{{DATA_DIR}}\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 180\n },\n {\n \"task_id\": \"cv_calibrate\",\n \"name\": \"5折交叉验证率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"{{DATA_DIR}}\",\n \"exp_name\": \"cv_analysis_{{BASIN_ID}}\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"{{BASIN_ID}}\"],\n \"periods\": [\"{{CV_START_DATE}}\", \"{{CV_END_DATE}}\"],\n \"warmup\": 365,\n \"cv_fold\": 5,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 42,\n \"rep\": 400,\n \"ngs\": 25\n }\n },\n \"dependencies\": [\"prepare_cv_data\"],\n \"timeout\": 9000\n },\n {\n \"task_id\": \"cv_evaluate\",\n \"name\": \"交叉验证评估\",\n \"type\": \"simple\",\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"{{RESULT_DIR}}/cv_analysis_{{BASIN_ID}}\",\n \"cv_fold\": 5\n },\n \"dependencies\": [\"cv_calibrate\"],\n \"timeout\": 600\n }\n ]\n}\n```",
+    "## 模板5：交叉验证稳定性测试",
+    "## 模板5：交叉验证稳定性测试```json\n{\n \"workflow_id\": \"cross_validation_{{timestamp}}\",\n \"name\": \"交叉验证稳定性测试\",\n \"description\": \"使用5折交叉验证评估模型稳定性和泛化能力\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 10800\n },\n \"metadata\": {\n \"template_version\": \"1.0\",\n \"recommended_for\": [\"模型稳定性评估\", \"论文发表\", \"方法验证\"],\n \"cross_validation_folds\": 5\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare_cv_data\",\n \"name\": \"交叉验证数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"{{DATA_DIR}}\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 180\n },\n {\n \"task_id\": \"cv_calibrate\",\n \"name\": \"5折交叉验证率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"{{DATA_DIR}}\",\n \"exp_name\": \"cv_analysis_{{BASIN_ID}}\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"{{BASIN_ID}}\"],\n \"periods\": [\"{{CV_START_DATE}}\", \"{{CV_END_DATE}}\"],\n \"warmup\": 365,\n \"cv_fold\": 5,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 42,\n \"rep\": 400,\n \"ngs\": 25\n }\n },\n \"dependencies\": [\"prepare_cv_data\"],\n \"timeout\": 9000\n },\n {\n \"task_id\": \"cv_evaluate\",\n \"name\": \"交叉验证评估\",\n \"type\": \"simple\",\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"{{RESULT_DIR}}/cv_analysis_{{BASIN_ID}}\",\n \"cv_fold\": 5\n },\n \"dependencies\": [\"cv_calibrate\"],\n \"timeout\": 600\n }\n ]\n}\n```",
+    "## 模板5：交叉验证稳定性测试",
+    "## 模板5：交叉验证稳定性测试```json\n{\n \"workflow_id\": \"cross_validation_{{timestamp}}\",\n \"name\": \"交叉验证稳定性测试\",\n \"description\": \"使用5折交叉验证评估模型稳定性和泛化能力\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 10800\n },\n \"metadata\": {\n \"template_version\": \"1.0\",\n \"recommended_for\": [\"模型稳定性评估\", \"论文发表\", \"方法验证\"],\n \"cross_validation_folds\": 5\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare_cv_data\",\n \"name\": \"交叉验证数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"{{DATA_DIR}}\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 180\n },\n {\n \"task_id\": \"cv_calibrate\",\n \"name\": \"5折交叉验证率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"{{DATA_DIR}}\",\n \"exp_name\": \"cv_analysis_{{BASIN_ID}}\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"{{BASIN_ID}}\"],\n \"periods\": [\"{{CV_START_DATE}}\", \"{{CV_END_DATE}}\"],\n \"warmup\": 365,\n \"cv_fold\": 5,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 42,\n \"rep\": 400,\n \"ngs\": 25\n }\n },\n \"dependencies\": [\"prepare_cv_data\"],\n \"timeout\": 9000\n },\n {\n \"task_id\": \"cv_evaluate\",\n \"name\": \"交叉验证评估\",\n \"type\": \"simple\",\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"{{RESULT_DIR}}/cv_analysis_{{BASIN_ID}}\",\n \"cv_fold\": 5\n },\n \"dependencies\": [\"cv_calibrate\"],\n \"timeout\": 600\n }\n ]\n}\n```",
+    "## 模板5：交叉验证稳定性测试",
+    "## 模板5：交叉验证稳定性测试```json\n{\n \"workflow_id\": \"cross_validation_{{timestamp}}\",\n \"name\": \"交叉验证稳定性测试\",\n \"description\": \"使用5折交叉验证评估模型稳定性和泛化能力\",\n \"mode\": \"sequential\",\n \"global_settings\": {\n \"error_handling\": \"continue_on_error\",\n \"timeout\": 10800\n },\n \"metadata\": {\n \"template_version\": \"1.0\",\n \"recommended_for\": [\"模型稳定性评估\", \"论文发表\", \"方法验证\"],\n \"cross_validation_folds\": 5\n },\n \"tasks\": [\n {\n \"task_id\": \"prepare_cv_data\",\n \"name\": \"交叉验证数据准备\",\n \"type\": \"simple\",\n \"tool_name\": \"prepare_data\",\n \"parameters\": {\n \"data_dir\": \"{{DATA_DIR}}\",\n \"target_data_scale\": \"D\"\n },\n \"timeout\": 180\n },\n {\n \"task_id\": \"cv_calibrate\",\n \"name\": \"5折交叉验证率定\",\n \"type\": \"simple\",\n \"tool_name\": \"calibrate_model\",\n \"parameters\": {\n \"data_type\": \"owndata\",\n \"data_dir\": \"{{DATA_DIR}}\",\n \"exp_name\": \"cv_analysis_{{BASIN_ID}}\",\n \"model\": {\n \"name\": \"gr4j\"\n },\n \"basin_ids\": [\"{{BASIN_ID}}\"],\n \"periods\": [\"{{CV_START_DATE}}\", \"{{CV_END_DATE}}\"],\n \"warmup\": 365,\n \"cv_fold\": 5,\n \"algorithm\": {\n \"name\": \"SCE_UA\",\n \"random_seed\": 42,\n \"rep\": 400,\n \"ngs\": 25\n }\n },\n \"dependencies\": [\"prepare_cv_data\"],\n \"timeout\": 9000\n },\n {\n \"task_id\": \"cv_evaluate\",\n \"name\": \"交叉验证评估\",\n \"type\": \"simple\",\n \"tool_name\": \"evaluate_model\",\n \"parameters\": {\n \"result_dir\": \"{{RESULT_DIR}}/cv_analysis_{{BASIN_ID}}\",\n \"cv_fold\": 5\n },\n \"dependencies\": [\"cv_calibrate\"],\n \"timeout\": 600\n }\n ]\n}\n```",
+    "### 1. 变量替换\n\n\n所有模板中的 `{{VARIABLE_NAME}}` 需要替换为实际值：\n\n```python",
+    "# Python示例\n\n\ntemplate = template.replace(\"{{DATA_DIR}}\", \"/actual/path/to/data\")\ntemplate = template.replace(\"{{BASIN_ID}}\", \"basin_12345\")\ntemplate = template.replace(\"{{TIMESTAMP}}\", \"20241201_143022\")\n```",
+    "### 2. 时间段配置指导\n\n\n\n**日尺度标准配置**:\n- 总时间段: 15-20年\n- 率定期: 总时间的70-75%\n- 验证期: 总时间的25-30%\n- 预热期: 365天\n\n**月尺度标准配置**:\n- 总时间段: 20-30年\n- 率定期: 总时间的70-75%\n- 验证期: 总时间的25-30%\n- 预热期: 12个月",
+    "### 3. 算法参数调优指导\n\n\n\n**开发阶段** (快速测试):\n```json\n{\n \"rep\": 50-100,\n \"ngs\": 10-15,\n \"kstop\": 3-5\n}\n```\n\n**研究阶段** (标准精度):\n```json\n{\n \"rep\": 300-500,\n \"ngs\": 20-30,\n \"kstop\": 8-12\n}\n```\n\n**生产阶段** (高精度):\n```json\n{\n \"rep\": 800-1000,\n \"ngs\": 40-50,\n \"kstop\": 15-20\n}\n```",
+    "### 4. 资源需求估算\n\n\n\n| 模板类型 | 内存需求 | 时间需求 | CPU核数 |\n|----------|----------|----------|---------|\n| 快速原型 | 2GB | 5-15分钟 | 1-2 |\n| 标准率定 | 4GB | 20-40分钟 | 2-4 |\n| 多模型比较 | 6GB | 60-120分钟 | 4-8 |\n| 交叉验证 | 8GB | 180-300分钟 | 4-8 |",
+    "### 5. 自定义修改建议\n\n\n\n**修改流域数量**:\n```json\n\"basin_ids\": [\"basin_001\", \"basin_002\", \"basin_003\"]\n```\n\n**修改目标函数**:\n```json\n\"loss\": {\n \"obj_func\": \"RMSE\" // 或 \"KGE\", \"NSE\"\n}\n```\n\n**修改并行度**:\n```json\n\"global_settings\": {\n \"max_parallel_tasks\": 4 // 根据CPU核数调整\n}\n```",
+    "prepare_data工具用于数据准备和预处理",
+    "calibrate_model工具用于模型参数率定",
+    "evaluate_model工具用于模型性能评估"
+  ],
+  "metadata": [
+    {
+      "id": "00000000_53346425",
+      "chunk_id": "common_scenarios_solutions_0000",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 0,
+      "chunk_size": 8,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "73d557a4",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000001_1d6d17f4",
+      "chunk_id": "common_scenarios_solutions_0001",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 1,
+      "chunk_size": 1008,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "5337f24e",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000002_e734ffb9",
+      "chunk_id": "common_scenarios_solutions_0000",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 0,
+      "chunk_size": 8,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "73d557a4",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000003_ba31c94d",
+      "chunk_id": "common_scenarios_solutions_0001",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 1,
+      "chunk_size": 1008,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "5337f24e",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000004_507309a7",
+      "chunk_id": "common_scenarios_solutions_0004",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 4,
+      "chunk_size": 68,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "a3dac72d",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000005_819a6d33",
+      "chunk_id": "common_scenarios_solutions_0005",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 5,
+      "chunk_size": 44,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "b74c67bb",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000006_bd81c304",
+      "chunk_id": "common_scenarios_solutions_0000",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 0,
+      "chunk_size": 8,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "73d557a4",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000007_f6068376",
+      "chunk_id": "common_scenarios_solutions_0001",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 1,
+      "chunk_size": 1008,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "5337f24e",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000008_03d40b20",
+      "chunk_id": "common_scenarios_solutions_0008",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 8,
+      "chunk_size": 41,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "453b88b5",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000009_0f88f45c",
+      "chunk_id": "common_scenarios_solutions_0000",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 0,
+      "chunk_size": 8,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "73d557a4",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000010_71127e05",
+      "chunk_id": "common_scenarios_solutions_0001",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 1,
+      "chunk_size": 1008,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "5337f24e",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000011_1a73d8db",
+      "chunk_id": "common_scenarios_solutions_0011",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 11,
+      "chunk_size": 40,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "eb541110",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000012_3debb479",
+      "chunk_id": "common_scenarios_solutions_0000",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 0,
+      "chunk_size": 8,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "73d557a4",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000013_e89c9eb7",
+      "chunk_id": "common_scenarios_solutions_0001",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 1,
+      "chunk_size": 1008,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "5337f24e",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000014_cd4ca5a1",
+      "chunk_id": "common_scenarios_solutions_0014",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 14,
+      "chunk_size": 37,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "93f49f39",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000015_a68f5f9d",
+      "chunk_id": "common_scenarios_solutions_0015",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 15,
+      "chunk_size": 240,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "301dfba2",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000016_97973e1a",
+      "chunk_id": "common_scenarios_solutions_0016",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 16,
+      "chunk_size": 37,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "d3fee129",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000017_8f5d9d11",
+      "chunk_id": "common_scenarios_solutions_0017",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 17,
+      "chunk_size": 407,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "936716fc",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000018_908dc718",
+      "chunk_id": "common_scenarios_solutions_0018",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 18,
+      "chunk_size": 102,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "85f361e4",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000019_40d1f4b7",
+      "chunk_id": "common_scenarios_solutions_0019",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 19,
+      "chunk_size": 98,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "8e44d865",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000020_cb213327",
+      "chunk_id": "common_scenarios_solutions_0020",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 20,
+      "chunk_size": 110,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "4d47172c",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000021_3013e0d5",
+      "chunk_id": "common_scenarios_solutions_0021",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 21,
+      "chunk_size": 298,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "5486eba0",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000022_80ca5cf8",
+      "chunk_id": "common_scenarios_solutions_0022",
+      "source_file": "documents\\raw\\scenarios\\common_scenarios_solutions.md",
+      "chunk_index": 22,
+      "chunk_size": 70,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:07.710477",
+      "original_metadata": {
+        "file_name": "common_scenarios_solutions.md",
+        "file_extension": ".md",
+        "file_size": 12745,
+        "content_hash": "4791c872",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000023_e62391b7",
+      "chunk_id": "complete_model_calibration_workflow_0000",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 0,
+      "chunk_size": 14,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "4bcd569e",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000024_2b20f39b",
+      "chunk_id": "complete_model_calibration_workflow_0001",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 1,
+      "chunk_size": 1822,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "c8eadcf4",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000025_4f8460fe",
+      "chunk_id": "complete_model_calibration_workflow_0002",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 2,
+      "chunk_size": 268,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "b3024e33",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000026_bd827660",
+      "chunk_id": "complete_model_calibration_workflow_0003",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 3,
+      "chunk_size": 894,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "3182e880",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000027_8a565116",
+      "chunk_id": "complete_model_calibration_workflow_0004",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 4,
+      "chunk_size": 356,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "7fe024f0",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000028_38858646",
+      "chunk_id": "complete_model_calibration_workflow_0000",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 0,
+      "chunk_size": 14,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "4bcd569e",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000029_3fc0a1af",
+      "chunk_id": "complete_model_calibration_workflow_0001",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 1,
+      "chunk_size": 1822,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "c8eadcf4",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000030_a585de9a",
+      "chunk_id": "complete_model_calibration_workflow_0007",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 7,
+      "chunk_size": 165,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "d98aaa80",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000031_5e5c7965",
+      "chunk_id": "complete_model_calibration_workflow_0008",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 8,
+      "chunk_size": 191,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "e50a4666",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000032_516516e1",
+      "chunk_id": "complete_model_calibration_workflow_0009",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 9,
+      "chunk_size": 112,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "52fef42c",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000033_de016175",
+      "chunk_id": "complete_model_calibration_workflow_0010",
+      "source_file": "documents\\raw\\solutions\\complete_model_calibration_workflow.md",
+      "chunk_index": 10,
+      "chunk_size": 131,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.184517",
+      "original_metadata": {
+        "file_name": "complete_model_calibration_workflow.md",
+        "file_extension": ".md",
+        "file_size": 6549,
+        "content_hash": "9a22073e",
+        "total_chunks": 11
+      }
+    },
+    {
+      "id": "00000034_595da785",
+      "chunk_id": "markdown_0000",
+      "source_file": "documents\\raw\\markdown.md",
+      "chunk_index": 0,
+      "chunk_size": 110,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.718989",
+      "original_metadata": {
+        "file_name": "markdown.md",
+        "file_extension": ".md",
+        "file_size": 1463,
+        "content_hash": "fa3ab390",
+        "total_chunks": 4
+      }
+    },
+    {
+      "id": "00000035_5907f962",
+      "chunk_id": "markdown_0001",
+      "source_file": "documents\\raw\\markdown.md",
+      "chunk_index": 1,
+      "chunk_size": 277,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.718989",
+      "original_metadata": {
+        "file_name": "markdown.md",
+        "file_extension": ".md",
+        "file_size": 1463,
+        "content_hash": "7df300dc",
+        "total_chunks": 4
+      }
+    },
+    {
+      "id": "00000036_5b4ea77d",
+      "chunk_id": "markdown_0002",
+      "source_file": "documents\\raw\\markdown.md",
+      "chunk_index": 2,
+      "chunk_size": 69,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.718989",
+      "original_metadata": {
+        "file_name": "markdown.md",
+        "file_extension": ".md",
+        "file_size": 1463,
+        "content_hash": "8b4bd804",
+        "total_chunks": 4
+      }
+    },
+    {
+      "id": "00000037_2899f039",
+      "chunk_id": "markdown_0003",
+      "source_file": "documents\\raw\\markdown.md",
+      "chunk_index": 3,
+      "chunk_size": 194,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:09.718989",
+      "original_metadata": {
+        "file_name": "markdown.md",
+        "file_extension": ".md",
+        "file_size": 1463,
+        "content_hash": "143cb159",
+        "total_chunks": 4
+      }
+    },
+    {
+      "id": "00000038_0cc89e6d",
+      "chunk_id": "tools_comprehensive_guide_0000",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 0,
+      "chunk_size": 993,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "6814023a",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000039_d186c7bd",
+      "chunk_id": "tools_comprehensive_guide_0001",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 1,
+      "chunk_size": 175,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "1cab986e",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000040_90d9920b",
+      "chunk_id": "tools_comprehensive_guide_0002",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 2,
+      "chunk_size": 40,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "afaa1556",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000041_974001b4",
+      "chunk_id": "tools_comprehensive_guide_0003",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 3,
+      "chunk_size": 190,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "210716e7",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000042_8155a75b",
+      "chunk_id": "tools_comprehensive_guide_0004",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 4,
+      "chunk_size": 78,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "43c87884",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000043_87785e29",
+      "chunk_id": "tools_comprehensive_guide_0005",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 5,
+      "chunk_size": 284,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "503442a9",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000044_b356f98a",
+      "chunk_id": "tools_comprehensive_guide_0006",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 6,
+      "chunk_size": 49,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "a97b8ea7",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000045_209738c8",
+      "chunk_id": "tools_comprehensive_guide_0007",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 7,
+      "chunk_size": 38,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "58cb0f65",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000046_1742bb77",
+      "chunk_id": "tools_comprehensive_guide_0008",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 8,
+      "chunk_size": 354,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "f598ea3b",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000047_6b886938",
+      "chunk_id": "tools_comprehensive_guide_0009",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 9,
+      "chunk_size": 180,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "b30da2ef",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000048_d844acb2",
+      "chunk_id": "tools_comprehensive_guide_0010",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 10,
+      "chunk_size": 261,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "1bb34c44",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000049_5e9fd713",
+      "chunk_id": "tools_comprehensive_guide_0011",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 11,
+      "chunk_size": 257,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "dfe1e936",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000050_252a5664",
+      "chunk_id": "tools_comprehensive_guide_0012",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 12,
+      "chunk_size": 114,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "7b483776",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000051_8fa0aba4",
+      "chunk_id": "tools_comprehensive_guide_0013",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 13,
+      "chunk_size": 43,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "abf4bc10",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000052_ebc18a88",
+      "chunk_id": "tools_comprehensive_guide_0000",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 0,
+      "chunk_size": 993,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "6814023a",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000053_a869af39",
+      "chunk_id": "tools_comprehensive_guide_0015",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 15,
+      "chunk_size": 202,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "15e5bbab",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000054_bb68c85b",
+      "chunk_id": "tools_comprehensive_guide_0016",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 16,
+      "chunk_size": 149,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "ca453d80",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000055_8963d283",
+      "chunk_id": "tools_comprehensive_guide_0017",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 17,
+      "chunk_size": 230,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "7be24c43",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000056_8333633a",
+      "chunk_id": "tools_comprehensive_guide_0018",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 18,
+      "chunk_size": 35,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "d10ac113",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000057_551270b0",
+      "chunk_id": "tools_comprehensive_guide_0019",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 19,
+      "chunk_size": 258,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "32390c09",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000058_4ed6f23f",
+      "chunk_id": "tools_comprehensive_guide_0020",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 20,
+      "chunk_size": 105,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "96afaa88",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000059_45a43de4",
+      "chunk_id": "tools_comprehensive_guide_0021",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 21,
+      "chunk_size": 73,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "7656d687",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000060_1dfb70d4",
+      "chunk_id": "tools_comprehensive_guide_0022",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 22,
+      "chunk_size": 71,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "6b580e92",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000061_81b5ac70",
+      "chunk_id": "tools_comprehensive_guide_0023",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 23,
+      "chunk_size": 85,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "bd50ccd4",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000062_9941345c",
+      "chunk_id": "tools_comprehensive_guide_0024",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 24,
+      "chunk_size": 397,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "304dd0d6",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000063_e77c50ef",
+      "chunk_id": "tools_comprehensive_guide_0025",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 25,
+      "chunk_size": 69,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "c8559a69",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000064_07a33bf3",
+      "chunk_id": "tools_comprehensive_guide_0026",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 26,
+      "chunk_size": 469,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "663468ff",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000065_a453fed2",
+      "chunk_id": "tools_comprehensive_guide_0027",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 27,
+      "chunk_size": 174,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "11fd6690",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000066_415ecafe",
+      "chunk_id": "tools_comprehensive_guide_0028",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 28,
+      "chunk_size": 81,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "a6f90c1e",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000067_73186650",
+      "chunk_id": "tools_comprehensive_guide_0029",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 29,
+      "chunk_size": 104,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "63960905",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000068_af46ee03",
+      "chunk_id": "tools_comprehensive_guide_0030",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 30,
+      "chunk_size": 102,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "5bf97c7f",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000069_e6f51d80",
+      "chunk_id": "tools_comprehensive_guide_0031",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 31,
+      "chunk_size": 104,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "d58939ad",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000070_f2abc5c4",
+      "chunk_id": "tools_comprehensive_guide_0032",
+      "source_file": "documents\\raw\\tools_comprehensive_guide.md",
+      "chunk_index": 32,
+      "chunk_size": 126,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:14.186050",
+      "original_metadata": {
+        "file_name": "tools_comprehensive_guide.md",
+        "file_extension": ".md",
+        "file_size": 9969,
+        "content_hash": "b74e4f56",
+        "total_chunks": 33
+      }
+    },
+    {
+      "id": "00000071_0e23c975",
+      "chunk_id": "tool_usage_best_practices_0000",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 0,
+      "chunk_size": 83,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.225660",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "4eae20f3",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000072_948ea3ff",
+      "chunk_id": "tool_usage_best_practices_0001",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 1,
+      "chunk_size": 184,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.225660",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "8778ee9e",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000073_5308e42e",
+      "chunk_id": "tool_usage_best_practices_0002",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 2,
+      "chunk_size": 225,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "6c21dd3a",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000074_0e631d0f",
+      "chunk_id": "tool_usage_best_practices_0003",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 3,
+      "chunk_size": 73,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "50f43aeb",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000075_23c284a1",
+      "chunk_id": "tool_usage_best_practices_0004",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 4,
+      "chunk_size": 59,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "a177d11b",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000076_92368bce",
+      "chunk_id": "tool_usage_best_practices_0005",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 5,
+      "chunk_size": 210,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "25eb3f5d",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000077_582e1fe3",
+      "chunk_id": "tool_usage_best_practices_0006",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 6,
+      "chunk_size": 194,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "d5e2e787",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000078_fab42997",
+      "chunk_id": "tool_usage_best_practices_0007",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 7,
+      "chunk_size": 135,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "bc376675",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000079_8ddea12e",
+      "chunk_id": "tool_usage_best_practices_0008",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 8,
+      "chunk_size": 103,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "653a52f5",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000080_7aa19631",
+      "chunk_id": "tool_usage_best_practices_0009",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 9,
+      "chunk_size": 141,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "57af771b",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000081_d5d795ac",
+      "chunk_id": "tool_usage_best_practices_0010",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 10,
+      "chunk_size": 62,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "f9bad4a6",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000082_36fb2621",
+      "chunk_id": "tool_usage_best_practices_0011",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 11,
+      "chunk_size": 906,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "bb97bf1a",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000083_028c74d5",
+      "chunk_id": "tool_usage_best_practices_0012",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 12,
+      "chunk_size": 157,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "fd450e24",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000084_4e913159",
+      "chunk_id": "tool_usage_best_practices_0013",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 13,
+      "chunk_size": 162,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "ca1f302b",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000085_d9052eb8",
+      "chunk_id": "tool_usage_best_practices_0014",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 14,
+      "chunk_size": 130,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "01a0f99a",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000086_09faf50d",
+      "chunk_id": "tool_usage_best_practices_0015",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 15,
+      "chunk_size": 94,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "a99b8bba",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000087_375a6cb3",
+      "chunk_id": "tool_usage_best_practices_0016",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 16,
+      "chunk_size": 83,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "a7043afa",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000088_170ee46d",
+      "chunk_id": "tool_usage_best_practices_0017",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 17,
+      "chunk_size": 213,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "d6929605",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000089_66b59530",
+      "chunk_id": "tool_usage_best_practices_0018",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 18,
+      "chunk_size": 134,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "cbecfaf8",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000090_34d921c5",
+      "chunk_id": "tool_usage_best_practices_0019",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 19,
+      "chunk_size": 86,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "b8d1f451",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000091_a0d72084",
+      "chunk_id": "tool_usage_best_practices_0020",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 20,
+      "chunk_size": 73,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "63ba33f5",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000092_22191e7b",
+      "chunk_id": "tool_usage_best_practices_0021",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 21,
+      "chunk_size": 101,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "ab615f3e",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000093_cf34ce9b",
+      "chunk_id": "tool_usage_best_practices_0022",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 22,
+      "chunk_size": 220,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "be87ba1d",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000094_b4dc40a1",
+      "chunk_id": "tool_usage_best_practices_0023",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 23,
+      "chunk_size": 167,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "56893386",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000095_00a75bd0",
+      "chunk_id": "tool_usage_best_practices_0024",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 24,
+      "chunk_size": 122,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "05a98e66",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000096_0881185c",
+      "chunk_id": "tool_usage_best_practices_0025",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 25,
+      "chunk_size": 75,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "2e7866be",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000097_56843279",
+      "chunk_id": "tool_usage_best_practices_0026",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 26,
+      "chunk_size": 56,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "4cdb1d09",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000098_eac93dc1",
+      "chunk_id": "tool_usage_best_practices_0027",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 27,
+      "chunk_size": 55,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "39a474e6",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000099_8d5ee385",
+      "chunk_id": "tool_usage_best_practices_0028",
+      "source_file": "documents\\raw\\solutions\\tool_usage_best_practices.md",
+      "chunk_index": 28,
+      "chunk_size": 64,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:18.226644",
+      "original_metadata": {
+        "file_name": "tool_usage_best_practices.md",
+        "file_extension": ".md",
+        "file_size": 7528,
+        "content_hash": "8adecaf6",
+        "total_chunks": 29
+      }
+    },
+    {
+      "id": "00000100_0109d6d0",
+      "chunk_id": "troubleshooting_guide_0000",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 0,
+      "chunk_size": 77,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "33b083d8",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000101_75d9a6e2",
+      "chunk_id": "troubleshooting_guide_0001",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 1,
+      "chunk_size": 147,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "c965e0cc",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000102_0e6507b8",
+      "chunk_id": "troubleshooting_guide_0002",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 2,
+      "chunk_size": 43,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "dbcaaa80",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000103_c0ac64d8",
+      "chunk_id": "troubleshooting_guide_0003",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 3,
+      "chunk_size": 53,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "f0e64593",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000104_b3478ba7",
+      "chunk_id": "troubleshooting_guide_0004",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 4,
+      "chunk_size": 165,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "64a69711",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000105_4c0a8edc",
+      "chunk_id": "troubleshooting_guide_0005",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 5,
+      "chunk_size": 117,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "ba5240b4",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000106_7df58b96",
+      "chunk_id": "troubleshooting_guide_0006",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 6,
+      "chunk_size": 394,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "8ab54c37",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000107_228187fa",
+      "chunk_id": "troubleshooting_guide_0007",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 7,
+      "chunk_size": 72,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "3f1ffc88",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000108_461c2f50",
+      "chunk_id": "troubleshooting_guide_0008",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 8,
+      "chunk_size": 426,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "22627f00",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000109_5a62e582",
+      "chunk_id": "troubleshooting_guide_0009",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 9,
+      "chunk_size": 345,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "3e530b24",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000110_9a78499b",
+      "chunk_id": "troubleshooting_guide_0010",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 10,
+      "chunk_size": 244,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "1d488ea3",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000111_ab4b1616",
+      "chunk_id": "troubleshooting_guide_0011",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 11,
+      "chunk_size": 237,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "6417a439",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000112_a0db1872",
+      "chunk_id": "troubleshooting_guide_0012",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 12,
+      "chunk_size": 478,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "61b0cbd4",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000113_7983c1e2",
+      "chunk_id": "troubleshooting_guide_0013",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 13,
+      "chunk_size": 81,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "08b08801",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000114_fbc8ba96",
+      "chunk_id": "troubleshooting_guide_0014",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 14,
+      "chunk_size": 92,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "db954ec8",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000115_cf96a01d",
+      "chunk_id": "troubleshooting_guide_0015",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 15,
+      "chunk_size": 87,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "7808c333",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000116_6f8c4f07",
+      "chunk_id": "troubleshooting_guide_0016",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 16,
+      "chunk_size": 47,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "19c5c01e",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000117_eed7fd57",
+      "chunk_id": "troubleshooting_guide_0017",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 17,
+      "chunk_size": 93,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "a181c98e",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000118_6a1b422d",
+      "chunk_id": "troubleshooting_guide_0018",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 18,
+      "chunk_size": 250,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "86dda78e",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000119_0c76ed5e",
+      "chunk_id": "troubleshooting_guide_0019",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 19,
+      "chunk_size": 16,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "ddf3f1ef",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000120_0bb1859d",
+      "chunk_id": "troubleshooting_guide_0020",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 20,
+      "chunk_size": 41,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "56cbfb0a",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000121_3e5dcec7",
+      "chunk_id": "troubleshooting_guide_0021",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 21,
+      "chunk_size": 58,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "3e8b9db7",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000122_4b1c3026",
+      "chunk_id": "troubleshooting_guide_0022",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 22,
+      "chunk_size": 223,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "f6251a1b",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000123_39a983de",
+      "chunk_id": "troubleshooting_guide_0023",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 23,
+      "chunk_size": 296,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "0d332a95",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000124_85709cd5",
+      "chunk_id": "troubleshooting_guide_0024",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 24,
+      "chunk_size": 257,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "7f6244fc",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000125_915d04be",
+      "chunk_id": "troubleshooting_guide_0025",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 25,
+      "chunk_size": 260,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "ab2cb1de",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000126_12c08f1b",
+      "chunk_id": "troubleshooting_guide_0026",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 26,
+      "chunk_size": 317,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "fe3b0fc2",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000127_10c43c7e",
+      "chunk_id": "troubleshooting_guide_0027",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 27,
+      "chunk_size": 226,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "ff72174b",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000128_6b9e1378",
+      "chunk_id": "troubleshooting_guide_0028",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 28,
+      "chunk_size": 107,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "c3769c61",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000129_f02327e8",
+      "chunk_id": "troubleshooting_guide_0029",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 29,
+      "chunk_size": 22,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "33ed24cf",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000130_d9756d69",
+      "chunk_id": "troubleshooting_guide_0030",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 30,
+      "chunk_size": 126,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "47383c9f",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000131_b6d8c293",
+      "chunk_id": "troubleshooting_guide_0031",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 31,
+      "chunk_size": 181,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "43e619ea",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000132_4c95a7e2",
+      "chunk_id": "troubleshooting_guide_0032",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 32,
+      "chunk_size": 20,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "85280af5",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000133_68dbf8d6",
+      "chunk_id": "troubleshooting_guide_0033",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 33,
+      "chunk_size": 68,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "b1ac306d",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000134_6d168253",
+      "chunk_id": "troubleshooting_guide_0034",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 34,
+      "chunk_size": 91,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "f6a20966",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000135_0b93d528",
+      "chunk_id": "troubleshooting_guide_0035",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 35,
+      "chunk_size": 20,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "e94aac83",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000136_fc496518",
+      "chunk_id": "troubleshooting_guide_0036",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 36,
+      "chunk_size": 189,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "492a3fa3",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000137_779cdd45",
+      "chunk_id": "troubleshooting_guide_0037",
+      "source_file": "documents\\raw\\solutions\\troubleshooting_guide.md",
+      "chunk_index": 37,
+      "chunk_size": 110,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:23.217127",
+      "original_metadata": {
+        "file_name": "troubleshooting_guide.md",
+        "file_extension": ".md",
+        "file_size": 9464,
+        "content_hash": "978b54ee",
+        "total_chunks": 38
+      }
+    },
+    {
+      "id": "00000138_14e58fc0",
+      "chunk_id": "workflow_examples_0000",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 0,
+      "chunk_size": 77,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "4dd5e106",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000139_2e653974",
+      "chunk_id": "workflow_examples_0001",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 1,
+      "chunk_size": 64,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "5feac4a3",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000140_8fe880e9",
+      "chunk_id": "workflow_examples_0002",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 2,
+      "chunk_size": 160,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "a5e4fe53",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000141_3df10007",
+      "chunk_id": "workflow_examples_0003",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 3,
+      "chunk_size": 256,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "59183b24",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000142_9b2bd88f",
+      "chunk_id": "workflow_examples_0004",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 4,
+      "chunk_size": 401,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "4297b271",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000143_d0477eed",
+      "chunk_id": "workflow_examples_0005",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 5,
+      "chunk_size": 434,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "bbd2dfea",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000144_d7cf88a3",
+      "chunk_id": "workflow_examples_0006",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 6,
+      "chunk_size": 237,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "3d4e4c37",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000145_221535cd",
+      "chunk_id": "workflow_examples_0007",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 7,
+      "chunk_size": 337,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "71fa8d0f",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000146_a675dba1",
+      "chunk_id": "workflow_examples_0008",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 8,
+      "chunk_size": 455,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "7f5985ae",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000147_21d9fd17",
+      "chunk_id": "workflow_examples_0009",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 9,
+      "chunk_size": 120,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "a9e67aee",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000148_9057b8dd",
+      "chunk_id": "workflow_examples_0010",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 10,
+      "chunk_size": 106,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "5bfb74b4",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000149_fd1ffe73",
+      "chunk_id": "workflow_examples_0011",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 11,
+      "chunk_size": 202,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "1de26ae8",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000150_e5d2cda3",
+      "chunk_id": "workflow_examples_0012",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 12,
+      "chunk_size": 148,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "ecda8510",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000151_d415b4ef",
+      "chunk_id": "workflow_examples_0013",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 13,
+      "chunk_size": 137,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "518c0a36",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000152_2ed73e53",
+      "chunk_id": "workflow_examples_0014",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 14,
+      "chunk_size": 121,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "56e06450",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000153_cd9009a9",
+      "chunk_id": "workflow_examples_0015",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 15,
+      "chunk_size": 171,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "f9114e7b",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000154_5527bc42",
+      "chunk_id": "workflow_examples_0016",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 16,
+      "chunk_size": 110,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "35f7e908",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000155_053f67c8",
+      "chunk_id": "workflow_examples_0017",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 17,
+      "chunk_size": 171,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "8011739e",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000156_6ffaa58f",
+      "chunk_id": "workflow_examples_0018",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 18,
+      "chunk_size": 54,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "f5fcea5a",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000157_ce248b26",
+      "chunk_id": "workflow_examples_0019",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 19,
+      "chunk_size": 67,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "8d96ef65",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000158_2aaeda0f",
+      "chunk_id": "workflow_examples_0020",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 20,
+      "chunk_size": 163,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "9b8ffcc8",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000159_b5452f2b",
+      "chunk_id": "workflow_examples_0021",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 21,
+      "chunk_size": 134,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "ad179750",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000160_c5b55c89",
+      "chunk_id": "workflow_examples_0022",
+      "source_file": "documents\\raw\\workflow_examples.md",
+      "chunk_index": 22,
+      "chunk_size": 73,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:25.987996",
+      "original_metadata": {
+        "file_name": "workflow_examples.md",
+        "file_extension": ".md",
+        "file_size": 6356,
+        "content_hash": "88fbfd73",
+        "total_chunks": 23
+      }
+    },
+    {
+      "id": "00000161_d8e61acf",
+      "chunk_id": "workflow_templates_0000",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 0,
+      "chunk_size": 16,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "cec67a1b",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000162_501e44bb",
+      "chunk_id": "workflow_templates_0000",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 0,
+      "chunk_size": 16,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "cec67a1b",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000163_d4c9229c",
+      "chunk_id": "workflow_templates_0001",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 1,
+      "chunk_size": 1347,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "a4dbdbf9",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000164_f1feebf7",
+      "chunk_id": "workflow_templates_0000",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 0,
+      "chunk_size": 16,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "cec67a1b",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000165_1ea3c0e4",
+      "chunk_id": "workflow_templates_0001",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 1,
+      "chunk_size": 1347,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "a4dbdbf9",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000166_cc4ca864",
+      "chunk_id": "workflow_templates_0000",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 0,
+      "chunk_size": 16,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "cec67a1b",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000167_ce20735b",
+      "chunk_id": "workflow_templates_0001",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 1,
+      "chunk_size": 1347,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "a4dbdbf9",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000168_0981e02d",
+      "chunk_id": "workflow_templates_0000",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 0,
+      "chunk_size": 16,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "cec67a1b",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000169_6cbda1e6",
+      "chunk_id": "workflow_templates_0001",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 1,
+      "chunk_size": 1347,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "a4dbdbf9",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000170_f2462420",
+      "chunk_id": "workflow_templates_0000",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 0,
+      "chunk_size": 16,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "cec67a1b",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000171_ba33cc3c",
+      "chunk_id": "workflow_templates_0001",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 1,
+      "chunk_size": 1347,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "a4dbdbf9",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000172_d65d12df",
+      "chunk_id": "workflow_templates_0011",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 11,
+      "chunk_size": 61,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "9e55cf98",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000173_0931a1bd",
+      "chunk_id": "workflow_templates_0012",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 12,
+      "chunk_size": 207,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "d6aafe80",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000174_d96e2f5a",
+      "chunk_id": "workflow_templates_0013",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 13,
+      "chunk_size": 170,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "d223f211",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000175_c397c3f1",
+      "chunk_id": "workflow_templates_0014",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 14,
+      "chunk_size": 259,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "5c18d6c4",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000176_b46ba1a1",
+      "chunk_id": "workflow_templates_0015",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 15,
+      "chunk_size": 219,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "c7c92843",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000177_4b7fc328",
+      "chunk_id": "workflow_templates_0016",
+      "source_file": "documents\\raw\\code_examples\\workflow_templates.md",
+      "chunk_index": 16,
+      "chunk_size": 254,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:46:28.267716",
+      "original_metadata": {
+        "file_name": "workflow_templates.md",
+        "file_extension": ".md",
+        "file_size": 16107,
+        "content_hash": "5f80cbbd",
+        "total_chunks": 17
+      }
+    },
+    {
+      "id": "00000178_bd0411a5",
+      "chunk_id": "test_001",
+      "source_file": "test_gr4j.txt",
+      "chunk_index": 0,
+      "chunk_size": 0,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:49:55.738300",
+      "original_metadata": {}
+    },
+    {
+      "id": "00000179_bb5482a9",
+      "chunk_id": "test_002",
+      "source_file": "test_xaj.txt",
+      "chunk_index": 0,
+      "chunk_size": 0,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:49:55.738300",
+      "original_metadata": {}
+    },
+    {
+      "id": "00000180_b81cae1f",
+      "chunk_id": "test_003",
+      "source_file": "test_calib.txt",
+      "chunk_index": 0,
+      "chunk_size": 0,
+      "embedding_model": "api-text-embedding-v1",
+      "added_time": "2025-09-29T14:49:55.738300",
+      "original_metadata": {}
+    }
+  ],
+  "dimension": 1536,
+  "index_type": "Flat",
+  "distance_function": "cosine",
+  "total_documents": 181,
+  "last_updated": "2025-09-29T14:49:55.739473",
+  "config": {
+    "ivf_nlist": 100,
+    "hnsw_m": 16,
+    "hnsw_ef_search": 64,
+    "enable_gpu": false
+  }
+}

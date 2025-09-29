@@ -18,25 +18,29 @@ from .task import Task
 
 class WorkflowMode(str, Enum):
     """工作流执行模式"""
+
     SEQUENTIAL = "sequential"  # 顺序执行
-    REACT = "react"           # React模式，目标导向
+    REACT = "react"  # React模式，目标导向
 
 
 class ErrorHandling(str, Enum):
     """错误处理策略"""
+
     CONTINUE_ON_ERROR = "continue_on_error"  # 遇到错误继续执行
-    STOP_ON_ERROR = "stop_on_error"          # 遇到错误停止执行
+    STOP_ON_ERROR = "stop_on_error"  # 遇到错误停止执行
 
 
 class TargetType(str, Enum):
     """目标类型"""
-    PERFORMANCE_GOAL = "performance_goal"    # 性能目标
-    COMPLETION_GOAL = "completion_goal"      # 完成目标
-    CUSTOM_GOAL = "custom_goal"              # 自定义目标
+
+    PERFORMANCE_GOAL = "performance_goal"  # 性能目标
+    COMPLETION_GOAL = "completion_goal"  # 完成目标
+    CUSTOM_GOAL = "custom_goal"  # 自定义目标
 
 
 class WorkflowTarget(BaseModel):
     """工作流目标配置"""
+
     type: TargetType = Field(..., description="目标类型")
     metric: Optional[str] = Field(None, description="目标指标名称")
     threshold: Optional[float] = Field(None, description="目标阈值")
@@ -44,10 +48,10 @@ class WorkflowTarget(BaseModel):
     max_iterations: int = Field(default=3, description="最大迭代次数")
     description: Optional[str] = Field(None, description="目标描述")
 
-    @validator('metric')
+    @validator("metric")
     def validate_performance_goal(cls, v, values):
         """验证性能目标必须有指标"""
-        if values.get('type') == TargetType.PERFORMANCE_GOAL and not v:
+        if values.get("type") == TargetType.PERFORMANCE_GOAL and not v:
             raise ValueError("Performance goals must have a metric")
         return v
 
@@ -77,14 +81,17 @@ class WorkflowTarget(BaseModel):
                 "threshold": 0.7,
                 "comparison": ">=",
                 "max_iterations": 5,
-                "description": "NSE指标需要达到0.7以上"
+                "description": "NSE指标需要达到0.7以上",
             }
         }
 
 
 class WorkflowSettings(BaseModel):
     """工作流全局设置"""
-    error_handling: ErrorHandling = Field(default=ErrorHandling.CONTINUE_ON_ERROR, description="错误处理策略")
+
+    error_handling: ErrorHandling = Field(
+        default=ErrorHandling.CONTINUE_ON_ERROR, description="错误处理策略"
+    )
     logging_level: str = Field(default="INFO", description="日志级别")
     timeout: Optional[int] = Field(None, description="全局超时时间(秒)")
     checkpoint_enabled: bool = Field(default=True, description="是否启用检查点")
@@ -99,13 +106,14 @@ class WorkflowSettings(BaseModel):
                 "timeout": 3600,
                 "checkpoint_enabled": True,
                 "parallel_execution": False,
-                "max_parallel_tasks": 3
+                "max_parallel_tasks": 3,
             }
         }
 
 
 class Workflow(BaseModel):
     """工作流定义模型"""
+
     workflow_id: str = Field(..., description="工作流唯一ID")
     name: str = Field(..., description="工作流名称")
     description: Optional[str] = Field(None, description="工作流描述")
@@ -115,14 +123,18 @@ class Workflow(BaseModel):
     # 核心组件
     tasks: List[Task] = Field(..., description="任务列表")
     target: Optional[WorkflowTarget] = Field(None, description="目标配置")
-    global_settings: WorkflowSettings = Field(default_factory=WorkflowSettings, description="全局设置")
+    global_settings: WorkflowSettings = Field(
+        default_factory=WorkflowSettings, description="全局设置"
+    )
 
     # 元数据
-    created_at: Optional[datetime] = Field(default_factory=datetime.now, description="创建时间")
+    created_at: Optional[datetime] = Field(
+        default_factory=datetime.now, description="创建时间"
+    )
     created_by: Optional[str] = Field(None, description="创建者")
     tags: List[str] = Field(default_factory=list, description="标签")
 
-    @validator('tasks')
+    @validator("tasks")
     def validate_tasks(cls, v):
         """验证任务列表"""
         if not v:
@@ -135,10 +147,10 @@ class Workflow(BaseModel):
 
         return v
 
-    @validator('target')
+    @validator("target")
     def validate_react_mode(cls, v, values):
         """验证React模式必须有目标"""
-        if values.get('mode') == WorkflowMode.REACT and not v:
+        if values.get("mode") == WorkflowMode.REACT and not v:
             raise ValueError("React mode workflows must have a target")
         return v
 
@@ -197,7 +209,9 @@ class Workflow(BaseModel):
         for task in self.tasks:
             for dep in task.dependencies:
                 if dep not in task_ids:
-                    raise ValueError(f"Task {task.task_id} depends on non-existent task {dep}")
+                    raise ValueError(
+                        f"Task {task.task_id} depends on non-existent task {dep}"
+                    )
 
         # 检查循环依赖
         execution_order = self.get_execution_order()
@@ -220,13 +234,13 @@ class Workflow(BaseModel):
                     "type": "performance_goal",
                     "metric": "NSE",
                     "threshold": 0.7,
-                    "max_iterations": 5
+                    "max_iterations": 5,
                 },
                 "global_settings": {
                     "error_handling": "continue_on_error",
                     "logging_level": "INFO",
                     "timeout": 3600,
-                    "checkpoint_enabled": True
-                }
+                    "checkpoint_enabled": True,
+                },
             }
         }

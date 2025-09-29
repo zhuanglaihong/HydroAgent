@@ -20,30 +20,33 @@ import logging
 from scipy import stats
 from sklearn.metrics import confusion_matrix
 import warnings
-warnings.filterwarnings('ignore')
+
+warnings.filterwarnings("ignore")
 
 # 设置中文字体和论文级样式
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.style.use('seaborn-v0_8-whitegrid')
+plt.rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
+plt.style.use("seaborn-v0_8-whitegrid")
 
 # 定义统计图表的颜色方案
 STAT_COLORS = {
-    'success': '#27ae60',       # 成功绿色
-    'failure': '#e74c3c',       # 失败红色
-    'warning': '#f39c12',       # 警告橙色
-    'info': '#3498db',          # 信息蓝色
-    'primary': '#2c3e50',       # 主要深色
-    'secondary': '#95a5a6',     # 辅助灰色
-    'accent': '#9b59b6',        # 强调紫色
-    'background': '#ecf0f1',    # 背景色
+    "success": "#27ae60",  # 成功绿色
+    "failure": "#e74c3c",  # 失败红色
+    "warning": "#f39c12",  # 警告橙色
+    "info": "#3498db",  # 信息蓝色
+    "primary": "#2c3e50",  # 主要深色
+    "secondary": "#95a5a6",  # 辅助灰色
+    "accent": "#9b59b6",  # 强调紫色
+    "background": "#ecf0f1",  # 背景色
 }
 
 
 class StatisticsVisualizer:
     """统计分析和成功率可视化工具"""
 
-    def __init__(self, output_dir: str = "output/statistics_visualizations", dpi: int = 300):
+    def __init__(
+        self, output_dir: str = "output/statistics_visualizations", dpi: int = 300
+    ):
         """
         初始化统计可视化器
 
@@ -58,19 +61,17 @@ class StatisticsVisualizer:
 
         # 设置字体大小
         self.font_sizes = {
-            'title': 14,
-            'label': 12,
-            'tick': 10,
-            'legend': 11,
-            'annotation': 10
+            "title": 14,
+            "label": 12,
+            "tick": 10,
+            "legend": 11,
+            "annotation": 10,
         }
 
         self.logger.info("统计可视化器初始化完成")
 
     def plot_workflow_success_rates(
-        self,
-        workflow_results: Dict[str, Dict[str, Any]],
-        save_path: str = None
+        self, workflow_results: Dict[str, Dict[str, Any]], save_path: str = None
     ) -> str:
         """
         绘制工作流成功率统计图
@@ -85,49 +86,88 @@ class StatisticsVisualizer:
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
         workflows = list(workflow_results.keys())
-        success_rates = [workflow_results[wf]['success_rate'] for wf in workflows]
-        total_tasks = [workflow_results[wf]['total_tasks'] for wf in workflows]
-        execution_times = [workflow_results[wf].get('execution_time', 0) for wf in workflows]
+        success_rates = [workflow_results[wf]["success_rate"] for wf in workflows]
+        total_tasks = [workflow_results[wf]["total_tasks"] for wf in workflows]
+        execution_times = [
+            workflow_results[wf].get("execution_time", 0) for wf in workflows
+        ]
 
         # 1. 成功率柱状图
         ax1 = axes[0, 0]
-        bars1 = ax1.bar(workflows, success_rates, color=STAT_COLORS['success'], alpha=0.7,
-                       edgecolor='black', linewidth=0.5)
+        bars1 = ax1.bar(
+            workflows,
+            success_rates,
+            color=STAT_COLORS["success"],
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=0.5,
+        )
 
         # 添加数值标签
         for i, bar in enumerate(bars1):
             height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                    f'{height:.1%}', ha='center', va='bottom',
-                    fontsize=self.font_sizes['annotation'])
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 0.01,
+                f"{height:.1%}",
+                ha="center",
+                va="bottom",
+                fontsize=self.font_sizes["annotation"],
+            )
 
-        ax1.set_ylabel('Success Rate', fontsize=self.font_sizes['label'])
-        ax1.set_title('Workflow Success Rates', fontsize=self.font_sizes['title'], fontweight='bold')
+        ax1.set_ylabel("Success Rate", fontsize=self.font_sizes["label"])
+        ax1.set_title(
+            "Workflow Success Rates",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
         ax1.set_ylim(0, 1.1)
-        ax1.grid(True, alpha=0.3, axis='y')
-        plt.setp(ax1.get_xticklabels(), rotation=45, ha='right')
+        ax1.grid(True, alpha=0.3, axis="y")
+        plt.setp(ax1.get_xticklabels(), rotation=45, ha="right")
 
         # 2. 任务数量分布
         ax2 = axes[0, 1]
-        ax2.hist(total_tasks, bins=min(10, len(set(total_tasks))), color=STAT_COLORS['info'],
-                alpha=0.7, edgecolor='black', linewidth=0.5)
-        ax2.set_xlabel('Number of Tasks', fontsize=self.font_sizes['label'])
-        ax2.set_ylabel('Frequency', fontsize=self.font_sizes['label'])
-        ax2.set_title('Task Count Distribution', fontsize=self.font_sizes['title'], fontweight='bold')
+        ax2.hist(
+            total_tasks,
+            bins=min(10, len(set(total_tasks))),
+            color=STAT_COLORS["info"],
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=0.5,
+        )
+        ax2.set_xlabel("Number of Tasks", fontsize=self.font_sizes["label"])
+        ax2.set_ylabel("Frequency", fontsize=self.font_sizes["label"])
+        ax2.set_title(
+            "Task Count Distribution",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
         ax2.grid(True, alpha=0.3)
 
         # 3. 成功率 vs 任务数量散点图
         ax3 = axes[1, 0]
-        scatter = ax3.scatter(total_tasks, success_rates, c=execution_times, cmap='viridis',
-                             s=100, alpha=0.7, edgecolors='black', linewidth=0.5)
+        scatter = ax3.scatter(
+            total_tasks,
+            success_rates,
+            c=execution_times,
+            cmap="viridis",
+            s=100,
+            alpha=0.7,
+            edgecolors="black",
+            linewidth=0.5,
+        )
 
         # 添加颜色条
         cbar = plt.colorbar(scatter, ax=ax3)
-        cbar.set_label('Execution Time (s)', fontsize=self.font_sizes['label'])
+        cbar.set_label("Execution Time (s)", fontsize=self.font_sizes["label"])
 
-        ax3.set_xlabel('Number of Tasks', fontsize=self.font_sizes['label'])
-        ax3.set_ylabel('Success Rate', fontsize=self.font_sizes['label'])
-        ax3.set_title('Success Rate vs Task Complexity', fontsize=self.font_sizes['title'], fontweight='bold')
+        ax3.set_xlabel("Number of Tasks", fontsize=self.font_sizes["label"])
+        ax3.set_ylabel("Success Rate", fontsize=self.font_sizes["label"])
+        ax3.set_title(
+            "Success Rate vs Task Complexity",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
         ax3.grid(True, alpha=0.3)
 
         # 4. 执行时间箱线图
@@ -149,25 +189,33 @@ class StatisticsVisualizer:
         box_labels = []
         if high_success:
             box_data.append(high_success)
-            box_labels.append('High (≥80%)')
+            box_labels.append("High (≥80%)")
         if medium_success:
             box_data.append(medium_success)
-            box_labels.append('Medium (50-80%)')
+            box_labels.append("Medium (50-80%)")
         if low_success:
             box_data.append(low_success)
-            box_labels.append('Low (<50%)')
+            box_labels.append("Low (<50%)")
 
         if box_data:
             box_plot = ax4.boxplot(box_data, labels=box_labels, patch_artist=True)
-            colors = [STAT_COLORS['success'], STAT_COLORS['warning'], STAT_COLORS['failure']]
-            for patch, color in zip(box_plot['boxes'], colors[:len(box_data)]):
+            colors = [
+                STAT_COLORS["success"],
+                STAT_COLORS["warning"],
+                STAT_COLORS["failure"],
+            ]
+            for patch, color in zip(box_plot["boxes"], colors[: len(box_data)]):
                 patch.set_facecolor(color)
                 patch.set_alpha(0.7)
 
-        ax4.set_xlabel('Success Rate Category', fontsize=self.font_sizes['label'])
-        ax4.set_ylabel('Execution Time (s)', fontsize=self.font_sizes['label'])
-        ax4.set_title('Execution Time by Success Category', fontsize=self.font_sizes['title'], fontweight='bold')
-        ax4.grid(True, alpha=0.3, axis='y')
+        ax4.set_xlabel("Success Rate Category", fontsize=self.font_sizes["label"])
+        ax4.set_ylabel("Execution Time (s)", fontsize=self.font_sizes["label"])
+        ax4.set_title(
+            "Execution Time by Success Category",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax4.grid(True, alpha=0.3, axis="y")
 
         plt.tight_layout()
 
@@ -175,7 +223,7 @@ class StatisticsVisualizer:
         if save_path is None:
             save_path = self.output_dir / "workflow_success_analysis.png"
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"工作流成功率分析图已保存: {save_path}")
@@ -185,7 +233,7 @@ class StatisticsVisualizer:
         self,
         task_results: Dict[str, Dict[str, Any]],
         task_types: List[str] = None,
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制任务性能矩阵图
@@ -201,66 +249,109 @@ class StatisticsVisualizer:
         # 准备数据
         df_data = []
         for task_id, result in task_results.items():
-            df_data.append({
-                'task_id': task_id,
-                'task_type': result.get('type', 'unknown'),
-                'success': result.get('success', False),
-                'execution_time': result.get('time', 0),
-                'error_type': result.get('error_type', 'none' if result.get('success', False) else 'unknown')
-            })
+            df_data.append(
+                {
+                    "task_id": task_id,
+                    "task_type": result.get("type", "unknown"),
+                    "success": result.get("success", False),
+                    "execution_time": result.get("time", 0),
+                    "error_type": result.get(
+                        "error_type",
+                        "none" if result.get("success", False) else "unknown",
+                    ),
+                }
+            )
 
         df = pd.DataFrame(df_data)
 
         if task_types is None:
-            task_types = df['task_type'].unique().tolist()
+            task_types = df["task_type"].unique().tolist()
 
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
         # 1. 任务类型成功率热力图
         ax1 = axes[0, 0]
-        success_matrix = df.groupby('task_type')['success'].agg(['mean', 'count']).reset_index()
-        success_matrix.columns = ['task_type', 'success_rate', 'count']
+        success_matrix = (
+            df.groupby("task_type")["success"].agg(["mean", "count"]).reset_index()
+        )
+        success_matrix.columns = ["task_type", "success_rate", "count"]
 
         # 创建矩阵数据用于热力图
-        matrix_data = success_matrix.pivot_table(index='task_type', values=['success_rate'], fill_value=0)
+        matrix_data = success_matrix.pivot_table(
+            index="task_type", values=["success_rate"], fill_value=0
+        )
 
-        sns.heatmap(matrix_data, annot=True, cmap='RdYlGn', center=0.5,
-                   square=True, linewidths=.5, cbar_kws={"shrink": .8}, ax=ax1,
-                   fmt='.2f', annot_kws={'fontsize': self.font_sizes['annotation']})
-        ax1.set_title('Task Type Success Rate Matrix', fontsize=self.font_sizes['title'], fontweight='bold')
+        sns.heatmap(
+            matrix_data,
+            annot=True,
+            cmap="RdYlGn",
+            center=0.5,
+            square=True,
+            linewidths=0.5,
+            cbar_kws={"shrink": 0.8},
+            ax=ax1,
+            fmt=".2f",
+            annot_kws={"fontsize": self.font_sizes["annotation"]},
+        )
+        ax1.set_title(
+            "Task Type Success Rate Matrix",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
 
         # 2. 执行时间分布
         ax2 = axes[0, 1]
-        success_times = df[df['success'] == True]['execution_time']
-        failure_times = df[df['success'] == False]['execution_time']
+        success_times = df[df["success"] == True]["execution_time"]
+        failure_times = df[df["success"] == False]["execution_time"]
 
-        ax2.hist([success_times, failure_times], bins=20, alpha=0.7,
-                label=['Successful', 'Failed'], color=[STAT_COLORS['success'], STAT_COLORS['failure']],
-                edgecolor='black', linewidth=0.5)
+        ax2.hist(
+            [success_times, failure_times],
+            bins=20,
+            alpha=0.7,
+            label=["Successful", "Failed"],
+            color=[STAT_COLORS["success"], STAT_COLORS["failure"]],
+            edgecolor="black",
+            linewidth=0.5,
+        )
 
-        ax2.set_xlabel('Execution Time (s)', fontsize=self.font_sizes['label'])
-        ax2.set_ylabel('Frequency', fontsize=self.font_sizes['label'])
-        ax2.set_title('Execution Time Distribution', fontsize=self.font_sizes['title'], fontweight='bold')
-        ax2.legend(fontsize=self.font_sizes['legend'])
+        ax2.set_xlabel("Execution Time (s)", fontsize=self.font_sizes["label"])
+        ax2.set_ylabel("Frequency", fontsize=self.font_sizes["label"])
+        ax2.set_title(
+            "Execution Time Distribution",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax2.legend(fontsize=self.font_sizes["legend"])
         ax2.grid(True, alpha=0.3)
 
         # 3. 错误类型分布饼图
         ax3 = axes[1, 0]
-        error_counts = df['error_type'].value_counts()
+        error_counts = df["error_type"].value_counts()
 
-        colors = [STAT_COLORS['success'] if error == 'none' else STAT_COLORS['failure']
-                 for error in error_counts.index]
+        colors = [
+            STAT_COLORS["success"] if error == "none" else STAT_COLORS["failure"]
+            for error in error_counts.index
+        ]
 
-        wedges, texts, autotexts = ax3.pie(error_counts.values, labels=error_counts.index,
-                                          autopct='%1.1f%%', startangle=90, colors=colors)
+        wedges, texts, autotexts = ax3.pie(
+            error_counts.values,
+            labels=error_counts.index,
+            autopct="%1.1f%%",
+            startangle=90,
+            colors=colors,
+        )
 
-        ax3.set_title('Error Type Distribution', fontsize=self.font_sizes['title'], fontweight='bold')
+        ax3.set_title(
+            "Error Type Distribution",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
 
         # 美化饼图
         for autotext in autotexts:
-            autotext.set_color('white')
-            autotext.set_fontweight('bold')
-            autotext.set_fontsize(self.font_sizes['annotation'])
+            autotext.set_color("white")
+            autotext.set_fontweight("bold")
+            autotext.set_fontsize(self.font_sizes["annotation"])
 
         # 4. 任务类型性能对比雷达图
         ax4 = axes[1, 1]
@@ -268,42 +359,55 @@ class StatisticsVisualizer:
         # 计算每种任务类型的性能指标
         performance_metrics = {}
         for task_type in task_types:
-            type_data = df[df['task_type'] == task_type]
+            type_data = df[df["task_type"] == task_type]
             if len(type_data) > 0:
                 performance_metrics[task_type] = {
-                    'success_rate': type_data['success'].mean(),
-                    'avg_time': type_data['execution_time'].mean(),
-                    'reliability': 1 - type_data['execution_time'].std() / (type_data['execution_time'].mean() + 1e-6)
+                    "success_rate": type_data["success"].mean(),
+                    "avg_time": type_data["execution_time"].mean(),
+                    "reliability": 1
+                    - type_data["execution_time"].std()
+                    / (type_data["execution_time"].mean() + 1e-6),
                 }
 
         if performance_metrics:
             # 准备雷达图数据
-            metrics_names = ['Success Rate', 'Speed (1/Time)', 'Reliability']
+            metrics_names = ["Success Rate", "Speed (1/Time)", "Reliability"]
 
             # 转换数据到0-1范围
-            max_time = max([m['avg_time'] for m in performance_metrics.values()]) + 1e-6
+            max_time = max([m["avg_time"] for m in performance_metrics.values()]) + 1e-6
 
             for i, (task_type, metrics) in enumerate(performance_metrics.items()):
                 values = [
-                    metrics['success_rate'],
-                    1 - (metrics['avg_time'] / max_time),  # 时间越短越好，所以用1减去归一化时间
-                    max(0, metrics['reliability'])  # 确保reliability不为负
+                    metrics["success_rate"],
+                    1
+                    - (
+                        metrics["avg_time"] / max_time
+                    ),  # 时间越短越好，所以用1减去归一化时间
+                    max(0, metrics["reliability"]),  # 确保reliability不为负
                 ]
 
                 # 角度计算
-                angles = np.linspace(0, 2 * np.pi, len(metrics_names), endpoint=False).tolist()
+                angles = np.linspace(
+                    0, 2 * np.pi, len(metrics_names), endpoint=False
+                ).tolist()
                 values += values[:1]  # 闭合多边形
                 angles += angles[:1]
 
                 color = plt.cm.Set1(i / len(performance_metrics))
-                ax4.plot(angles, values, 'o-', linewidth=2, label=task_type, color=color)
+                ax4.plot(
+                    angles, values, "o-", linewidth=2, label=task_type, color=color
+                )
                 ax4.fill(angles, values, alpha=0.25, color=color)
 
             ax4.set_xticks(angles[:-1])
             ax4.set_xticklabels(metrics_names)
             ax4.set_ylim(0, 1)
-            ax4.set_title('Task Type Performance Radar', fontsize=self.font_sizes['title'], fontweight='bold')
-            ax4.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+            ax4.set_title(
+                "Task Type Performance Radar",
+                fontsize=self.font_sizes["title"],
+                fontweight="bold",
+            )
+            ax4.legend(loc="upper right", bbox_to_anchor=(1.3, 1.0))
             ax4.grid(True)
 
         plt.tight_layout()
@@ -312,7 +416,7 @@ class StatisticsVisualizer:
         if save_path is None:
             save_path = self.output_dir / "task_performance_matrix.png"
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"任务性能矩阵图已保存: {save_path}")
@@ -322,7 +426,7 @@ class StatisticsVisualizer:
         self,
         execution_history: List[Dict[str, Any]],
         time_window_hours: int = 24,
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制系统可靠性分析图
@@ -339,85 +443,149 @@ class StatisticsVisualizer:
 
         # 转换为DataFrame
         df = pd.DataFrame(execution_history)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df = df.sort_values('timestamp')
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
 
         # 1. 时间序列成功率
         ax1 = axes[0, 0]
 
         # 计算滑动窗口成功率
-        df['success_numeric'] = df['success'].astype(int)
+        df["success_numeric"] = df["success"].astype(int)
         window_size = max(10, len(df) // 20)  # 自适应窗口大小
-        df['rolling_success_rate'] = df['success_numeric'].rolling(window=window_size, min_periods=1).mean()
+        df["rolling_success_rate"] = (
+            df["success_numeric"].rolling(window=window_size, min_periods=1).mean()
+        )
 
-        ax1.plot(df['timestamp'], df['rolling_success_rate'], color=STAT_COLORS['primary'],
-                linewidth=2, label=f'Success Rate (Window={window_size})')
+        ax1.plot(
+            df["timestamp"],
+            df["rolling_success_rate"],
+            color=STAT_COLORS["primary"],
+            linewidth=2,
+            label=f"Success Rate (Window={window_size})",
+        )
 
         # 添加成功/失败事件点
-        success_points = df[df['success'] == True]
-        failure_points = df[df['success'] == False]
+        success_points = df[df["success"] == True]
+        failure_points = df[df["success"] == False]
 
-        ax1.scatter(success_points['timestamp'], [1.05] * len(success_points),
-                   color=STAT_COLORS['success'], alpha=0.6, s=20, marker='^', label='Success')
-        ax1.scatter(failure_points['timestamp'], [-0.05] * len(failure_points),
-                   color=STAT_COLORS['failure'], alpha=0.6, s=20, marker='v', label='Failure')
+        ax1.scatter(
+            success_points["timestamp"],
+            [1.05] * len(success_points),
+            color=STAT_COLORS["success"],
+            alpha=0.6,
+            s=20,
+            marker="^",
+            label="Success",
+        )
+        ax1.scatter(
+            failure_points["timestamp"],
+            [-0.05] * len(failure_points),
+            color=STAT_COLORS["failure"],
+            alpha=0.6,
+            s=20,
+            marker="v",
+            label="Failure",
+        )
 
-        ax1.set_ylabel('Success Rate', fontsize=self.font_sizes['label'])
-        ax1.set_title('System Reliability Over Time', fontsize=self.font_sizes['title'], fontweight='bold')
-        ax1.legend(fontsize=self.font_sizes['legend'])
+        ax1.set_ylabel("Success Rate", fontsize=self.font_sizes["label"])
+        ax1.set_title(
+            "System Reliability Over Time",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax1.legend(fontsize=self.font_sizes["legend"])
         ax1.grid(True, alpha=0.3)
         ax1.set_ylim(-0.1, 1.15)
 
         # 2. 故障间隔时间分析
         ax2 = axes[0, 1]
 
-        failure_times = df[df['success'] == False]['timestamp']
+        failure_times = df[df["success"] == False]["timestamp"]
         if len(failure_times) > 1:
             time_between_failures = []
             for i in range(1, len(failure_times)):
-                time_diff = (failure_times.iloc[i] - failure_times.iloc[i-1]).total_seconds() / 3600  # 转换为小时
+                time_diff = (
+                    failure_times.iloc[i] - failure_times.iloc[i - 1]
+                ).total_seconds() / 3600  # 转换为小时
                 time_between_failures.append(time_diff)
 
             if time_between_failures:
-                ax2.hist(time_between_failures, bins=20, color=STAT_COLORS['warning'],
-                        alpha=0.7, edgecolor='black', linewidth=0.5)
-                ax2.axvline(np.mean(time_between_failures), color='red', linestyle='--',
-                           label=f'Mean: {np.mean(time_between_failures):.1f}h')
+                ax2.hist(
+                    time_between_failures,
+                    bins=20,
+                    color=STAT_COLORS["warning"],
+                    alpha=0.7,
+                    edgecolor="black",
+                    linewidth=0.5,
+                )
+                ax2.axvline(
+                    np.mean(time_between_failures),
+                    color="red",
+                    linestyle="--",
+                    label=f"Mean: {np.mean(time_between_failures):.1f}h",
+                )
                 ax2.legend()
 
-        ax2.set_xlabel('Time Between Failures (hours)', fontsize=self.font_sizes['label'])
-        ax2.set_ylabel('Frequency', fontsize=self.font_sizes['label'])
-        ax2.set_title('Mean Time Between Failures', fontsize=self.font_sizes['title'], fontweight='bold')
+        ax2.set_xlabel(
+            "Time Between Failures (hours)", fontsize=self.font_sizes["label"]
+        )
+        ax2.set_ylabel("Frequency", fontsize=self.font_sizes["label"])
+        ax2.set_title(
+            "Mean Time Between Failures",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
         ax2.grid(True, alpha=0.3)
 
         # 3. 每小时执行量和成功率
         ax3 = axes[1, 0]
 
-        df['hour'] = df['timestamp'].dt.hour
-        hourly_stats = df.groupby('hour').agg({
-            'success_numeric': ['sum', 'count', 'mean']
-        }).round(3)
+        df["hour"] = df["timestamp"].dt.hour
+        hourly_stats = (
+            df.groupby("hour")
+            .agg({"success_numeric": ["sum", "count", "mean"]})
+            .round(3)
+        )
 
-        hourly_stats.columns = ['successful_executions', 'total_executions', 'success_rate']
+        hourly_stats.columns = [
+            "successful_executions",
+            "total_executions",
+            "success_rate",
+        ]
         hours = hourly_stats.index
 
         # 双轴图
         ax3_twin = ax3.twinx()
 
-        bars = ax3.bar(hours, hourly_stats['total_executions'], alpha=0.6,
-                      color=STAT_COLORS['info'], label='Total Executions')
-        line = ax3_twin.plot(hours, hourly_stats['success_rate'], color=STAT_COLORS['success'],
-                           marker='o', linewidth=2, label='Success Rate')
+        bars = ax3.bar(
+            hours,
+            hourly_stats["total_executions"],
+            alpha=0.6,
+            color=STAT_COLORS["info"],
+            label="Total Executions",
+        )
+        line = ax3_twin.plot(
+            hours,
+            hourly_stats["success_rate"],
+            color=STAT_COLORS["success"],
+            marker="o",
+            linewidth=2,
+            label="Success Rate",
+        )
 
-        ax3.set_xlabel('Hour of Day', fontsize=self.font_sizes['label'])
-        ax3.set_ylabel('Number of Executions', fontsize=self.font_sizes['label'])
-        ax3_twin.set_ylabel('Success Rate', fontsize=self.font_sizes['label'])
-        ax3.set_title('Hourly System Activity', fontsize=self.font_sizes['title'], fontweight='bold')
+        ax3.set_xlabel("Hour of Day", fontsize=self.font_sizes["label"])
+        ax3.set_ylabel("Number of Executions", fontsize=self.font_sizes["label"])
+        ax3_twin.set_ylabel("Success Rate", fontsize=self.font_sizes["label"])
+        ax3.set_title(
+            "Hourly System Activity",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
 
         # 合并图例
         lines1, labels1 = ax3.get_legend_handles_labels()
         lines2, labels2 = ax3_twin.get_legend_handles_labels()
-        ax3.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        ax3.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
 
         ax3.grid(True, alpha=0.3)
 
@@ -425,28 +593,53 @@ class StatisticsVisualizer:
         ax4 = axes[1, 1]
 
         # 计算系统负载（每小时执行数）
-        df['load_level'] = pd.cut(df.groupby(df['timestamp'].dt.floor('H'))['timestamp'].transform('count'),
-                                 bins=3, labels=['Low', 'Medium', 'High'])
+        df["load_level"] = pd.cut(
+            df.groupby(df["timestamp"].dt.floor("H"))["timestamp"].transform("count"),
+            bins=3,
+            labels=["Low", "Medium", "High"],
+        )
 
-        load_success = df.groupby('load_level')['success_numeric'].agg(['mean', 'count']).reset_index()
-        load_success.columns = ['load_level', 'success_rate', 'count']
+        load_success = (
+            df.groupby("load_level")["success_numeric"]
+            .agg(["mean", "count"])
+            .reset_index()
+        )
+        load_success.columns = ["load_level", "success_rate", "count"]
 
-        bars = ax4.bar(load_success['load_level'], load_success['success_rate'],
-                      color=[STAT_COLORS['success'], STAT_COLORS['warning'], STAT_COLORS['failure']],
-                      alpha=0.7, edgecolor='black', linewidth=0.5)
+        bars = ax4.bar(
+            load_success["load_level"],
+            load_success["success_rate"],
+            color=[
+                STAT_COLORS["success"],
+                STAT_COLORS["warning"],
+                STAT_COLORS["failure"],
+            ],
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=0.5,
+        )
 
         # 添加数值标签
         for i, bar in enumerate(bars):
             height = bar.get_height()
-            count = load_success.iloc[i]['count']
-            ax4.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                    f'{height:.2%}\n(n={count})', ha='center', va='bottom',
-                    fontsize=self.font_sizes['annotation'])
+            count = load_success.iloc[i]["count"]
+            ax4.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                height + 0.01,
+                f"{height:.2%}\n(n={count})",
+                ha="center",
+                va="bottom",
+                fontsize=self.font_sizes["annotation"],
+            )
 
-        ax4.set_xlabel('System Load Level', fontsize=self.font_sizes['label'])
-        ax4.set_ylabel('Success Rate', fontsize=self.font_sizes['label'])
-        ax4.set_title('Success Rate vs System Load', fontsize=self.font_sizes['title'], fontweight='bold')
-        ax4.grid(True, alpha=0.3, axis='y')
+        ax4.set_xlabel("System Load Level", fontsize=self.font_sizes["label"])
+        ax4.set_ylabel("Success Rate", fontsize=self.font_sizes["label"])
+        ax4.set_title(
+            "Success Rate vs System Load",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax4.grid(True, alpha=0.3, axis="y")
 
         plt.tight_layout()
 
@@ -454,7 +647,7 @@ class StatisticsVisualizer:
         if save_path is None:
             save_path = self.output_dir / "system_reliability_analysis.png"
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"系统可靠性分析图已保存: {save_path}")
@@ -464,7 +657,7 @@ class StatisticsVisualizer:
         self,
         comparison_data: Dict[str, Dict[str, Any]],
         comparison_type: str = "models",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制对比分析图
@@ -483,7 +676,7 @@ class StatisticsVisualizer:
         n_items = len(names)
 
         # 准备数据
-        metrics = ['accuracy', 'efficiency', 'reliability', 'robustness']
+        metrics = ["accuracy", "efficiency", "reliability", "robustness"]
         data_matrix = []
 
         for name in names:
@@ -506,25 +699,41 @@ class StatisticsVisualizer:
             values = data_matrix[i].tolist()
             values += values[:1]
 
-            ax1.plot(angles, values, 'o-', linewidth=2, label=name, color=colors[i])
+            ax1.plot(angles, values, "o-", linewidth=2, label=name, color=colors[i])
             ax1.fill(angles, values, alpha=0.25, color=colors[i])
 
         ax1.set_xticks(angles[:-1])
         ax1.set_xticklabels([m.capitalize() for m in metrics])
         ax1.set_ylim(0, 1)
-        ax1.set_title(f'{comparison_type.capitalize()} Performance Radar',
-                     fontsize=self.font_sizes['title'], fontweight='bold')
-        ax1.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+        ax1.set_title(
+            f"{comparison_type.capitalize()} Performance Radar",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax1.legend(loc="upper right", bbox_to_anchor=(1.3, 1.0))
         ax1.grid(True)
 
         # 2. 性能指标热力图
         ax2 = axes[0, 1]
-        sns.heatmap(data_matrix, xticklabels=[m.capitalize() for m in metrics],
-                   yticklabels=names, annot=True, cmap='RdYlGn', center=0.5,
-                   square=True, linewidths=.5, cbar_kws={"shrink": .8}, ax=ax2,
-                   fmt='.3f', annot_kws={'fontsize': self.font_sizes['annotation']})
-        ax2.set_title(f'{comparison_type.capitalize()} Performance Heatmap',
-                     fontsize=self.font_sizes['title'], fontweight='bold')
+        sns.heatmap(
+            data_matrix,
+            xticklabels=[m.capitalize() for m in metrics],
+            yticklabels=names,
+            annot=True,
+            cmap="RdYlGn",
+            center=0.5,
+            square=True,
+            linewidths=0.5,
+            cbar_kws={"shrink": 0.8},
+            ax=ax2,
+            fmt=".3f",
+            annot_kws={"fontsize": self.font_sizes["annotation"]},
+        )
+        ax2.set_title(
+            f"{comparison_type.capitalize()} Performance Heatmap",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
 
         # 3. 综合得分排名
         ax3 = axes[1, 0]
@@ -533,20 +742,34 @@ class StatisticsVisualizer:
         sorted_names = [names[i] for i in sorted_indices]
         sorted_scores = [overall_scores[i] for i in sorted_indices]
 
-        bars = ax3.barh(sorted_names, sorted_scores, color=colors[sorted_indices],
-                       alpha=0.7, edgecolor='black', linewidth=0.5)
+        bars = ax3.barh(
+            sorted_names,
+            sorted_scores,
+            color=colors[sorted_indices],
+            alpha=0.7,
+            edgecolor="black",
+            linewidth=0.5,
+        )
 
         # 添加数值标签
         for i, bar in enumerate(bars):
             width = bar.get_width()
-            ax3.text(width + 0.01, bar.get_y() + bar.get_height()/2.,
-                    f'{width:.3f}', ha='left', va='center',
-                    fontsize=self.font_sizes['annotation'])
+            ax3.text(
+                width + 0.01,
+                bar.get_y() + bar.get_height() / 2.0,
+                f"{width:.3f}",
+                ha="left",
+                va="center",
+                fontsize=self.font_sizes["annotation"],
+            )
 
-        ax3.set_xlabel('Overall Score', fontsize=self.font_sizes['label'])
-        ax3.set_title(f'{comparison_type.capitalize()} Overall Ranking',
-                     fontsize=self.font_sizes['title'], fontweight='bold')
-        ax3.grid(True, alpha=0.3, axis='x')
+        ax3.set_xlabel("Overall Score", fontsize=self.font_sizes["label"])
+        ax3.set_title(
+            f"{comparison_type.capitalize()} Overall Ranking",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax3.grid(True, alpha=0.3, axis="x")
 
         # 4. 详细指标对比柱状图
         ax4 = axes[1, 1]
@@ -554,18 +777,26 @@ class StatisticsVisualizer:
         width = 0.8 / len(metrics)
 
         for i, metric in enumerate(metrics):
-            offset = (i - len(metrics)/2 + 0.5) * width
-            bars = ax4.bar(x + offset, data_matrix[:, i], width,
-                          label=metric.capitalize(), alpha=0.7)
+            offset = (i - len(metrics) / 2 + 0.5) * width
+            bars = ax4.bar(
+                x + offset,
+                data_matrix[:, i],
+                width,
+                label=metric.capitalize(),
+                alpha=0.7,
+            )
 
-        ax4.set_xlabel(comparison_type.capitalize(), fontsize=self.font_sizes['label'])
-        ax4.set_ylabel('Score', fontsize=self.font_sizes['label'])
-        ax4.set_title(f'Detailed {comparison_type.capitalize()} Comparison',
-                     fontsize=self.font_sizes['title'], fontweight='bold')
+        ax4.set_xlabel(comparison_type.capitalize(), fontsize=self.font_sizes["label"])
+        ax4.set_ylabel("Score", fontsize=self.font_sizes["label"])
+        ax4.set_title(
+            f"Detailed {comparison_type.capitalize()} Comparison",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
         ax4.set_xticks(x)
-        ax4.set_xticklabels(names, rotation=45, ha='right')
-        ax4.legend(fontsize=self.font_sizes['legend'])
-        ax4.grid(True, alpha=0.3, axis='y')
+        ax4.set_xticklabels(names, rotation=45, ha="right")
+        ax4.legend(fontsize=self.font_sizes["legend"])
+        ax4.grid(True, alpha=0.3, axis="y")
 
         plt.tight_layout()
 
@@ -573,7 +804,7 @@ class StatisticsVisualizer:
         if save_path is None:
             save_path = self.output_dir / f"{comparison_type}_comparative_analysis.png"
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"{comparison_type}对比分析图已保存: {save_path}")
@@ -583,7 +814,7 @@ class StatisticsVisualizer:
         self,
         report_data: Dict[str, Any],
         report_title: str = "HydroAgent Performance Analysis",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         生成综合性能分析报告
@@ -599,48 +830,44 @@ class StatisticsVisualizer:
         charts = {}
 
         # 生成各类图表
-        if 'workflow_results' in report_data:
-            charts['workflow_success'] = self.plot_workflow_success_rates(
-                report_data['workflow_results']
+        if "workflow_results" in report_data:
+            charts["workflow_success"] = self.plot_workflow_success_rates(
+                report_data["workflow_results"]
             )
 
-        if 'task_results' in report_data:
-            charts['task_performance'] = self.plot_task_performance_matrix(
-                report_data['task_results'],
-                report_data.get('task_types')
+        if "task_results" in report_data:
+            charts["task_performance"] = self.plot_task_performance_matrix(
+                report_data["task_results"], report_data.get("task_types")
             )
 
-        if 'execution_history' in report_data:
-            charts['system_reliability'] = self.plot_system_reliability_analysis(
-                report_data['execution_history']
+        if "execution_history" in report_data:
+            charts["system_reliability"] = self.plot_system_reliability_analysis(
+                report_data["execution_history"]
             )
 
-        if 'comparison_data' in report_data:
-            charts['comparative_analysis'] = self.plot_comparative_analysis(
-                report_data['comparison_data'],
-                report_data.get('comparison_type', 'models')
+        if "comparison_data" in report_data:
+            charts["comparative_analysis"] = self.plot_comparative_analysis(
+                report_data["comparison_data"],
+                report_data.get("comparison_type", "models"),
             )
 
         # 生成HTML报告
         if save_path is None:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_path = self.output_dir / f"comprehensive_report_{timestamp}.html"
 
         html_content = self._generate_comprehensive_report_html(
             report_data, charts, report_title
         )
 
-        with open(save_path, 'w', encoding='utf-8') as f:
+        with open(save_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
         self.logger.info(f"综合分析报告已生成: {save_path}")
         return str(save_path)
 
     def _generate_comprehensive_report_html(
-        self,
-        data: Dict[str, Any],
-        charts: Dict[str, str],
-        title: str
+        self, data: Dict[str, Any], charts: Dict[str, str], title: str
     ) -> str:
         """生成综合报告HTML"""
         html = f"""
@@ -723,7 +950,7 @@ class StatisticsVisualizer:
         """
 
         # 添加关键指标
-        if 'total_workflows' in data:
+        if "total_workflows" in data:
             html += f"""
                 <div class="summary-card">
                     <div class="metric-value">{data['total_workflows']}</div>
@@ -731,7 +958,7 @@ class StatisticsVisualizer:
                 </div>
             """
 
-        if 'overall_success_rate' in data:
+        if "overall_success_rate" in data:
             html += f"""
                 <div class="summary-card">
                     <div class="metric-value">{data['overall_success_rate']:.1%}</div>
@@ -739,7 +966,7 @@ class StatisticsVisualizer:
                 </div>
             """
 
-        if 'avg_execution_time' in data:
+        if "avg_execution_time" in data:
             html += f"""
                 <div class="summary-card">
                     <div class="metric-value">{data['avg_execution_time']:.1f}s</div>
@@ -747,7 +974,7 @@ class StatisticsVisualizer:
                 </div>
             """
 
-        if 'system_uptime' in data:
+        if "system_uptime" in data:
             html += f"""
                 <div class="summary-card">
                     <div class="metric-value">{data['system_uptime']:.1%}</div>
@@ -773,10 +1000,10 @@ class StatisticsVisualizer:
         """
 
         chart_titles = {
-            'workflow_success': 'Workflow Success Analysis',
-            'task_performance': 'Task Performance Matrix',
-            'system_reliability': 'System Reliability Analysis',
-            'comparative_analysis': 'Comparative Analysis'
+            "workflow_success": "Workflow Success Analysis",
+            "task_performance": "Task Performance Matrix",
+            "system_reliability": "System Reliability Analysis",
+            "comparative_analysis": "Comparative Analysis",
         }
 
         for chart_key, chart_path in charts.items():

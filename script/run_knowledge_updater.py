@@ -72,13 +72,13 @@ def setup_colorful_logging():
 def print_banner():
     """打印启动横幅"""
     banner = """
-╔══════════════════════════════════════════════════════════════╗
-║                    HydroRAG 知识库更新器                     ║
-║                   Knowledge Base Updater                     ║
-╚══════════════════════════════════════════════════════════════╝
+===============================================================================
+                        HydroRAG 知识库更新器
+                       Knowledge Base Updater
+===============================================================================
     """
     print(banner)
-    print(f"📁 日志文件: {log_file}")
+    print(f"日志文件: {log_file}")
     print()
 
 
@@ -99,14 +99,14 @@ class KnowledgeUpdaterCLI:
             # 使用默认配置
             self.config = Config()
 
-            logger.info("✅ 配置加载成功")
+            logger.info("[成功] 配置加载成功")
             logger.info(f"   原始文档目录: {self.config.raw_documents_dir}")
             logger.info(f"   处理文档目录: {self.config.processed_documents_dir}")
             logger.info(f"   向量数据库目录: {self.config.vector_db_dir}")
             return True
 
         except Exception as e:
-            logger.error(f"❌ 配置加载失败: {e}")
+            logger.error(f"[失败] 配置加载失败: {e}")
             return False
 
     def _initialize_updater(self, with_rag: bool = False) -> bool:
@@ -116,20 +116,20 @@ class KnowledgeUpdaterCLI:
 
             if with_rag:
                 from hydrorag import RAGSystem
-                logger.info("🔄 初始化RAG系统...")
+                logger.info("[启动] 初始化RAG系统...")
                 self.rag_system = RAGSystem(self.config)
 
             self.updater = KnowledgeUpdater(self.config, self.rag_system)
-            logger.info("✅ 知识库更新器初始化成功")
+            logger.info("[成功] 知识库更新器初始化成功")
             return True
 
         except Exception as e:
-            logger.error(f"❌ 知识库更新器初始化失败: {e}")
+            logger.error(f"[失败] 知识库更新器初始化失败: {e}")
             return False
 
     def check_status(self) -> Dict[str, Any]:
         """检查知识库状态"""
-        logger.info("🔍 检查知识库状态...")
+        logger.info("[检查] 检查知识库状态...")
 
         if not self._load_config():
             return {"status": "error", "message": "配置加载失败"}
@@ -141,7 +141,7 @@ class KnowledgeUpdaterCLI:
             # 获取状态信息
             status = self.updater.get_status()
 
-            print("\n📊 知识库状态报告")
+            print("\n[状态报告] 知识库状态报告")
             print("=" * 50)
             print(f"原始文档数量: {status.get('raw_documents_count', 'N/A')}")
             print(f"已处理文档数量: {status.get('processed_documents_count', 'N/A')}")
@@ -158,19 +158,19 @@ class KnowledgeUpdaterCLI:
                 print(f"删除文档: {len(changes.get('deleted', []))}")
 
                 if changes.get('new') or changes.get('modified') or changes.get('deleted'):
-                    print("⚠️  检测到文档变更，建议运行更新")
+                    print("[警告] 检测到文档变更，建议运行更新")
                 else:
-                    print("✅ 知识库是最新的")
+                    print("[完成] 知识库是最新的")
 
             return {"status": "success", "data": status}
 
         except Exception as e:
-            logger.error(f"❌ 状态检查失败: {e}")
+            logger.error(f"[失败] 状态检查失败: {e}")
             return {"status": "error", "message": str(e)}
 
     def check_updates(self) -> Dict[str, Any]:
         """检查可用更新"""
-        logger.info("🔍 检查知识库更新...")
+        logger.info("[检查] 检查知识库更新...")
 
         if not self._load_config():
             return {"status": "error", "message": "配置加载失败"}
@@ -184,41 +184,41 @@ class KnowledgeUpdaterCLI:
             if result["status"] == "completed":
                 changes = result.get("changes", {})
 
-                print("\n📋 更新检查结果")
+                print("\n[列表] 更新检查结果")
                 print("=" * 50)
 
                 if changes.get("new"):
-                    print(f"🆕 新文档 ({len(changes['new'])}):")
+                    print(f"[新增] 新文档 ({len(changes['new'])}):")
                     for file in changes["new"]:
                         print(f"   + {file}")
 
                 if changes.get("modified"):
-                    print(f"📝 修改文档 ({len(changes['modified'])}):")
+                    print(f"[修改] 修改文档 ({len(changes['modified'])}):")
                     for file in changes["modified"]:
                         print(f"   ~ {file}")
 
                 if changes.get("deleted"):
-                    print(f"🗑️  删除文档 ({len(changes['deleted'])}):")
+                    print(f"[删除] 删除文档 ({len(changes['deleted'])}):")
                     for file in changes["deleted"]:
                         print(f"   - {file}")
 
                 total_changes = len(changes.get("new", [])) + len(changes.get("modified", [])) + len(changes.get("deleted", []))
 
                 if total_changes == 0:
-                    print("✅ 没有检测到变更，知识库是最新的")
+                    print("[成功] 没有检测到变更，知识库是最新的")
                 else:
-                    print(f"\n📊 总计: {total_changes} 个文档需要更新")
+                    print(f"\n[统计] 总计: {total_changes} 个文档需要更新")
 
             return result
 
         except Exception as e:
-            logger.error(f"❌ 更新检查失败: {e}")
+            logger.error(f"[失败] 更新检查失败: {e}")
             return {"status": "error", "message": str(e)}
 
     def update_knowledge_base(self, force_full: bool = False) -> Dict[str, Any]:
         """更新知识库"""
         update_type = "完全重建" if force_full else "增量更新"
-        logger.info(f"🚀 开始知识库{update_type}...")
+        logger.info(f"[启动] 开始知识库{update_type}...")
 
         if not self._load_config():
             return {"status": "error", "message": "配置加载失败"}
@@ -234,34 +234,34 @@ class KnowledgeUpdaterCLI:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
 
-            print(f"\n📈 {update_type}结果")
+            print(f"\n[结果] {update_type}结果")
             print("=" * 50)
 
             if result["status"] == "success":
-                print("✅ 更新成功完成")
-                print(f"⏱️  耗时: {duration:.2f} 秒")
+                print("[成功] 更新成功完成")
+                print(f"[时间]  耗时: {duration:.2f} 秒")
 
                 if "summary" in result:
                     summary = result["summary"]
-                    print(f"📊 处理统计:")
+                    print(f"[统计] 处理统计:")
                     print(f"   新增文档: {summary.get('new_documents', 0)}")
                     print(f"   更新文档: {summary.get('updated_documents', 0)}")
                     print(f"   删除文档: {summary.get('deleted_documents', 0)}")
                     print(f"   向量总数: {summary.get('total_vectors', 'N/A')}")
 
             else:
-                print("❌ 更新失败")
+                print("[失败] 更新失败")
                 print(f"错误信息: {result.get('error', '未知错误')}")
 
             return result
 
         except Exception as e:
-            logger.error(f"❌ 知识库更新失败: {e}")
+            logger.error(f"[失败] 知识库更新失败: {e}")
             return {"status": "error", "message": str(e)}
 
     def create_backup(self, backup_name: Optional[str] = None) -> Dict[str, Any]:
         """创建备份"""
-        logger.info("💾 创建知识库备份...")
+        logger.info("[备份] 创建知识库备份...")
 
         if not self._load_config():
             return {"status": "error", "message": "配置加载失败"}
@@ -272,27 +272,27 @@ class KnowledgeUpdaterCLI:
         try:
             result = self.updater.create_backup(backup_name=backup_name)
 
-            print("\n💾 备份结果")
+            print("\n[备份] 备份结果")
             print("=" * 50)
 
             if result["status"] == "success":
-                print("✅ 备份创建成功")
-                print(f"📁 备份路径: {result.get('backup_path', 'N/A')}")
-                print(f"📊 备份大小: {result.get('backup_size', 'N/A')}")
-                print(f"⏱️  创建时间: {result.get('creation_time', 'N/A')}")
+                print("[成功] 备份创建成功")
+                print(f"[文件] 备份路径: {result.get('backup_path', 'N/A')}")
+                print(f"[统计] 备份大小: {result.get('backup_size', 'N/A')}")
+                print(f"[时间]  创建时间: {result.get('creation_time', 'N/A')}")
             else:
-                print("❌ 备份创建失败")
+                print("[失败] 备份创建失败")
                 print(f"错误信息: {result.get('error', '未知错误')}")
 
             return result
 
         except Exception as e:
-            logger.error(f"❌ 备份创建失败: {e}")
+            logger.error(f"[失败] 备份创建失败: {e}")
             return {"status": "error", "message": str(e)}
 
     def list_backups(self) -> Dict[str, Any]:
         """列出所有备份"""
-        logger.info("📋 列出知识库备份...")
+        logger.info("[列表] 列出知识库备份...")
 
         if not self._load_config():
             return {"status": "error", "message": "配置加载失败"}
@@ -303,11 +303,11 @@ class KnowledgeUpdaterCLI:
         try:
             backups = self.updater.list_backups()
 
-            print("\n📋 备份列表")
+            print("\n[列表] 备份列表")
             print("=" * 70)
 
             if not backups:
-                print("🗂️  暂无备份文件")
+                print("[空] 暂无备份文件")
             else:
                 print(f"{'序号':<4} {'备份名称':<25} {'创建时间':<20} {'大小':<10}")
                 print("-" * 70)
@@ -318,17 +318,17 @@ class KnowledgeUpdaterCLI:
                     size = backup.get('size', 'N/A')
                     print(f"{i:<4} {name:<25} {creation_time:<20} {size:<10}")
 
-                print(f"\n📊 总计: {len(backups)} 个备份")
+                print(f"\n[统计] 总计: {len(backups)} 个备份")
 
             return {"status": "success", "backups": backups}
 
         except Exception as e:
-            logger.error(f"❌ 备份列表获取失败: {e}")
+            logger.error(f"[失败] 备份列表获取失败: {e}")
             return {"status": "error", "message": str(e)}
 
     def restore_backup(self, backup_name: str) -> Dict[str, Any]:
         """恢复备份"""
-        logger.info(f"🔄 恢复备份: {backup_name}")
+        logger.info(f"[恢复] 恢复备份: {backup_name}")
 
         if not self._load_config():
             return {"status": "error", "message": "配置加载失败"}
@@ -339,26 +339,26 @@ class KnowledgeUpdaterCLI:
         try:
             result = self.updater.restore_backup(backup_name)
 
-            print(f"\n🔄 备份恢复结果")
+            print(f"\n[恢复] 备份恢复结果")
             print("=" * 50)
 
             if result["status"] == "success":
-                print("✅ 备份恢复成功")
-                print(f"📁 恢复源: {backup_name}")
-                print(f"⏱️  恢复时间: {result.get('restore_time', 'N/A')}")
+                print("[成功] 备份恢复成功")
+                print(f"[文件] 恢复源: {backup_name}")
+                print(f"[时间]  恢复时间: {result.get('restore_time', 'N/A')}")
             else:
-                print("❌ 备份恢复失败")
+                print("[失败] 备份恢复失败")
                 print(f"错误信息: {result.get('error', '未知错误')}")
 
             return result
 
         except Exception as e:
-            logger.error(f"❌ 备份恢复失败: {e}")
+            logger.error(f"[失败] 备份恢复失败: {e}")
             return {"status": "error", "message": str(e)}
 
     def show_history(self, limit: int = 10) -> Dict[str, Any]:
         """显示更新历史"""
-        logger.info("📜 显示更新历史...")
+        logger.info("[历史] 显示更新历史...")
 
         if not self._load_config():
             return {"status": "error", "message": "配置加载失败"}
@@ -369,11 +369,11 @@ class KnowledgeUpdaterCLI:
         try:
             history = self.updater.get_update_history()
 
-            print("\n📜 更新历史")
+            print("\n[历史] 更新历史")
             print("=" * 80)
 
             if not history:
-                print("📝 暂无更新历史记录")
+                print("[空] 暂无更新历史记录")
             else:
                 # 显示最近的记录
                 recent_history = history[-limit:] if len(history) > limit else history
@@ -394,14 +394,14 @@ class KnowledgeUpdaterCLI:
                     print(f"{timestamp:<20} {operation:<15} {status:<10} {details:<30}")
 
                 if len(history) > limit:
-                    print(f"\n📊 显示最近 {limit} 条记录，总计 {len(history)} 条")
+                    print(f"\n[统计] 显示最近 {limit} 条记录，总计 {len(history)} 条")
                 else:
-                    print(f"\n📊 总计: {len(history)} 条记录")
+                    print(f"\n[统计] 总计: {len(history)} 条记录")
 
             return {"status": "success", "history": history}
 
         except Exception as e:
-            logger.error(f"❌ 历史记录获取失败: {e}")
+            logger.error(f"[失败] 历史记录获取失败: {e}")
             return {"status": "error", "message": str(e)}
 
 
@@ -412,49 +412,34 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  %(prog)s status                    # 检查知识库状态
-  %(prog)s check                     # 检查可用更新
-  %(prog)s update                    # 增量更新知识库
-  %(prog)s rebuild                   # 完全重建知识库
-  %(prog)s backup                    # 创建备份
-  %(prog)s backup --name my_backup   # 创建命名备份
-  %(prog)s list-backups              # 列出所有备份
-  %(prog)s restore backup_name       # 恢复指定备份
-  %(prog)s history                   # 显示更新历史
-  %(prog)s history --limit 20        # 显示最近20条历史
+  %(prog)s --status                          # 检查知识库状态
+  %(prog)s --check                           # 检查可用更新
+  %(prog)s --update                          # 增量更新知识库
+  %(prog)s --rebuild                         # 完全重建知识库
+  %(prog)s --backup                          # 创建备份
+  %(prog)s --backup --name my_backup         # 创建命名备份
+  %(prog)s --list-backups                    # 列出所有备份
+  %(prog)s --restore backup_name             # 恢复指定备份
+  %(prog)s --history                         # 显示更新历史
+  %(prog)s --history --limit 20              # 显示最近20条历史
         """
     )
 
-    # 添加子命令
-    subparsers = parser.add_subparsers(dest='command', help='可用命令')
+    # 操作命令（互斥）
+    action_group = parser.add_mutually_exclusive_group(required=True)
+    action_group.add_argument('--status', action='store_true', help='检查知识库状态')
+    action_group.add_argument('--check', action='store_true', help='检查可用更新')
+    action_group.add_argument('--update', action='store_true', help='增量更新知识库')
+    action_group.add_argument('--rebuild', action='store_true', help='完全重建知识库')
+    action_group.add_argument('--backup', action='store_true', help='创建知识库备份')
+    action_group.add_argument('--list-backups', action='store_true', help='列出所有备份')
+    action_group.add_argument('--restore', metavar='BACKUP_NAME', help='恢复指定备份')
+    action_group.add_argument('--history', action='store_true', help='显示更新历史')
 
-    # status 命令
-    subparsers.add_parser('status', help='检查知识库状态')
-
-    # check 命令
-    subparsers.add_parser('check', help='检查可用更新')
-
-    # update 命令
-    update_parser = subparsers.add_parser('update', help='增量更新知识库')
-    update_parser.add_argument('--force', action='store_true', help='强制完全更新')
-
-    # rebuild 命令
-    subparsers.add_parser('rebuild', help='完全重建知识库')
-
-    # backup 命令
-    backup_parser = subparsers.add_parser('backup', help='创建知识库备份')
-    backup_parser.add_argument('--name', help='备份名称（可选）')
-
-    # list-backups 命令
-    subparsers.add_parser('list-backups', help='列出所有备份')
-
-    # restore 命令
-    restore_parser = subparsers.add_parser('restore', help='恢复指定备份')
-    restore_parser.add_argument('backup_name', help='要恢复的备份名称')
-
-    # history 命令
-    history_parser = subparsers.add_parser('history', help='显示更新历史')
-    history_parser.add_argument('--limit', type=int, default=10, help='显示记录数量（默认10）')
+    # 可选参数
+    parser.add_argument('--name', help='备份名称（用于--backup）')
+    parser.add_argument('--limit', type=int, default=10, help='历史记录显示数量（用于--history，默认10）')
+    parser.add_argument('--force', action='store_true', help='强制完全更新（用于--update）')
 
     # 全局参数
     parser.add_argument('--debug', action='store_true', help='启用调试模式')
@@ -482,21 +467,21 @@ def main():
 
     # 执行命令
     try:
-        if args.command == 'status':
+        if args.status:
             result = cli.check_status()
-        elif args.command == 'check':
+        elif args.check:
             result = cli.check_updates()
-        elif args.command == 'update':
+        elif args.update:
             result = cli.update_knowledge_base(force_full=args.force)
-        elif args.command == 'rebuild':
+        elif args.rebuild:
             result = cli.update_knowledge_base(force_full=True)
-        elif args.command == 'backup':
+        elif args.backup:
             result = cli.create_backup(backup_name=args.name)
-        elif args.command == 'list-backups':
+        elif args.list_backups:
             result = cli.list_backups()
-        elif args.command == 'restore':
-            result = cli.restore_backup(args.backup_name)
-        elif args.command == 'history':
+        elif args.restore:
+            result = cli.restore_backup(args.restore)
+        elif args.history:
             result = cli.show_history(limit=args.limit)
         else:
             parser.print_help()
@@ -504,17 +489,17 @@ def main():
 
         # 根据结果返回适当的退出代码
         if result.get("status") == "success":
-            logger.info("✅ 操作完成")
+            logger.info("[成功] 操作完成")
             return 0
         else:
-            logger.error(f"❌ 操作失败: {result.get('message', '未知错误')}")
+            logger.error(f"[失败] 操作失败: {result.get('message', '未知错误')}")
             return 1
 
     except KeyboardInterrupt:
-        logger.info("🛑 操作被用户中断")
+        logger.info("[中断] 操作被用户中断")
         return 130
     except Exception as e:
-        logger.error(f"❌ 发生意外错误: {e}")
+        logger.error(f"[失败] 发生意外错误: {e}")
         if args.debug:
             import traceback
             traceback.print_exc()

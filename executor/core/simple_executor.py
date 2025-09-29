@@ -15,7 +15,12 @@ from datetime import datetime
 from ..models.task import Task, TaskType
 from ..models.result import TaskResult, ExecutionStatus
 from ..tools.registry import HydroToolRegistry
-from ..tools import GetModelParamsTool, PrepareDataTool, CalibrateModelTool, EvaluateModelTool
+from ..tools import (
+    GetModelParamsTool,
+    PrepareDataTool,
+    CalibrateModelTool,
+    EvaluateModelTool,
+)
 
 
 class SimpleTaskExecutor:
@@ -56,16 +61,12 @@ class SimpleTaskExecutor:
         # 验证任务类型
         if task.type != TaskType.SIMPLE:
             return self._create_error_result(
-                task.task_id,
-                f"任务类型错误，期望 {TaskType.SIMPLE}，实际 {task.type}"
+                task.task_id, f"任务类型错误，期望 {TaskType.SIMPLE}，实际 {task.type}"
             )
 
         # 验证工具名称
         if not task.tool_name:
-            return self._create_error_result(
-                task.task_id,
-                "简单任务必须指定工具名称"
-            )
+            return self._create_error_result(task.task_id, "简单任务必须指定工具名称")
 
         try:
             # 解析参数
@@ -77,7 +78,7 @@ class SimpleTaskExecutor:
             task_result = TaskResult(
                 task_id=task.task_id,
                 status=ExecutionStatus.RUNNING,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
             # 执行工具
@@ -193,7 +194,9 @@ class SimpleTaskExecutor:
 
             # 注册数据准备工具
             prepare_data_tool = PrepareDataTool()
-            self.tool_registry.register_tool(prepare_data_tool, category="data_processing")
+            self.tool_registry.register_tool(
+                prepare_data_tool, category="data_processing"
+            )
 
             # 注册模型率定工具
             calibrate_tool = CalibrateModelTool()
@@ -233,7 +236,9 @@ class SimpleTaskExecutor:
                 if metric in output:
                     value = output[metric]
                     if isinstance(value, (int, float)) and value < threshold:
-                        self.logger.warning(f"性能指标 {metric}={value} 低于阈值 {threshold}")
+                        self.logger.warning(
+                            f"性能指标 {metric}={value} 低于阈值 {threshold}"
+                        )
                         return False
 
             # TODO: 实现验证规则检查
@@ -252,7 +257,7 @@ class SimpleTaskExecutor:
             status=ExecutionStatus.FAILED,
             start_time=datetime.now(),
             end_time=datetime.now(),
-            error=error_msg
+            error=error_msg,
         )
         task_result.calculate_duration()
         return task_result

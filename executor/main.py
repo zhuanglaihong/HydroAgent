@@ -53,7 +53,7 @@ class ExecutorEngine:
         self.complex_solver = ComplexTaskSolver(
             simple_executor=self.simple_executor,
             llm_client=self.llm_client,
-            enable_debug=enable_debug
+            enable_debug=enable_debug,
         )
 
         # 初始化React执行器
@@ -62,7 +62,7 @@ class ExecutorEngine:
             simple_executor=self.simple_executor,
             complex_solver=self.complex_solver,
             llm_client=self.llm_client,
-            enable_debug=enable_debug
+            enable_debug=enable_debug,
         )
 
         # 初始化结果可视化器
@@ -70,7 +70,9 @@ class ExecutorEngine:
 
         self.logger.info("Executor 执行引擎初始化完成")
 
-    def execute_workflow(self, workflow_data: str, mode: str = "sequential") -> WorkflowResult:
+    def execute_workflow(
+        self, workflow_data: str, mode: str = "sequential"
+    ) -> WorkflowResult:
         """
         执行工作流的主接口
 
@@ -91,7 +93,7 @@ class ExecutorEngine:
             result = WorkflowResult(
                 execution_id=f"exec_{workflow.workflow_id}_{int(time.time())}",
                 workflow_id=workflow.workflow_id,
-                status=ExecutionStatus.RUNNING
+                status=ExecutionStatus.RUNNING,
             )
 
             # 3. 构建依赖图
@@ -109,15 +111,17 @@ class ExecutorEngine:
         except Exception as e:
             self.logger.error(f"工作流执行失败: {e}")
             # 创建失败结果
-            workflow_id = workflow.workflow_id if workflow else 'unknown'
+            workflow_id = workflow.workflow_id if workflow else "unknown"
             result = WorkflowResult(
                 execution_id=f"exec_failed_{int(time.time())}",
                 workflow_id=workflow_id,
-                status=ExecutionStatus.FAILED
+                status=ExecutionStatus.FAILED,
             )
             return result
 
-    def _execute_sequential_mode(self, workflow: Workflow, result: WorkflowResult) -> WorkflowResult:
+    def _execute_sequential_mode(
+        self, workflow: Workflow, result: WorkflowResult
+    ) -> WorkflowResult:
         """顺序执行模式"""
         self.logger.info("使用顺序执行模式")
 
@@ -134,8 +138,11 @@ class ExecutorEngine:
                     result.add_task_result(task_result)
 
                     # 检查是否失败且设置了遇错停止
-                    if (not task_result.is_successful() and
-                        workflow.global_settings.error_handling.value == "stop_on_error"):
+                    if (
+                        not task_result.is_successful()
+                        and workflow.global_settings.error_handling.value
+                        == "stop_on_error"
+                    ):
                         self.logger.error(f"任务 {task_id} 失败，停止执行")
                         result.status = ExecutionStatus.FAILED
                         return result
@@ -143,7 +150,9 @@ class ExecutorEngine:
         result.status = ExecutionStatus.COMPLETED
         return result
 
-    def _execute_react_mode(self, workflow: Workflow, result: WorkflowResult) -> WorkflowResult:
+    def _execute_react_mode(
+        self, workflow: Workflow, result: WorkflowResult
+    ) -> WorkflowResult:
         """React执行模式（目标导向）"""
         self.logger.info("使用React执行模式")
 
@@ -179,17 +188,27 @@ class ExecutorEngine:
         """执行单个任务"""
         try:
             # 分发任务
-            executor_type, execution_params = self.task_dispatcher.dispatch_task(task, result.task_results)
+            executor_type, execution_params = self.task_dispatcher.dispatch_task(
+                task, result.task_results
+            )
 
             # 根据executor_type调用相应的执行器
             if executor_type == ExecutorType.SIMPLE_EXECUTOR:
-                task_result = self.simple_executor.execute_task(task, result.task_results)
+                task_result = self.simple_executor.execute_task(
+                    task, result.task_results
+                )
             elif executor_type == ExecutorType.COMPLEX_SOLVER:
-                task_result = self.complex_solver.solve_complex_task(task, result.task_results)
+                task_result = self.complex_solver.solve_complex_task(
+                    task, result.task_results
+                )
             else:
-                task_result = self._create_placeholder_result(task, f"未知执行器类型: {executor_type}")
+                task_result = self._create_placeholder_result(
+                    task, f"未知执行器类型: {executor_type}"
+                )
 
-            self.logger.info(f"任务 {task.task_id} 执行完成，状态: {task_result.status}")
+            self.logger.info(
+                f"任务 {task.task_id} 执行完成，状态: {task_result.status}"
+            )
 
         except Exception as e:
             from datetime import datetime
@@ -200,13 +219,15 @@ class ExecutorEngine:
                 status=ExecutionStatus.FAILED,
                 start_time=datetime.now(),
                 end_time=datetime.now(),
-                error=str(e)
+                error=str(e),
             )
             self.logger.error(f"任务 {task.task_id} 执行失败: {e}")
 
         finally:
             # 更新分发器状态
-            self.task_dispatcher.update_task_status(task.task_id, task_result.status, task_result)
+            self.task_dispatcher.update_task_status(
+                task.task_id, task_result.status, task_result
+            )
 
         return task_result
 
@@ -220,7 +241,7 @@ class ExecutorEngine:
             status=ExecutionStatus.FAILED,
             start_time=datetime.now(),
             end_time=datetime.now(),
-            error=message
+            error=message,
         )
 
     def _evaluate_target(self, target, result: WorkflowResult) -> bool:
@@ -238,7 +259,7 @@ class ExecutorEngine:
         self,
         workflow_data: str,
         mode: str = "sequential",
-        generate_visualization: bool = True
+        generate_visualization: bool = True,
     ) -> Tuple[WorkflowResult, Optional[str]]:
         """
         执行工作流并生成可视化结果
@@ -274,7 +295,9 @@ class ExecutorEngine:
 
         return result, report_path
 
-    def visualize_existing_result(self, result: WorkflowResult, workflow_data: Optional[str] = None) -> Optional[str]:
+    def visualize_existing_result(
+        self, result: WorkflowResult, workflow_data: Optional[str] = None
+    ) -> Optional[str]:
         """
         为现有的执行结果生成可视化
 
@@ -330,7 +353,7 @@ def main():
     workflow_json = engine.create_example_workflow()
     print("示例工作流:")
     print(workflow_json)
-    print("\n" + "="*50 + "\n")
+    print("\n" + "=" * 50 + "\n")
 
     # 执行工作流
     result = engine.execute_workflow(workflow_json, mode="sequential")

@@ -22,29 +22,32 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from matplotlib.colors import LinearSegmentedColormap
 import warnings
-warnings.filterwarnings('ignore')
+
+warnings.filterwarnings("ignore")
 
 # 设置中文字体和论文级样式
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
-plt.style.use('seaborn-v0_8-whitegrid')
+plt.rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
+plt.style.use("seaborn-v0_8-whitegrid")
 
 # 定义优化过程的颜色方案
 OPT_COLORS = {
-    'best': '#e74c3c',         # 最优解红色
-    'current': '#3498db',      # 当前解蓝色
-    'population': '#95a5a6',   # 种群灰色
-    'progress': '#2ecc71',     # 进度绿色
-    'convergence': '#f39c12',  # 收敛橙色
-    'feasible': '#9b59b6',     # 可行域紫色
-    'infeasible': '#e67e22',   # 不可行域橘色
+    "best": "#e74c3c",  # 最优解红色
+    "current": "#3498db",  # 当前解蓝色
+    "population": "#95a5a6",  # 种群灰色
+    "progress": "#2ecc71",  # 进度绿色
+    "convergence": "#f39c12",  # 收敛橙色
+    "feasible": "#9b59b6",  # 可行域紫色
+    "infeasible": "#e67e22",  # 不可行域橘色
 }
 
 
 class OptimizationVisualizer:
     """模型优化过程可视化工具"""
 
-    def __init__(self, output_dir: str = "output/optimization_visualizations", dpi: int = 300):
+    def __init__(
+        self, output_dir: str = "output/optimization_visualizations", dpi: int = 300
+    ):
         """
         初始化优化可视化器
 
@@ -59,11 +62,11 @@ class OptimizationVisualizer:
 
         # 设置字体大小
         self.font_sizes = {
-            'title': 14,
-            'label': 12,
-            'tick': 10,
-            'legend': 11,
-            'annotation': 10
+            "title": 14,
+            "label": 12,
+            "tick": 10,
+            "legend": 11,
+            "annotation": 10,
         }
 
         self.logger.info("优化过程可视化器初始化完成")
@@ -77,7 +80,7 @@ class OptimizationVisualizer:
         generations: List[int] = None,
         algorithm_name: str = "Optimization Algorithm",
         metric_name: str = "Objective Function",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制优化收敛历史图
@@ -101,50 +104,101 @@ class OptimizationVisualizer:
             generations = list(range(1, len(best_values) + 1))
 
         # 绘制收敛曲线
-        ax.plot(generations, best_values, color=OPT_COLORS['best'],
-               linewidth=2.5, marker='o', markersize=4, label='Best Value', alpha=0.9)
+        ax.plot(
+            generations,
+            best_values,
+            color=OPT_COLORS["best"],
+            linewidth=2.5,
+            marker="o",
+            markersize=4,
+            label="Best Value",
+            alpha=0.9,
+        )
 
         if mean_values:
-            ax.plot(generations, mean_values, color=OPT_COLORS['current'],
-                   linewidth=2, marker='s', markersize=3, label='Mean Value', alpha=0.8)
+            ax.plot(
+                generations,
+                mean_values,
+                color=OPT_COLORS["current"],
+                linewidth=2,
+                marker="s",
+                markersize=3,
+                label="Mean Value",
+                alpha=0.8,
+            )
 
         if worst_values:
-            ax.plot(generations, worst_values, color=OPT_COLORS['population'],
-                   linewidth=1.5, marker='^', markersize=3, label='Worst Value', alpha=0.7)
+            ax.plot(
+                generations,
+                worst_values,
+                color=OPT_COLORS["population"],
+                linewidth=1.5,
+                marker="^",
+                markersize=3,
+                label="Worst Value",
+                alpha=0.7,
+            )
 
         # 添加目标线
         if target_value is not None:
-            ax.axhline(y=target_value, color=OPT_COLORS['convergence'],
-                      linestyle='--', linewidth=2, alpha=0.8, label=f'Target ({target_value:.3f})')
+            ax.axhline(
+                y=target_value,
+                color=OPT_COLORS["convergence"],
+                linestyle="--",
+                linewidth=2,
+                alpha=0.8,
+                label=f"Target ({target_value:.3f})",
+            )
 
         # 填充区域
         if mean_values and worst_values:
-            ax.fill_between(generations, mean_values, worst_values,
-                           color=OPT_COLORS['population'], alpha=0.2, label='Value Range')
+            ax.fill_between(
+                generations,
+                mean_values,
+                worst_values,
+                color=OPT_COLORS["population"],
+                alpha=0.2,
+                label="Value Range",
+            )
 
-        ax.set_xlabel('Generation', fontsize=self.font_sizes['label'])
-        ax.set_ylabel(metric_name, fontsize=self.font_sizes['label'])
-        ax.set_title(f'{algorithm_name} - Convergence History',
-                    fontsize=self.font_sizes['title'], fontweight='bold')
-        ax.legend(fontsize=self.font_sizes['legend'])
+        ax.set_xlabel("Generation", fontsize=self.font_sizes["label"])
+        ax.set_ylabel(metric_name, fontsize=self.font_sizes["label"])
+        ax.set_title(
+            f"{algorithm_name} - Convergence History",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax.legend(fontsize=self.font_sizes["legend"])
         ax.grid(True, alpha=0.3)
 
         # 添加收敛信息文本框
         if best_values:
             final_best = best_values[-1]
-            improvement = abs(best_values[0] - final_best) if len(best_values) > 1 else 0
-            textstr = f'Final Best: {final_best:.4f}\nImprovement: {improvement:.4f}\nGenerations: {len(best_values)}'
-            props = dict(boxstyle='round', facecolor='lightblue', alpha=0.8)
-            ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=self.font_sizes['annotation'],
-                   verticalalignment='top', bbox=props)
+            improvement = (
+                abs(best_values[0] - final_best) if len(best_values) > 1 else 0
+            )
+            textstr = f"Final Best: {final_best:.4f}\nImprovement: {improvement:.4f}\nGenerations: {len(best_values)}"
+            props = dict(boxstyle="round", facecolor="lightblue", alpha=0.8)
+            ax.text(
+                0.02,
+                0.98,
+                textstr,
+                transform=ax.transAxes,
+                fontsize=self.font_sizes["annotation"],
+                verticalalignment="top",
+                bbox=props,
+            )
 
         plt.tight_layout()
 
         # 保存图片
         if save_path is None:
-            save_path = self.output_dir / f"{algorithm_name.lower().replace(' ', '_')}_convergence.png"
+            save_path = (
+                self.output_dir
+                / f"{algorithm_name.lower().replace(' ', '_')}_convergence.png"
+            )
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"收敛历史图已保存: {save_path}")
@@ -156,7 +210,7 @@ class OptimizationVisualizer:
         parameter_ranges: Dict[str, Tuple[float, float]] = None,
         generations: List[int] = None,
         algorithm_name: str = "Optimization Algorithm",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制参数进化过程图
@@ -179,7 +233,7 @@ class OptimizationVisualizer:
         n_cols = min(3, n_params)
         n_rows = (n_params + n_cols - 1) // n_cols
 
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
         if n_params == 1:
             axes = [axes]
         elif n_rows == 1:
@@ -196,43 +250,68 @@ class OptimizationVisualizer:
             ax = axes[i]
 
             # 绘制参数进化曲线
-            ax.plot(generations, values, color=colors[i], linewidth=2,
-                   marker='o', markersize=4, alpha=0.8)
+            ax.plot(
+                generations,
+                values,
+                color=colors[i],
+                linewidth=2,
+                marker="o",
+                markersize=4,
+                alpha=0.8,
+            )
 
             # 添加参数范围
             if parameter_ranges and param_name in parameter_ranges:
                 min_val, max_val = parameter_ranges[param_name]
-                ax.axhline(y=min_val, color='red', linestyle='--', alpha=0.5, label='Min Bound')
-                ax.axhline(y=max_val, color='red', linestyle='--', alpha=0.5, label='Max Bound')
-                ax.fill_between(generations, min_val, max_val, alpha=0.1, color='gray')
+                ax.axhline(
+                    y=min_val, color="red", linestyle="--", alpha=0.5, label="Min Bound"
+                )
+                ax.axhline(
+                    y=max_val, color="red", linestyle="--", alpha=0.5, label="Max Bound"
+                )
+                ax.fill_between(generations, min_val, max_val, alpha=0.1, color="gray")
 
-            ax.set_xlabel('Generation', fontsize=self.font_sizes['label'])
-            ax.set_ylabel(param_name, fontsize=self.font_sizes['label'])
-            ax.set_title(f'{param_name} Evolution', fontsize=self.font_sizes['label'], fontweight='bold')
+            ax.set_xlabel("Generation", fontsize=self.font_sizes["label"])
+            ax.set_ylabel(param_name, fontsize=self.font_sizes["label"])
+            ax.set_title(
+                f"{param_name} Evolution",
+                fontsize=self.font_sizes["label"],
+                fontweight="bold",
+            )
             ax.grid(True, alpha=0.3)
 
             # 添加最终值注释
             if values:
                 final_val = values[-1]
-                ax.annotate(f'{final_val:.3f}', xy=(generations[-1], final_val),
-                          xytext=(10, 10), textcoords='offset points',
-                          fontsize=self.font_sizes['annotation'],
-                          bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7),
-                          arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+                ax.annotate(
+                    f"{final_val:.3f}",
+                    xy=(generations[-1], final_val),
+                    xytext=(10, 10),
+                    textcoords="offset points",
+                    fontsize=self.font_sizes["annotation"],
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7),
+                    arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0"),
+                )
 
         # 隐藏多余的子图
         for i in range(n_params, len(axes)):
             axes[i].set_visible(False)
 
-        plt.suptitle(f'{algorithm_name} - Parameter Evolution',
-                    fontsize=self.font_sizes['title'], fontweight='bold')
+        plt.suptitle(
+            f"{algorithm_name} - Parameter Evolution",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
         plt.tight_layout()
 
         # 保存图片
         if save_path is None:
-            save_path = self.output_dir / f"{algorithm_name.lower().replace(' ', '_')}_parameter_evolution.png"
+            save_path = (
+                self.output_dir
+                / f"{algorithm_name.lower().replace(' ', '_')}_parameter_evolution.png"
+            )
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"参数进化图已保存: {save_path}")
@@ -243,7 +322,7 @@ class OptimizationVisualizer:
         parameter_samples: Dict[str, List[float]],
         objective_values: List[float] = None,
         algorithm_name: str = "Optimization Algorithm",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制参数相关性矩阵
@@ -260,7 +339,7 @@ class OptimizationVisualizer:
         # 创建DataFrame
         df = pd.DataFrame(parameter_samples)
         if objective_values:
-            df['Objective'] = objective_values
+            df["Objective"] = objective_values
 
         # 计算相关性矩阵
         corr_matrix = df.corr()
@@ -270,20 +349,36 @@ class OptimizationVisualizer:
 
         # 创建热力图
         mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-        sns.heatmap(corr_matrix, mask=mask, annot=True, cmap='RdBu_r', center=0,
-                   square=True, linewidths=.5, cbar_kws={"shrink": .8}, ax=ax,
-                   fmt='.3f', annot_kws={'fontsize': self.font_sizes['annotation']})
+        sns.heatmap(
+            corr_matrix,
+            mask=mask,
+            annot=True,
+            cmap="RdBu_r",
+            center=0,
+            square=True,
+            linewidths=0.5,
+            cbar_kws={"shrink": 0.8},
+            ax=ax,
+            fmt=".3f",
+            annot_kws={"fontsize": self.font_sizes["annotation"]},
+        )
 
-        ax.set_title(f'{algorithm_name} - Parameter Correlation Matrix',
-                    fontsize=self.font_sizes['title'], fontweight='bold')
+        ax.set_title(
+            f"{algorithm_name} - Parameter Correlation Matrix",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
 
         plt.tight_layout()
 
         # 保存图片
         if save_path is None:
-            save_path = self.output_dir / f"{algorithm_name.lower().replace(' ', '_')}_correlation_matrix.png"
+            save_path = (
+                self.output_dir
+                / f"{algorithm_name.lower().replace(' ', '_')}_correlation_matrix.png"
+            )
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"参数相关性矩阵已保存: {save_path}")
@@ -297,7 +392,7 @@ class OptimizationVisualizer:
         obj1_name: str = "Objective 1",
         obj2_name: str = "Objective 2",
         algorithm_name: str = "Multi-Objective Optimization",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制帕累托前沿图（多目标优化）
@@ -317,9 +412,16 @@ class OptimizationVisualizer:
         fig, ax = plt.subplots(1, 1, figsize=(10, 8))
 
         # 绘制所有解
-        ax.scatter(objective1_values, objective2_values,
-                  color=OPT_COLORS['population'], alpha=0.6, s=50,
-                  label='All Solutions', edgecolors='white', linewidth=0.5)
+        ax.scatter(
+            objective1_values,
+            objective2_values,
+            color=OPT_COLORS["population"],
+            alpha=0.6,
+            s=50,
+            label="All Solutions",
+            edgecolors="white",
+            linewidth=0.5,
+        )
 
         # 绘制帕累托前沿
         if pareto_indices:
@@ -331,37 +433,63 @@ class OptimizationVisualizer:
             pareto_points.sort()
             pareto_obj1_sorted, pareto_obj2_sorted = zip(*pareto_points)
 
-            ax.scatter(pareto_obj1_sorted, pareto_obj2_sorted,
-                      color=OPT_COLORS['best'], s=80, alpha=0.9,
-                      label='Pareto Front', edgecolors='black', linewidth=1,
-                      marker='D')
+            ax.scatter(
+                pareto_obj1_sorted,
+                pareto_obj2_sorted,
+                color=OPT_COLORS["best"],
+                s=80,
+                alpha=0.9,
+                label="Pareto Front",
+                edgecolors="black",
+                linewidth=1,
+                marker="D",
+            )
 
             # 连接帕累托前沿点
-            ax.plot(pareto_obj1_sorted, pareto_obj2_sorted,
-                   color=OPT_COLORS['best'], linewidth=2, alpha=0.7, linestyle='-')
+            ax.plot(
+                pareto_obj1_sorted,
+                pareto_obj2_sorted,
+                color=OPT_COLORS["best"],
+                linewidth=2,
+                alpha=0.7,
+                linestyle="-",
+            )
 
-        ax.set_xlabel(obj1_name, fontsize=self.font_sizes['label'])
-        ax.set_ylabel(obj2_name, fontsize=self.font_sizes['label'])
-        ax.set_title(f'{algorithm_name} - Pareto Front',
-                    fontsize=self.font_sizes['title'], fontweight='bold')
-        ax.legend(fontsize=self.font_sizes['legend'])
+        ax.set_xlabel(obj1_name, fontsize=self.font_sizes["label"])
+        ax.set_ylabel(obj2_name, fontsize=self.font_sizes["label"])
+        ax.set_title(
+            f"{algorithm_name} - Pareto Front",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
+        ax.legend(fontsize=self.font_sizes["legend"])
         ax.grid(True, alpha=0.3)
 
         # 添加统计信息
         total_solutions = len(objective1_values)
         pareto_solutions = len(pareto_indices) if pareto_indices else 0
-        textstr = f'Total Solutions: {total_solutions}\nPareto Solutions: {pareto_solutions}\nPareto Ratio: {pareto_solutions/total_solutions:.2%}'
-        props = dict(boxstyle='round', facecolor='lightgreen', alpha=0.8)
-        ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=self.font_sizes['annotation'],
-               verticalalignment='top', bbox=props)
+        textstr = f"Total Solutions: {total_solutions}\nPareto Solutions: {pareto_solutions}\nPareto Ratio: {pareto_solutions/total_solutions:.2%}"
+        props = dict(boxstyle="round", facecolor="lightgreen", alpha=0.8)
+        ax.text(
+            0.02,
+            0.98,
+            textstr,
+            transform=ax.transAxes,
+            fontsize=self.font_sizes["annotation"],
+            verticalalignment="top",
+            bbox=props,
+        )
 
         plt.tight_layout()
 
         # 保存图片
         if save_path is None:
-            save_path = self.output_dir / f"{algorithm_name.lower().replace(' ', '_')}_pareto_front.png"
+            save_path = (
+                self.output_dir
+                / f"{algorithm_name.lower().replace(' ', '_')}_pareto_front.png"
+            )
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"帕累托前沿图已保存: {save_path}")
@@ -376,7 +504,7 @@ class OptimizationVisualizer:
         param2_name: str = "Parameter 2",
         objective_name: str = "Objective Function",
         best_point: Tuple[float, float, float] = None,
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制目标函数表面图（3D）
@@ -395,7 +523,7 @@ class OptimizationVisualizer:
             str: 保存的图片路径
         """
         fig = plt.figure(figsize=(12, 9))
-        ax = fig.add_subplot(111, projection='3d')
+        ax = fig.add_subplot(111, projection="3d")
 
         # 创建网格
         xi = np.linspace(min(param1_values), max(param1_values), 50)
@@ -404,12 +532,17 @@ class OptimizationVisualizer:
 
         # 插值生成表面
         try:
-            Zi = griddata((param1_values, param2_values), objective_values,
-                         (Xi, Yi), method='linear')
+            Zi = griddata(
+                (param1_values, param2_values),
+                objective_values,
+                (Xi, Yi),
+                method="linear",
+            )
 
             # 绘制表面
-            surf = ax.plot_surface(Xi, Yi, Zi, cmap='viridis', alpha=0.8,
-                                 linewidth=0, antialiased=True)
+            surf = ax.plot_surface(
+                Xi, Yi, Zi, cmap="viridis", alpha=0.8, linewidth=0, antialiased=True
+            )
 
             # 添加颜色条
             fig.colorbar(surf, ax=ax, shrink=0.5, aspect=20)
@@ -418,22 +551,40 @@ class OptimizationVisualizer:
             self.logger.warning(f"无法生成表面图: {e}，改为绘制散点图")
 
         # 绘制样本点
-        scatter = ax.scatter(param1_values, param2_values, objective_values,
-                           c=objective_values, cmap='plasma', s=30, alpha=0.8)
+        scatter = ax.scatter(
+            param1_values,
+            param2_values,
+            objective_values,
+            c=objective_values,
+            cmap="plasma",
+            s=30,
+            alpha=0.8,
+        )
 
         # 标记最优点
         if best_point:
-            ax.scatter([best_point[0]], [best_point[1]], [best_point[2]],
-                      color=OPT_COLORS['best'], s=200, marker='*',
-                      label=f'Best Point ({best_point[2]:.3f})', edgecolors='black')
+            ax.scatter(
+                [best_point[0]],
+                [best_point[1]],
+                [best_point[2]],
+                color=OPT_COLORS["best"],
+                s=200,
+                marker="*",
+                label=f"Best Point ({best_point[2]:.3f})",
+                edgecolors="black",
+            )
 
-        ax.set_xlabel(param1_name, fontsize=self.font_sizes['label'])
-        ax.set_ylabel(param2_name, fontsize=self.font_sizes['label'])
-        ax.set_zlabel(objective_name, fontsize=self.font_sizes['label'])
-        ax.set_title('Objective Function Surface', fontsize=self.font_sizes['title'], fontweight='bold')
+        ax.set_xlabel(param1_name, fontsize=self.font_sizes["label"])
+        ax.set_ylabel(param2_name, fontsize=self.font_sizes["label"])
+        ax.set_zlabel(objective_name, fontsize=self.font_sizes["label"])
+        ax.set_title(
+            "Objective Function Surface",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
 
         if best_point:
-            ax.legend(fontsize=self.font_sizes['legend'])
+            ax.legend(fontsize=self.font_sizes["legend"])
 
         plt.tight_layout()
 
@@ -441,7 +592,7 @@ class OptimizationVisualizer:
         if save_path is None:
             save_path = self.output_dir / "objective_function_surface.png"
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"目标函数表面图已保存: {save_path}")
@@ -451,7 +602,7 @@ class OptimizationVisualizer:
         self,
         statistics_data: Dict[str, Any],
         algorithm_name: str = "Optimization Algorithm",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         绘制优化统计信息图表
@@ -467,77 +618,106 @@ class OptimizationVisualizer:
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
         # 1. 收敛速度分布
-        if 'convergence_generations' in statistics_data:
+        if "convergence_generations" in statistics_data:
             ax1 = axes[0, 0]
-            conv_gens = statistics_data['convergence_generations']
-            ax1.hist(conv_gens, bins=20, color=OPT_COLORS['progress'], alpha=0.7,
-                    edgecolor='black', linewidth=0.5)
-            ax1.axvline(np.mean(conv_gens), color='red', linestyle='--',
-                       label=f'Mean: {np.mean(conv_gens):.1f}')
-            ax1.set_xlabel('Convergence Generation')
-            ax1.set_ylabel('Frequency')
-            ax1.set_title('Convergence Speed Distribution')
+            conv_gens = statistics_data["convergence_generations"]
+            ax1.hist(
+                conv_gens,
+                bins=20,
+                color=OPT_COLORS["progress"],
+                alpha=0.7,
+                edgecolor="black",
+                linewidth=0.5,
+            )
+            ax1.axvline(
+                np.mean(conv_gens),
+                color="red",
+                linestyle="--",
+                label=f"Mean: {np.mean(conv_gens):.1f}",
+            )
+            ax1.set_xlabel("Convergence Generation")
+            ax1.set_ylabel("Frequency")
+            ax1.set_title("Convergence Speed Distribution")
             ax1.legend()
             ax1.grid(True, alpha=0.3)
 
         # 2. 参数值分布
-        if 'final_parameters' in statistics_data:
+        if "final_parameters" in statistics_data:
             ax2 = axes[0, 1]
-            param_data = statistics_data['final_parameters']
+            param_data = statistics_data["final_parameters"]
             param_names = list(param_data.keys())
             param_values = [param_data[name] for name in param_names]
 
             box_plot = ax2.boxplot(param_values, labels=param_names, patch_artist=True)
             colors = plt.cm.Set3(np.linspace(0, 1, len(param_names)))
-            for patch, color in zip(box_plot['boxes'], colors):
+            for patch, color in zip(box_plot["boxes"], colors):
                 patch.set_facecolor(color)
                 patch.set_alpha(0.7)
 
-            ax2.set_ylabel('Parameter Values')
-            ax2.set_title('Final Parameter Distributions')
-            ax2.grid(True, alpha=0.3, axis='y')
-            plt.setp(ax2.get_xticklabels(), rotation=45, ha='right')
+            ax2.set_ylabel("Parameter Values")
+            ax2.set_title("Final Parameter Distributions")
+            ax2.grid(True, alpha=0.3, axis="y")
+            plt.setp(ax2.get_xticklabels(), rotation=45, ha="right")
 
         # 3. 目标函数改进
-        if 'improvement_history' in statistics_data:
+        if "improvement_history" in statistics_data:
             ax3 = axes[1, 0]
-            improvements = statistics_data['improvement_history']
+            improvements = statistics_data["improvement_history"]
             generations = range(1, len(improvements) + 1)
-            ax3.plot(generations, improvements, color=OPT_COLORS['current'],
-                    linewidth=2, marker='o', markersize=4)
-            ax3.set_xlabel('Generation')
-            ax3.set_ylabel('Improvement')
-            ax3.set_title('Objective Function Improvement')
+            ax3.plot(
+                generations,
+                improvements,
+                color=OPT_COLORS["current"],
+                linewidth=2,
+                marker="o",
+                markersize=4,
+            )
+            ax3.set_xlabel("Generation")
+            ax3.set_ylabel("Improvement")
+            ax3.set_title("Objective Function Improvement")
             ax3.grid(True, alpha=0.3)
 
         # 4. 算法性能指标
-        if 'performance_metrics' in statistics_data:
+        if "performance_metrics" in statistics_data:
             ax4 = axes[1, 1]
-            metrics = statistics_data['performance_metrics']
+            metrics = statistics_data["performance_metrics"]
             metric_names = list(metrics.keys())
             metric_values = list(metrics.values())
 
-            bars = ax4.bar(metric_names, metric_values, color=OPT_COLORS['feasible'], alpha=0.7)
+            bars = ax4.bar(
+                metric_names, metric_values, color=OPT_COLORS["feasible"], alpha=0.7
+            )
             for i, bar in enumerate(bars):
                 height = bar.get_height()
-                ax4.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                        f'{height:.3f}', ha='center', va='bottom',
-                        fontsize=self.font_sizes['annotation'])
+                ax4.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    height + 0.01,
+                    f"{height:.3f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=self.font_sizes["annotation"],
+                )
 
-            ax4.set_ylabel('Metric Value')
-            ax4.set_title('Performance Metrics')
-            ax4.grid(True, alpha=0.3, axis='y')
-            plt.setp(ax4.get_xticklabels(), rotation=45, ha='right')
+            ax4.set_ylabel("Metric Value")
+            ax4.set_title("Performance Metrics")
+            ax4.grid(True, alpha=0.3, axis="y")
+            plt.setp(ax4.get_xticklabels(), rotation=45, ha="right")
 
-        plt.suptitle(f'{algorithm_name} - Optimization Statistics',
-                    fontsize=self.font_sizes['title'], fontweight='bold')
+        plt.suptitle(
+            f"{algorithm_name} - Optimization Statistics",
+            fontsize=self.font_sizes["title"],
+            fontweight="bold",
+        )
         plt.tight_layout()
 
         # 保存图片
         if save_path is None:
-            save_path = self.output_dir / f"{algorithm_name.lower().replace(' ', '_')}_statistics.png"
+            save_path = (
+                self.output_dir
+                / f"{algorithm_name.lower().replace(' ', '_')}_statistics.png"
+            )
 
-        plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight', facecolor='white')
+        plt.savefig(save_path, dpi=self.dpi, bbox_inches="tight", facecolor="white")
         plt.close()
 
         self.logger.info(f"优化统计图已保存: {save_path}")
@@ -547,7 +727,7 @@ class OptimizationVisualizer:
         self,
         optimization_data: Dict[str, Any],
         algorithm_name: str = "Optimization Algorithm",
-        save_path: str = None
+        save_path: str = None,
     ) -> str:
         """
         创建完整的优化报告
@@ -563,55 +743,54 @@ class OptimizationVisualizer:
         charts = {}
 
         # 生成各类图表
-        if 'convergence_history' in optimization_data:
-            conv_data = optimization_data['convergence_history']
-            charts['convergence'] = self.plot_convergence_history(
-                conv_data.get('best_values', []),
-                conv_data.get('mean_values'),
-                conv_data.get('worst_values'),
-                conv_data.get('target_value'),
-                algorithm_name=algorithm_name
+        if "convergence_history" in optimization_data:
+            conv_data = optimization_data["convergence_history"]
+            charts["convergence"] = self.plot_convergence_history(
+                conv_data.get("best_values", []),
+                conv_data.get("mean_values"),
+                conv_data.get("worst_values"),
+                conv_data.get("target_value"),
+                algorithm_name=algorithm_name,
             )
 
-        if 'parameter_history' in optimization_data:
-            charts['parameters'] = self.plot_parameter_evolution(
-                optimization_data['parameter_history'],
-                optimization_data.get('parameter_ranges'),
-                algorithm_name=algorithm_name
+        if "parameter_history" in optimization_data:
+            charts["parameters"] = self.plot_parameter_evolution(
+                optimization_data["parameter_history"],
+                optimization_data.get("parameter_ranges"),
+                algorithm_name=algorithm_name,
             )
 
-        if 'parameter_samples' in optimization_data:
-            charts['correlation'] = self.plot_parameter_correlation_matrix(
-                optimization_data['parameter_samples'],
-                optimization_data.get('objective_values'),
-                algorithm_name=algorithm_name
+        if "parameter_samples" in optimization_data:
+            charts["correlation"] = self.plot_parameter_correlation_matrix(
+                optimization_data["parameter_samples"],
+                optimization_data.get("objective_values"),
+                algorithm_name=algorithm_name,
             )
 
-        if 'statistics' in optimization_data:
-            charts['statistics'] = self.plot_optimization_statistics(
-                optimization_data['statistics'],
-                algorithm_name=algorithm_name
+        if "statistics" in optimization_data:
+            charts["statistics"] = self.plot_optimization_statistics(
+                optimization_data["statistics"], algorithm_name=algorithm_name
             )
 
         # 生成HTML报告
         if save_path is None:
-            save_path = self.output_dir / f"{algorithm_name.lower().replace(' ', '_')}_optimization_report.html"
+            save_path = (
+                self.output_dir
+                / f"{algorithm_name.lower().replace(' ', '_')}_optimization_report.html"
+            )
 
         html_content = self._generate_optimization_report_html(
             optimization_data, charts, algorithm_name
         )
 
-        with open(save_path, 'w', encoding='utf-8') as f:
+        with open(save_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
         self.logger.info(f"优化报告已生成: {save_path}")
         return str(save_path)
 
     def _generate_optimization_report_html(
-        self,
-        data: Dict[str, Any],
-        charts: Dict[str, str],
-        algorithm_name: str
+        self, data: Dict[str, Any], charts: Dict[str, str], algorithm_name: str
     ) -> str:
         """生成优化报告HTML"""
         html = f"""
@@ -649,7 +828,7 @@ class OptimizationVisualizer:
         """
 
         # 添加摘要信息
-        if 'final_best' in data:
+        if "final_best" in data:
             html += f"""
             <div class="summary-card">
                 <div class="metric-label">最优目标值</div>
@@ -657,7 +836,7 @@ class OptimizationVisualizer:
             </div>
             """
 
-        if 'total_generations' in data:
+        if "total_generations" in data:
             html += f"""
             <div class="summary-card">
                 <div class="metric-label">总代数</div>
@@ -665,7 +844,7 @@ class OptimizationVisualizer:
             </div>
             """
 
-        if 'total_evaluations' in data:
+        if "total_evaluations" in data:
             html += f"""
             <div class="summary-card">
                 <div class="metric-label">总评估次数</div>
@@ -673,7 +852,7 @@ class OptimizationVisualizer:
             </div>
             """
 
-        if 'convergence_generation' in data:
+        if "convergence_generation" in data:
             html += f"""
             <div class="summary-card">
                 <div class="metric-label">收敛代数</div>
@@ -691,10 +870,10 @@ class OptimizationVisualizer:
 
         # 添加图表
         chart_titles = {
-            'convergence': '收敛历史',
-            'parameters': '参数进化',
-            'correlation': '参数相关性',
-            'statistics': '统计信息'
+            "convergence": "收敛历史",
+            "parameters": "参数进化",
+            "correlation": "参数相关性",
+            "statistics": "统计信息",
         }
 
         for chart_key, chart_path in charts.items():

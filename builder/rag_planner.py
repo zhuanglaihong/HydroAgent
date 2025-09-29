@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class KnowledgeFragment:
     """知识片段"""
+
     content: str
     source: str
     score: float
@@ -37,13 +38,14 @@ class KnowledgeFragment:
             "source": self.source,
             "score": self.score,
             "fragment_type": self.fragment_type,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
 @dataclass
 class RAGContext:
     """RAG上下文"""
+
     query: str
     fragments: List[KnowledgeFragment]
     total_fragments: int
@@ -55,6 +57,7 @@ class RAGContext:
 @dataclass
 class CoTStep:
     """思维链步骤"""
+
     step_number: int
     question: str
     reasoning: str
@@ -65,6 +68,7 @@ class CoTStep:
 @dataclass
 class PlanningResult:
     """规划结果"""
+
     workflow: Dict[str, Any]
     rag_context: RAGContext
     cot_steps: List[CoTStep]
@@ -183,7 +187,9 @@ class RAGPlanner:
 
 请先进行逐步分析，然后输出最终的JSON工作流。"""
 
-    def plan_workflow(self, query: str, context: Dict[str, Any] = None) -> PlanningResult:
+    def plan_workflow(
+        self, query: str, context: Dict[str, Any] = None
+    ) -> PlanningResult:
         """
         规划工作流
 
@@ -208,7 +214,9 @@ class RAGPlanner:
             # 打印提示词调试信息
             prompt_length = len(prompt)
             prompt_tokens_estimate = prompt_length // 4  # 粗略估算token数
-            logger.info(f"提示词长度: {prompt_length} 字符, 估算 {prompt_tokens_estimate} tokens")
+            logger.info(
+                f"提示词长度: {prompt_length} 字符, 估算 {prompt_tokens_estimate} tokens"
+            )
             logger.info(f"使用的知识片段数量: {len(rag_context.fragments)}")
 
             # 第三步：LLM推理生成工作流
@@ -217,17 +225,19 @@ class RAGPlanner:
 
             llm_start_time = time.time()
             response = self.llm_client.generate(
-                prompt=prompt,
-                temperature=COT_TEMPERATURE,
-                max_tokens=4000
+                prompt=prompt, temperature=COT_TEMPERATURE, max_tokens=4000
             )
             llm_time = time.time() - llm_start_time
 
-            logger.info(f"LLM调用完成 - 耗时: {llm_time:.2f}秒, 成功: {response.success}")
+            logger.info(
+                f"LLM调用完成 - 耗时: {llm_time:.2f}秒, 成功: {response.success}"
+            )
 
             if response.success:
                 logger.info(f"LLM响应长度: {len(response.content)} 字符")
-                logger.info(f"LLM响应内容预览 (前1000字符):\n{response.content[:1000]}...")
+                logger.info(
+                    f"LLM响应内容预览 (前1000字符):\n{response.content[:1000]}..."
+                )
             else:
                 logger.error(f"LLM调用失败详情: {response.error_message}")
                 logger.error(f"使用的模型: {response.model_used}")
@@ -249,8 +259,8 @@ class RAGPlanner:
                     "model_used": response.model_used,
                     "response_time": response.response_time,
                     "query_length": len(query),
-                    "knowledge_fragments": len(rag_context.fragments)
-                }
+                    "knowledge_fragments": len(rag_context.fragments),
+                },
             )
 
         except Exception as e:
@@ -265,7 +275,7 @@ class RAGPlanner:
                 cot_steps=[],
                 planning_time=planning_time,
                 success=False,
-                error_message=error_msg
+                error_message=error_msg,
             )
 
     def _retrieve_knowledge(self, query: str) -> RAGContext:
@@ -278,18 +288,19 @@ class RAGPlanner:
             if self.rag_system:
                 # 使用RAG系统检索
                 results = self.rag_system.query(
-                    query_text=query,
-                    top_k=COT_KNOWLEDGE_CHUNKS
+                    query_text=query, top_k=COT_KNOWLEDGE_CHUNKS
                 )
 
                 if isinstance(results, dict) and "results" in results:
                     for result in results["results"]:
                         fragment = KnowledgeFragment(
                             content=result.get("content", ""),
-                            source=result.get("metadata", {}).get("source_file", "rag_system"),
+                            source=result.get("metadata", {}).get(
+                                "source_file", "rag_system"
+                            ),
                             score=result.get("score", 0.0),
                             fragment_type="rag_retrieved",
-                            metadata=result.get("metadata", {})
+                            metadata=result.get("metadata", {}),
                         )
                         fragments.append(fragment)
             else:
@@ -306,7 +317,7 @@ class RAGPlanner:
                 fragments=fragments,
                 total_fragments=len(fragments),
                 retrieval_time=retrieval_time,
-                context_summary=context_summary
+                context_summary=context_summary,
             )
 
         except Exception as e:
@@ -315,7 +326,7 @@ class RAGPlanner:
                 query=query,
                 fragments=self._get_fallback_knowledge(query),
                 total_fragments=0,
-                retrieval_time=time.time() - start_time
+                retrieval_time=time.time() - start_time,
             )
 
     def _get_fallback_knowledge(self, query: str) -> List[KnowledgeFragment]:
@@ -325,20 +336,20 @@ class RAGPlanner:
                 content="水文模型率定是确定模型参数的过程，通常包括数据准备、参数优化和结果评估三个步骤",
                 source="fallback_system",
                 score=0.7,
-                fragment_type="background"
+                fragment_type="background",
             ),
             KnowledgeFragment(
                 content="可用工具：get_model_params(获取参数), prepare_data(数据处理), calibrate_model(模型率定), evaluate_model(模型评估)",
                 source="fallback_system",
                 score=0.9,
-                fragment_type="tool_info"
+                fragment_type="tool_info",
             ),
             KnowledgeFragment(
                 content="工作流任务类型：simple用于直接操作，complex用于需要复杂推理的任务",
                 source="fallback_system",
                 score=0.8,
-                fragment_type="system_info"
-            )
+                fragment_type="system_info",
+            ),
         ]
 
         return fallback_knowledge
@@ -360,7 +371,9 @@ class RAGPlanner:
         if rag_context.fragments:
             knowledge_parts = []
             for i, fragment in enumerate(rag_context.fragments, 1):
-                knowledge_parts.append(f"{i}. {fragment.content} (来源: {fragment.source})")
+                knowledge_parts.append(
+                    f"{i}. {fragment.content} (来源: {fragment.source})"
+                )
             knowledge_context = "\n".join(knowledge_parts)
         else:
             knowledge_context = "暂无相关背景知识"
@@ -369,14 +382,14 @@ class RAGPlanner:
 
         prompt = f"{self.system_prompt}\n\n"
         prompt += self.cot_template.format(
-            query=query,
-            knowledge_context=knowledge_context,
-            timestamp=timestamp
+            query=query, knowledge_context=knowledge_context, timestamp=timestamp
         )
 
         return prompt
 
-    def _parse_llm_response(self, response: str) -> Tuple[List[CoTStep], Dict[str, Any]]:
+    def _parse_llm_response(
+        self, response: str
+    ) -> Tuple[List[CoTStep], Dict[str, Any]]:
         """解析LLM响应"""
         cot_steps = []
         workflow = {}
@@ -403,7 +416,7 @@ class RAGPlanner:
         steps = []
 
         # 匹配编号的步骤
-        pattern = r'(\d+)\.\s*\*\*([^*]+)\*\*\s*\n(.*?)(?=\n\d+\.\s*\*\*|\n```|\n\n|$)'
+        pattern = r"(\d+)\.\s*\*\*([^*]+)\*\*\s*\n(.*?)(?=\n\d+\.\s*\*\*|\n```|\n\n|$)"
         matches = re.findall(pattern, response, re.DOTALL)
 
         for i, (step_num, question, reasoning) in enumerate(matches):
@@ -412,7 +425,7 @@ class RAGPlanner:
                 question=question.strip(),
                 reasoning=reasoning.strip(),
                 conclusion="",
-                confidence=0.8
+                confidence=0.8,
             )
             steps.append(step)
 
@@ -421,7 +434,7 @@ class RAGPlanner:
     def _extract_json_workflow(self, response: str) -> Dict[str, Any]:
         """提取JSON工作流"""
         # 寻找JSON代码块
-        json_pattern = r'```json\s*([\s\S]*?)\s*```'
+        json_pattern = r"```json\s*([\s\S]*?)\s*```"
         json_matches = re.findall(json_pattern, response, re.MULTILINE)
 
         if json_matches:
@@ -429,20 +442,22 @@ class RAGPlanner:
                 try:
                     workflow = json.loads(json_text)
                     if isinstance(workflow, dict) and "tasks" in workflow:
-                        logger.info(f"成功提取JSON工作流，包含 {len(workflow.get('tasks', []))} 个任务")
+                        logger.info(
+                            f"成功提取JSON工作流，包含 {len(workflow.get('tasks', []))} 个任务"
+                        )
                         return workflow
                 except json.JSONDecodeError:
                     continue
 
         # 备用方法：寻找JSON对象
-        json_start = response.find('{')
+        json_start = response.find("{")
         if json_start != -1:
             brace_count = 0
             json_end = -1
             for i in range(json_start, len(response)):
-                if response[i] == '{':
+                if response[i] == "{":
                     brace_count += 1
-                elif response[i] == '}':
+                elif response[i] == "}":
                     brace_count -= 1
                     if brace_count == 0:
                         json_end = i + 1
@@ -478,14 +493,14 @@ class RAGPlanner:
                     "parameters": {},
                     "dependencies": [],
                     "conditions": {},
-                    "expected_output": "模型参数信息"
+                    "expected_output": "模型参数信息",
                 }
             ],
             "metadata": {
                 "created_time": datetime.now().isoformat(),
                 "estimated_duration": "1分钟",
-                "complexity": "低"
-            }
+                "complexity": "低",
+            },
         }
 
     def _create_fallback_workflow(self, query: str) -> Dict[str, Any]:
@@ -505,15 +520,15 @@ class RAGPlanner:
                     "parameters": {"query": query},
                     "dependencies": [],
                     "conditions": {},
-                    "expected_output": "手动处理结果"
+                    "expected_output": "手动处理结果",
                 }
             ],
             "metadata": {
                 "created_time": datetime.now().isoformat(),
                 "estimated_duration": "未知",
                 "complexity": "未知",
-                "is_fallback": True
-            }
+                "is_fallback": True,
+            },
         }
 
     def validate_workflow(self, workflow: Dict[str, Any]) -> Dict[str, Any]:
@@ -522,7 +537,7 @@ class RAGPlanner:
             "is_valid": True,
             "errors": [],
             "warnings": [],
-            "suggestions": []
+            "suggestions": [],
         }
 
         try:
@@ -540,7 +555,12 @@ class RAGPlanner:
                 validation_result["is_valid"] = False
             else:
                 task_ids = set()
-                valid_actions = {"get_model_params", "prepare_data", "calibrate_model", "evaluate_model"}
+                valid_actions = {
+                    "get_model_params",
+                    "prepare_data",
+                    "calibrate_model",
+                    "evaluate_model",
+                }
 
                 for task in tasks:
                     task_id = task.get("task_id", "")
@@ -563,14 +583,18 @@ class RAGPlanner:
                     # 检查任务类型
                     task_type = task.get("type", "")
                     if task_type not in ["simple", "complex"]:
-                        validation_result["warnings"].append(f"未知的任务类型: {task_type}")
+                        validation_result["warnings"].append(
+                            f"未知的任务类型: {task_type}"
+                        )
 
                     # 检查依赖
                     dependencies = task.get("dependencies", [])
                     for dep_id in dependencies:
                         if dep_id not in task_ids and dep_id != task_id:
                             # 这里可能是前向依赖，暂时只给警告
-                            validation_result["warnings"].append(f"任务 {task_id} 依赖未定义的任务: {dep_id}")
+                            validation_result["warnings"].append(
+                                f"任务 {task_id} 依赖未定义的任务: {dep_id}"
+                            )
 
         except Exception as e:
             validation_result["errors"].append(f"验证过程异常: {str(e)}")

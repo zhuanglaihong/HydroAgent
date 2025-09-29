@@ -24,38 +24,41 @@ logger = logging.getLogger(__name__)
 
 class IntentType(Enum):
     """意图类型枚举"""
-    DATA_ACQUISITION = "data_acquisition"    # 数据获取
-    DATA_ANALYSIS = "data_analysis"          # 数据分析
+
+    DATA_ACQUISITION = "data_acquisition"  # 数据获取
+    DATA_ANALYSIS = "data_analysis"  # 数据分析
     MODEL_CALIBRATION = "model_calibration"  # 模型率定
-    MODEL_SIMULATION = "model_simulation"    # 模型模拟
-    MODEL_EVALUATION = "model_evaluation"    # 模型评估
-    VISUALIZATION = "visualization"          # 数据可视化
-    CONTENT_GENERATION = "content_generation" # 内容生成
+    MODEL_SIMULATION = "model_simulation"  # 模型模拟
+    MODEL_EVALUATION = "model_evaluation"  # 模型评估
+    VISUALIZATION = "visualization"  # 数据可视化
+    CONTENT_GENERATION = "content_generation"  # 内容生成
     CONTROL_OPERATION = "control_operation"  # 控制操作
-    UNKNOWN = "unknown"                      # 未知意图
+    UNKNOWN = "unknown"  # 未知意图
 
 
 class EntityType(Enum):
     """实体类型枚举"""
-    TIME_PERIOD = "time_period"      # 时间段
-    LOCATION = "location"            # 地点
-    MODEL_NAME = "model_name"        # 模型名称
-    PARAMETER = "parameter"          # 参数
-    DATA_TYPE = "data_type"          # 数据类型
-    OPERATION = "operation"          # 操作
-    FILE_PATH = "file_path"          # 文件路径
-    THRESHOLD = "threshold"          # 阈值
+
+    TIME_PERIOD = "time_period"  # 时间段
+    LOCATION = "location"  # 地点
+    MODEL_NAME = "model_name"  # 模型名称
+    PARAMETER = "parameter"  # 参数
+    DATA_TYPE = "data_type"  # 数据类型
+    OPERATION = "operation"  # 操作
+    FILE_PATH = "file_path"  # 文件路径
+    THRESHOLD = "threshold"  # 阈值
 
 
 @dataclass
 class Entity:
     """实体对象"""
-    text: str                    # 原始文本
-    entity_type: EntityType      # 实体类型
-    value: Any                   # 标准化值
-    confidence: float = 0.0      # 置信度
-    start_pos: int = -1          # 开始位置
-    end_pos: int = -1           # 结束位置
+
+    text: str  # 原始文本
+    entity_type: EntityType  # 实体类型
+    value: Any  # 标准化值
+    confidence: float = 0.0  # 置信度
+    start_pos: int = -1  # 开始位置
+    end_pos: int = -1  # 结束位置
     metadata: Dict[str, Any] = field(default_factory=dict)  # 元数据
 
     def to_dict(self) -> Dict[str, Any]:
@@ -67,22 +70,23 @@ class Entity:
             "confidence": self.confidence,
             "start_pos": self.start_pos,
             "end_pos": self.end_pos,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
 @dataclass
 class IntentResult:
     """意图分析结果"""
-    original_query: str                      # 原始查询
-    intent_type: IntentType                  # 意图类型
-    entities: Dict[str, List[Entity]]        # 识别的实体
-    parameters: Dict[str, Any]               # 提取的参数
-    constraints: Dict[str, Any]              # 约束条件
-    confidence: float = 0.0                  # 整体置信度
+
+    original_query: str  # 原始查询
+    intent_type: IntentType  # 意图类型
+    entities: Dict[str, List[Entity]]  # 识别的实体
+    parameters: Dict[str, Any]  # 提取的参数
+    constraints: Dict[str, Any]  # 约束条件
+    confidence: float = 0.0  # 整体置信度
     suggested_tools: List[str] = field(default_factory=list)  # 建议工具
-    clarified_intent: str = ""               # 明确化的意图
-    processing_time: float = 0.0             # 处理时间
+    clarified_intent: str = ""  # 明确化的意图
+    processing_time: float = 0.0  # 处理时间
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -98,14 +102,16 @@ class IntentResult:
             "confidence": self.confidence,
             "suggested_tools": self.suggested_tools,
             "clarified_intent": self.clarified_intent,
-            "processing_time": self.processing_time
+            "processing_time": self.processing_time,
         }
 
 
 class IntentParser:
     """指令解析器 - 用于指令理解和意图识别"""
 
-    def __init__(self, llm_client: LLMClient = None, enable_llm_enhancement: bool = False):
+    def __init__(
+        self, llm_client: LLMClient = None, enable_llm_enhancement: bool = False
+    ):
         """
         初始化指令解析器
 
@@ -131,93 +137,150 @@ class IntentParser:
         """初始化意图关键词映射"""
         self.intent_keywords = {
             IntentType.DATA_ACQUISITION: [
-                "获取", "下载", "收集", "读取", "加载", "导入", "准备",
-                "数据", "文件", "数据集"
+                "获取",
+                "下载",
+                "收集",
+                "读取",
+                "加载",
+                "导入",
+                "准备",
+                "数据",
+                "文件",
+                "数据集",
             ],
             IntentType.DATA_ANALYSIS: [
-                "分析", "统计", "计算", "检查", "查看",
-                "趋势", "相关性", "回归", "聚类"
+                "分析",
+                "统计",
+                "计算",
+                "检查",
+                "查看",
+                "趋势",
+                "相关性",
+                "回归",
+                "聚类",
             ],
             IntentType.MODEL_CALIBRATION: [
-                "率定", "校准", "优化", "拟合", "参数调整",
-                "模型率定", "参数优化", "校正", "训练"
+                "率定",
+                "校准",
+                "优化",
+                "拟合",
+                "参数调整",
+                "模型率定",
+                "参数优化",
+                "校正",
+                "训练",
             ],
             IntentType.MODEL_SIMULATION: [
-                "模拟", "仿真", "预测", "运行", "执行",
-                "模型运行", "计算", "求解", "模型参数"
+                "模拟",
+                "仿真",
+                "预测",
+                "运行",
+                "执行",
+                "模型运行",
+                "计算",
+                "求解",
+                "模型参数",
             ],
             IntentType.MODEL_EVALUATION: [
-                "评估", "验证", "测试", "性能", "精度", "指标",
-                "R2", "NSE", "RMSE", "效果", "评价", "评价指标"
+                "评估",
+                "验证",
+                "测试",
+                "性能",
+                "精度",
+                "指标",
+                "R2",
+                "NSE",
+                "RMSE",
+                "效果",
+                "评价",
+                "评价指标",
             ],
             IntentType.VISUALIZATION: [
-                "绘制", "画图", "可视化", "图表", "曲线",
-                "展示", "显示", "图"
+                "绘制",
+                "画图",
+                "可视化",
+                "图表",
+                "曲线",
+                "展示",
+                "显示",
+                "图",
             ],
             IntentType.CONTENT_GENERATION: [
-                "生成", "创建", "编写", "制作", "产生",
-                "报告", "文档", "总结"
+                "生成",
+                "创建",
+                "编写",
+                "制作",
+                "产生",
+                "报告",
+                "文档",
+                "总结",
             ],
             IntentType.CONTROL_OPERATION: [
-                "控制", "设置", "配置", "调节", "启动",
-                "停止", "重启", "管理"
-            ]
+                "控制",
+                "设置",
+                "配置",
+                "调节",
+                "启动",
+                "停止",
+                "重启",
+                "管理",
+            ],
         }
 
     def _init_entity_patterns(self):
         """初始化实体识别正则模式"""
         self.entity_patterns = {
             EntityType.TIME_PERIOD: [
-                r'\d{4}年?\d{1,2}月?\d{1,2}日?',  # 日期
-                r'\d{4}-\d{1,2}-\d{1,2}',        # ISO日期
-                r'\d{1,2}月',                    # 月份
-                r'\d{4}年',                      # 年份
-                r'从.*到.*',                     # 时间范围
-                r'最近\d+[天月年]',               # 相对时间
-                r'\d{4}-\d{4}',                  # 年份范围
+                r"\d{4}年?\d{1,2}月?\d{1,2}日?",  # 日期
+                r"\d{4}-\d{1,2}-\d{1,2}",  # ISO日期
+                r"\d{1,2}月",  # 月份
+                r"\d{4}年",  # 年份
+                r"从.*到.*",  # 时间范围
+                r"最近\d+[天月年]",  # 相对时间
+                r"\d{4}-\d{4}",  # 年份范围
             ],
             EntityType.MODEL_NAME: [
-                r'GR4J|gr4j',
-                r'GR1Y|gr1y',
-                r'GR2M|gr2m',
-                r'GR5J|gr5j',
-                r'GR6J|gr6j',
-                r'XAJ|xaj',
-                r'LSTM|lstm',
-                r'CNN|cnn',
-                r'Transformer|transformer',
-                r'Random Forest|random forest',
+                r"GR4J|gr4j",
+                r"GR1Y|gr1y",
+                r"GR2M|gr2m",
+                r"GR5J|gr5j",
+                r"GR6J|gr6j",
+                r"XAJ|xaj",
+                r"LSTM|lstm",
+                r"CNN|cnn",
+                r"Transformer|transformer",
+                r"Random Forest|random forest",
             ],
             EntityType.PARAMETER: [
-                r'参数\w*',
-                r'\w*参数',
-                r'X[1-6]',                       # GR系列参数
-                r'学习率',
-                r'批量大小',
-                r'epoch',
-                r'迭代次数',
-                r'优化方法',
+                r"参数\w*",
+                r"\w*参数",
+                r"X[1-6]",  # GR系列参数
+                r"学习率",
+                r"批量大小",
+                r"epoch",
+                r"迭代次数",
+                r"优化方法",
             ],
             EntityType.DATA_TYPE: [
-                r'降雨量?',
-                r'径流量?',
-                r'蒸发量?',
-                r'温度',
-                r'湿度',
-                r'流量',
-                r'水位',
-                r'时间序列',
-                r'历史数据',
+                r"降雨量?",
+                r"径流量?",
+                r"蒸发量?",
+                r"温度",
+                r"湿度",
+                r"流量",
+                r"水位",
+                r"时间序列",
+                r"历史数据",
             ],
             EntityType.FILE_PATH: [
-                r'[./\w\-_]+\.(csv|txt|json|xlsx?|nc)',
-                r'[A-Za-z]:[/\\][\w/\\.-]+',
+                r"[./\w\-_]+\.(csv|txt|json|xlsx?|nc)",
+                r"[A-Za-z]:[/\\][\w/\\.-]+",
             ],
             EntityType.THRESHOLD: [
-                r'>\s*[\d.]+',
-                r'<\s*[\d.]+',
-                r'=\s*[\d.]+',
-                r'阈值\s*[\d.]+',
+                r">\s*[\d.]+",
+                r"<\s*[\d.]+",
+                r"=\s*[\d.]+",
+                r"阈值\s*[\d.]+",
             ],
         }
 
@@ -233,26 +296,26 @@ class IntentParser:
             ],
             IntentType.MODEL_CALIBRATION: [
                 "calibrate_model",  # 模型率定工具
-                "prepare_data",     # 率定前需要数据准备
+                "prepare_data",  # 率定前需要数据准备
             ],
             IntentType.MODEL_SIMULATION: [
                 "get_model_params",  # 获取模型参数
-                "prepare_data",      # 模拟需要数据
+                "prepare_data",  # 模拟需要数据
             ],
             IntentType.MODEL_EVALUATION: [
-                "evaluate_model",   # 模型评估工具
+                "evaluate_model",  # 模型评估工具
                 "calibrate_model",  # 评估通常在率定后
             ],
             IntentType.VISUALIZATION: [
-                "evaluate_model",   # 评估结果可视化
-                "prepare_data",     # 可视化需要数据
+                "evaluate_model",  # 评估结果可视化
+                "prepare_data",  # 可视化需要数据
             ],
             IntentType.CONTENT_GENERATION: [
-                "evaluate_model",   # 生成评估报告
+                "evaluate_model",  # 生成评估报告
             ],
             IntentType.CONTROL_OPERATION: [
                 "get_model_params",  # 控制操作可能需要参数信息
-            ]
+            ],
         }
 
     def parse_instruction(self, instruction: str) -> IntentResult:
@@ -288,7 +351,11 @@ class IntentParser:
 
             # 7. 使用LLM进行增强分析（如果启用且可用）
             clarified_intent = instruction
-            if self.enable_llm_enhancement and self.llm_client and self.llm_client.is_available():
+            if (
+                self.enable_llm_enhancement
+                and self.llm_client
+                and self.llm_client.is_available()
+            ):
                 enhanced_result = self._enhance_with_llm(
                     instruction, intent_type, entities, parameters, constraints
                 )
@@ -299,8 +366,11 @@ class IntentParser:
                         # 尝试将字符串转换为IntentType枚举
                         try:
                             for intent_enum in IntentType:
-                                if (intent_enum.value == llm_intent_type or
-                                    intent_enum.name.lower() == llm_intent_type.lower()):
+                                if (
+                                    intent_enum.value == llm_intent_type
+                                    or intent_enum.name.lower()
+                                    == llm_intent_type.lower()
+                                ):
                                     intent_type = intent_enum
                                     break
                         except:
@@ -308,7 +378,9 @@ class IntentParser:
                     elif isinstance(llm_intent_type, IntentType):
                         intent_type = llm_intent_type
 
-                    clarified_intent = enhanced_result.get("clarified_intent", instruction)
+                    clarified_intent = enhanced_result.get(
+                        "clarified_intent", instruction
+                    )
 
             # 8. 计算置信度
             confidence = self._calculate_confidence(intent_type, entities, parameters)
@@ -325,7 +397,7 @@ class IntentParser:
                 confidence=confidence,
                 suggested_tools=suggested_tools,
                 clarified_intent=clarified_intent,
-                processing_time=processing_time
+                processing_time=processing_time,
             )
 
             logger.info(f"意图解析完成: {instruction[:50]}... -> {intent_type.value}")
@@ -341,7 +413,7 @@ class IntentParser:
                 parameters={},
                 constraints={},
                 confidence=0.0,
-                processing_time=time.time() - start_time
+                processing_time=time.time() - start_time,
             )
 
     def _normalize_instruction(self, instruction: str) -> str:
@@ -350,10 +422,10 @@ class IntentParser:
         normalized = instruction.lower().strip()
 
         # 去除多余空白字符
-        normalized = re.sub(r'\s+', ' ', normalized)
+        normalized = re.sub(r"\s+", " ", normalized)
 
         # 标准化标点符号
-        normalized = re.sub(r'[，。！？]', ',', normalized)
+        normalized = re.sub(r"[，。！？]", ",", normalized)
 
         return normalized
 
@@ -392,7 +464,7 @@ class IntentParser:
                         value=self._normalize_entity_value(match.group(), entity_type),
                         confidence=0.8,  # 基于规则的实体置信度
                         start_pos=match.start(),
-                        end_pos=match.end()
+                        end_pos=match.end(),
                     )
                     entity_list.append(entity)
 
@@ -412,7 +484,9 @@ class IntentParser:
         else:
             return text
 
-    def _extract_parameters(self, instruction: str, entities: Dict[str, List[Entity]]) -> Dict[str, Any]:
+    def _extract_parameters(
+        self, instruction: str, entities: Dict[str, List[Entity]]
+    ) -> Dict[str, Any]:
         """提取参数"""
         parameters = {}
 
@@ -422,7 +496,7 @@ class IntentParser:
             parameters["model_parameters"] = [e.value for e in entities[parameter_key]]
 
         # 提取数值参数
-        number_pattern = r'(\d+(?:\.\d+)?)'
+        number_pattern = r"(\d+(?:\.\d+)?)"
         numbers = re.findall(number_pattern, instruction)
         if numbers:
             parameters["numeric_values"] = [float(n) for n in numbers]
@@ -435,28 +509,38 @@ class IntentParser:
 
         return parameters
 
-    def _extract_constraints(self, instruction: str, entities: Dict[str, List[Entity]]) -> Dict[str, Any]:
+    def _extract_constraints(
+        self, instruction: str, entities: Dict[str, List[Entity]]
+    ) -> Dict[str, Any]:
         """提取约束条件"""
         constraints = {}
 
         # 时间约束
         time_period_key = EntityType.TIME_PERIOD.value
         if time_period_key in entities:
-            constraints["time_constraints"] = [e.value for e in entities[time_period_key]]
+            constraints["time_constraints"] = [
+                e.value for e in entities[time_period_key]
+            ]
 
         # 阈值约束
         threshold_key = EntityType.THRESHOLD.value
         if threshold_key in entities:
-            constraints["threshold_constraints"] = [e.value for e in entities[threshold_key]]
+            constraints["threshold_constraints"] = [
+                e.value for e in entities[threshold_key]
+            ]
 
         # 数据类型约束
         data_type_key = EntityType.DATA_TYPE.value
         if data_type_key in entities:
-            constraints["data_type_constraints"] = [e.value for e in entities[data_type_key]]
+            constraints["data_type_constraints"] = [
+                e.value for e in entities[data_type_key]
+            ]
 
         return constraints
 
-    def _suggest_tools(self, intent_type: IntentType, entities: Dict[str, List[Entity]]) -> List[str]:
+    def _suggest_tools(
+        self, intent_type: IntentType, entities: Dict[str, List[Entity]]
+    ) -> List[str]:
         """建议相关工具（仅限4个可用工具）"""
         suggested_tools = self.tool_mapping.get(intent_type, [])
 
@@ -465,15 +549,25 @@ class IntentParser:
         if model_name_key in entities:
             model_names = [e.value.lower() for e in entities[model_name_key]]
             # 所有模型都使用相同的4个工具，只是参数不同
-            if any(model in model_names for model in ["gr4j", "gr1y", "gr2m", "gr5j", "gr6j", "xaj"]):
+            if any(
+                model in model_names
+                for model in ["gr4j", "gr1y", "gr2m", "gr5j", "gr6j", "xaj"]
+            ):
                 # 确保包含核心工具
-                suggested_tools.extend(["get_model_params", "calibrate_model", "evaluate_model"])
+                suggested_tools.extend(
+                    ["get_model_params", "calibrate_model", "evaluate_model"]
+                )
 
         return list(set(suggested_tools))  # 去重
 
-    def _enhance_with_llm(self, instruction: str, intent_type: IntentType,
-                         entities: Dict[str, List[Entity]], parameters: Dict[str, Any],
-                         constraints: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _enhance_with_llm(
+        self,
+        instruction: str,
+        intent_type: IntentType,
+        entities: Dict[str, List[Entity]],
+        parameters: Dict[str, Any],
+        constraints: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
         """使用LLM增强分析结果"""
         try:
             # 构建提示词
@@ -493,9 +587,14 @@ class IntentParser:
 
         return None
 
-    def _build_enhancement_prompt(self, instruction: str, intent_type: IntentType,
-                                 entities: Dict[str, List[Entity]], parameters: Dict[str, Any],
-                                 constraints: Dict[str, Any]) -> str:
+    def _build_enhancement_prompt(
+        self,
+        instruction: str,
+        intent_type: IntentType,
+        entities: Dict[str, List[Entity]],
+        parameters: Dict[str, Any],
+        constraints: Dict[str, Any],
+    ) -> str:
         """构建LLM增强分析的提示词"""
         prompt = f"""你是一个水文建模领域的专家助手，请分析以下用户指令并提供改进建议。
 
@@ -535,7 +634,7 @@ class IntentParser:
         """解析LLM响应"""
         try:
             # 尝试提取JSON部分
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
             if json_match:
                 json_str = json_match.group()
                 return json.loads(json_str)
@@ -544,8 +643,12 @@ class IntentParser:
 
         return None
 
-    def _calculate_confidence(self, intent_type: IntentType, entities: Dict[str, List[Entity]],
-                            parameters: Dict[str, Any]) -> float:
+    def _calculate_confidence(
+        self,
+        intent_type: IntentType,
+        entities: Dict[str, List[Entity]],
+        parameters: Dict[str, Any],
+    ) -> float:
         """计算整体置信度"""
         confidence = 0.0
 
@@ -568,9 +671,13 @@ class IntentParser:
 _intent_parser = None
 
 
-def get_intent_parser(llm_client: LLMClient = None, enable_llm_enhancement: bool = False) -> IntentParser:
+def get_intent_parser(
+    llm_client: LLMClient = None, enable_llm_enhancement: bool = False
+) -> IntentParser:
     """获取全局意图解析器实例"""
     global _intent_parser
     if _intent_parser is None:
-        _intent_parser = IntentParser(llm_client=llm_client, enable_llm_enhancement=enable_llm_enhancement)
+        _intent_parser = IntentParser(
+            llm_client=llm_client, enable_llm_enhancement=enable_llm_enhancement
+        )
     return _intent_parser

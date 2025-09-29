@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 try:
     from .api_client import get_api_response
+
     API_CLIENT_AVAILABLE = True
 except (ImportError, Exception) as e:
     API_CLIENT_AVAILABLE = False
@@ -22,13 +23,18 @@ except (ImportError, Exception) as e:
 
 try:
     import ollama
+
     OLLAMA_AVAILABLE = True
 except ImportError:
     OLLAMA_AVAILABLE = False
 
 from config import (
-    LLM_USE_API_FIRST, LLM_API_MODEL_NAME, LLM_API_TIMEOUT,
-    LLM_FALLBACK_MODEL, LLM_FALLBACK_TIMEOUT, LLM_TEMPERATURE
+    LLM_USE_API_FIRST,
+    LLM_API_MODEL_NAME,
+    LLM_API_TIMEOUT,
+    LLM_FALLBACK_MODEL,
+    LLM_FALLBACK_TIMEOUT,
+    LLM_TEMPERATURE,
 )
 import signal
 import threading
@@ -39,6 +45,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LLMResponse:
     """LLM响应结果"""
+
     content: str
     model_used: str
     response_time: float
@@ -76,7 +83,7 @@ class LLMClient:
             "ollama_calls": 0,
             "ollama_successes": 0,
             "total_response_time": 0.0,
-            "avg_response_time": 0.0
+            "avg_response_time": 0.0,
         }
 
         # 初始化Ollama客户端
@@ -88,17 +95,23 @@ class LLMClient:
                 try:
                     models = self.ollama_client.list()
                     available_models = []
-                    if models and 'models' in models:
-                        for model in models['models']:
+                    if models and "models" in models:
+                        for model in models["models"]:
                             # 兼容不同的键名格式
-                            model_name = model.get('name') or model.get('model') or model.get('id', '')
+                            model_name = (
+                                model.get("name")
+                                or model.get("model")
+                                or model.get("id", "")
+                            )
                             if model_name:
                                 available_models.append(model_name)
 
                     if available_models:
                         logger.info(f"可用的Ollama模型: {available_models}")
                         if LLM_FALLBACK_MODEL not in available_models:
-                            logger.warning(f"Ollama模型 {LLM_FALLBACK_MODEL} 不可用，可用模型: {available_models}")
+                            logger.warning(
+                                f"Ollama模型 {LLM_FALLBACK_MODEL} 不可用，可用模型: {available_models}"
+                            )
                             # 不直接设为不可用，让后续调用时再处理
                     else:
                         logger.warning("未找到任何可用的Ollama模型")
@@ -109,10 +122,17 @@ class LLMClient:
                 logger.warning(f"Ollama客户端初始化失败: {e}")
                 self.ollama_available = False
 
-        logger.info(f"LLM客户端初始化完成 - API可用: {self.api_available}, Ollama可用: {self.ollama_available}")
+        logger.info(
+            f"LLM客户端初始化完成 - API可用: {self.api_available}, Ollama可用: {self.ollama_available}"
+        )
 
-    def generate(self, prompt: str, model: str = None, temperature: float = None,
-                max_tokens: int = 4000) -> LLMResponse:
+    def generate(
+        self,
+        prompt: str,
+        model: str = None,
+        temperature: float = None,
+        max_tokens: int = 4000,
+    ) -> LLMResponse:
         """
         生成文本响应
 
@@ -133,16 +153,22 @@ class LLMClient:
         # 决定使用哪个客户端
         if self.use_api_first and self.api_available:
             # 首先尝试API
-            response = self._call_api(prompt, model or LLM_API_MODEL_NAME, temperature, max_tokens)
+            response = self._call_api(
+                prompt, model or LLM_API_MODEL_NAME, temperature, max_tokens
+            )
             if response.success:
                 self._update_stats("api", True, response.response_time)
                 return response
             else:
-                logger.warning(f"API调用失败，尝试降级到Ollama: {response.error_message}")
+                logger.warning(
+                    f"API调用失败，尝试降级到Ollama: {response.error_message}"
+                )
 
         # 降级到Ollama
         if self.ollama_available:
-            response = self._call_ollama(prompt, model or LLM_FALLBACK_MODEL, temperature, max_tokens)
+            response = self._call_ollama(
+                prompt, model or LLM_FALLBACK_MODEL, temperature, max_tokens
+            )
             self._update_stats("ollama", response.success, response.response_time)
             return response
 
@@ -153,10 +179,12 @@ class LLMClient:
             model_used="none",
             response_time=response_time,
             success=False,
-            error_message="没有可用的LLM客户端"
+            error_message="没有可用的LLM客户端",
         )
 
-    def _call_api(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
+    def _call_api(
+        self, prompt: str, model: str, temperature: float, max_tokens: int
+    ) -> LLMResponse:
         """调用API客户端（带30秒超时）"""
         start_time = time.time()
         self.stats["api_calls"] += 1
@@ -172,7 +200,9 @@ class LLMClient:
 
             def api_call():
                 try:
-                    content = get_api_response(prompt, model=model, temperature=temperature)
+                    content = get_api_response(
+                        prompt, model=model, temperature=temperature
+                    )
                     response_container[0] = content
                 except Exception as e:
                     exception_container[0] = e
@@ -194,7 +224,7 @@ class LLMClient:
                     model_used=f"api_{model}",
                     response_time=response_time,
                     success=False,
-                    error_message=f"API调用超时({LLM_API_TIMEOUT}秒)"
+                    error_message=f"API调用超时({LLM_API_TIMEOUT}秒)",
                 )
 
             # 检查是否有异常
@@ -206,7 +236,9 @@ class LLMClient:
             response_time = time.time() - start_time
 
             if content:
-                logger.info(f"API调用成功 - 模型: {model}, 响应时间: {response_time:.2f}s")
+                logger.info(
+                    f"API调用成功 - 模型: {model}, 响应时间: {response_time:.2f}s"
+                )
                 return LLMResponse(
                     content=content,
                     model_used=f"api_{model}",
@@ -215,8 +247,8 @@ class LLMClient:
                     metadata={
                         "api_model": model,
                         "temperature": temperature,
-                        "max_tokens": max_tokens
-                    }
+                        "max_tokens": max_tokens,
+                    },
                 )
             else:
                 return LLMResponse(
@@ -224,7 +256,7 @@ class LLMClient:
                     model_used=f"api_{model}",
                     response_time=response_time,
                     success=False,
-                    error_message="API返回空响应"
+                    error_message="API返回空响应",
                 )
 
         except Exception as e:
@@ -235,16 +267,20 @@ class LLMClient:
                 model_used=f"api_{model}",
                 response_time=response_time,
                 success=False,
-                error_message=f"API调用异常: {str(e)}"
+                error_message=f"API调用异常: {str(e)}",
             )
 
-    def _call_ollama(self, prompt: str, model: str, temperature: float, max_tokens: int) -> LLMResponse:
+    def _call_ollama(
+        self, prompt: str, model: str, temperature: float, max_tokens: int
+    ) -> LLMResponse:
         """调用Ollama客户端（带60秒超时）"""
         start_time = time.time()
         self.stats["ollama_calls"] += 1
 
         # 增加详细日志
-        logger.info(f"开始Ollama调用 - 模型: {model}, 温度: {temperature}, 最大tokens: {max_tokens}")
+        logger.info(
+            f"开始Ollama调用 - 模型: {model}, 温度: {temperature}, 最大tokens: {max_tokens}"
+        )
         logger.info(f"提示词长度: {len(prompt)} 字符")
         logger.info(f"当前超时设置: {LLM_FALLBACK_TIMEOUT}秒")
 
@@ -259,10 +295,7 @@ class LLMClient:
                     response = self.ollama_client.generate(
                         model=model,
                         prompt=prompt,
-                        options={
-                            "temperature": temperature,
-                            "num_predict": max_tokens
-                        }
+                        options={"temperature": temperature, "num_predict": max_tokens},
                     )
                     logger.info(f"Ollama生成完成 - 响应大小: {len(str(response))} 字符")
                     response_container[0] = response
@@ -282,15 +315,19 @@ class LLMClient:
             if thread.is_alive():
                 # 超时了
                 response_time = time.time() - start_time
-                logger.warning(f"Ollama调用超时({LLM_FALLBACK_TIMEOUT}秒) - 模型: {model}")
+                logger.warning(
+                    f"Ollama调用超时({LLM_FALLBACK_TIMEOUT}秒) - 模型: {model}"
+                )
                 logger.warning(f"提示词长度: {len(prompt)} 字符可能过长导致超时")
-                logger.warning(f"建议: 1) 减少提示词长度 2) 增加超时设置 3) 检查模型性能")
+                logger.warning(
+                    f"建议: 1) 减少提示词长度 2) 增加超时设置 3) 检查模型性能"
+                )
                 return LLMResponse(
                     content="",
                     model_used=f"ollama_{model}",
                     response_time=response_time,
                     success=False,
-                    error_message=f"Ollama调用超时({LLM_FALLBACK_TIMEOUT}秒)"
+                    error_message=f"Ollama调用超时({LLM_FALLBACK_TIMEOUT}秒)",
                 )
 
             # 检查是否有异常
@@ -303,7 +340,9 @@ class LLMClient:
 
             content = response.get("response", "")
             if content:
-                logger.info(f"Ollama调用成功 - 模型: {model}, 响应时间: {response_time:.2f}s")
+                logger.info(
+                    f"Ollama调用成功 - 模型: {model}, 响应时间: {response_time:.2f}s"
+                )
                 return LLMResponse(
                     content=content,
                     model_used=f"ollama_{model}",
@@ -312,8 +351,8 @@ class LLMClient:
                     metadata={
                         "ollama_model": model,
                         "temperature": temperature,
-                        "max_tokens": max_tokens
-                    }
+                        "max_tokens": max_tokens,
+                    },
                 )
             else:
                 return LLMResponse(
@@ -321,7 +360,7 @@ class LLMClient:
                     model_used=f"ollama_{model}",
                     response_time=response_time,
                     success=False,
-                    error_message="Ollama返回空响应"
+                    error_message="Ollama返回空响应",
                 )
 
         except Exception as e:
@@ -332,7 +371,7 @@ class LLMClient:
                 model_used=f"ollama_{model}",
                 response_time=response_time,
                 success=False,
-                error_message=f"Ollama调用异常: {str(e)}"
+                error_message=f"Ollama调用异常: {str(e)}",
             )
 
     def _update_stats(self, client_type: str, success: bool, response_time: float):
@@ -343,7 +382,9 @@ class LLMClient:
         self.stats["total_response_time"] += response_time
         total_calls = self.stats["api_calls"] + self.stats["ollama_calls"]
         if total_calls > 0:
-            self.stats["avg_response_time"] = self.stats["total_response_time"] / total_calls
+            self.stats["avg_response_time"] = (
+                self.stats["total_response_time"] / total_calls
+            )
 
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
@@ -355,14 +396,22 @@ class LLMClient:
             "total_calls": total_calls,
             "total_successes": total_successes,
             "success_rate": total_successes / total_calls if total_calls > 0 else 0.0,
-            "api_success_rate": self.stats["api_successes"] / self.stats["api_calls"] if self.stats["api_calls"] > 0 else 0.0,
-            "ollama_success_rate": self.stats["ollama_successes"] / self.stats["ollama_calls"] if self.stats["ollama_calls"] > 0 else 0.0,
+            "api_success_rate": (
+                self.stats["api_successes"] / self.stats["api_calls"]
+                if self.stats["api_calls"] > 0
+                else 0.0
+            ),
+            "ollama_success_rate": (
+                self.stats["ollama_successes"] / self.stats["ollama_calls"]
+                if self.stats["ollama_calls"] > 0
+                else 0.0
+            ),
             "api_available": self.api_available,
             "ollama_available": self.ollama_available,
             "timeout_settings": {
                 "api_timeout": LLM_API_TIMEOUT,
-                "ollama_timeout": LLM_FALLBACK_TIMEOUT
-            }
+                "ollama_timeout": LLM_FALLBACK_TIMEOUT,
+            },
         }
 
     def test_timeout_mechanism(self) -> Dict[str, Any]:
@@ -372,7 +421,7 @@ class LLMClient:
         results = {
             "api_timeout": LLM_API_TIMEOUT,
             "ollama_timeout": LLM_FALLBACK_TIMEOUT,
-            "tests": {}
+            "tests": {},
         }
 
         # 测试API超时（如果可用）
@@ -381,25 +430,33 @@ class LLMClient:
             start = time.time()
             try:
                 # 使用一个可能较慢的提示来测试
-                response = self.generate("请详细描述水文建模的完整流程，包括所有步骤和细节，至少2000字",
-                                       temperature=0.1, max_tokens=3000)
+                response = self.generate(
+                    "请详细描述水文建模的完整流程，包括所有步骤和细节，至少2000字",
+                    temperature=0.1,
+                    max_tokens=3000,
+                )
                 test_time = time.time() - start
                 results["tests"]["api"] = {
                     "completed": response.success,
                     "response_time": test_time,
                     "within_timeout": test_time <= LLM_API_TIMEOUT + 5,  # 允许5秒误差
-                    "error": response.error_message if not response.success else None
+                    "error": response.error_message if not response.success else None,
                 }
             except Exception as e:
                 results["tests"]["api"] = {
                     "completed": False,
                     "error": str(e),
-                    "response_time": time.time() - start
+                    "response_time": time.time() - start,
                 }
 
         return results
 
-    def chat(self, messages: List[Dict[str, str]], model: str = None, temperature: float = None) -> LLMResponse:
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = None,
+        temperature: float = None,
+    ) -> LLMResponse:
         """
         对话式生成（兼容性方法）
 
@@ -432,10 +489,7 @@ class LLMClient:
 
     def test_connection(self) -> Dict[str, bool]:
         """测试连接状态"""
-        results = {
-            "api": False,
-            "ollama": False
-        }
+        results = {"api": False, "ollama": False}
 
         # 测试API连接
         if self.api_available:

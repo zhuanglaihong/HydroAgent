@@ -24,6 +24,7 @@ from .base_tool import BaseTool, ToolResult
 try:
     from definitions import DATASET_DIR
     from hydromodel.datasets.data_preprocess import process_and_save_data_as_nc
+
     HYDROMODEL_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"水文模型模块导入失败: {e}")
@@ -37,7 +38,7 @@ class PrepareDataTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="prepare_data",
-            description="处理和验证水文时间序列数据，转换为模型可用格式"
+            description="处理和验证水文时间序列数据，转换为模型可用格式",
         )
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
@@ -63,7 +64,7 @@ class PrepareDataTool(BaseTool):
                 data_dir,
                 os.path.join(DATASET_DIR, data_dir),
                 f"data/{data_dir}",
-                data_dir.replace("data/", DATASET_DIR + "/")
+                data_dir.replace("data/", DATASET_DIR + "/"),
             ]
 
             # 检查是否存在任何可用的数据目录
@@ -76,10 +77,14 @@ class PrepareDataTool(BaseTool):
             if not valid_path_found:
                 # 检查默认数据目录是否存在，如果存在就使用默认目录
                 if os.path.exists(DATASET_DIR):
-                    self.logger.warning(f"指定数据目录不存在: {data_dir}，将使用默认数据目录: {DATASET_DIR}")
+                    self.logger.warning(
+                        f"指定数据目录不存在: {data_dir}，将使用默认数据目录: {DATASET_DIR}"
+                    )
                     return True
                 else:
-                    self.logger.error(f"数据目录不存在: {data_dir}，可尝试的路径: {possible_paths}")
+                    self.logger.error(
+                        f"数据目录不存在: {data_dir}，可尝试的路径: {possible_paths}"
+                    )
                     return False
 
             return True
@@ -96,25 +101,23 @@ class PrepareDataTool(BaseTool):
                 "data_dir": {
                     "type": "string",
                     "description": "数据目录路径",
-                    "default": DATASET_DIR
+                    "default": DATASET_DIR,
                 },
                 "target_data_scale": {
                     "type": "string",
                     "description": "数据时间尺度，默认为日尺度('D')，可选'M'(月尺度)或'Y'(年尺度)",
                     "enum": ["D", "M", "Y"],
-                    "default": "D"
-                }
+                    "default": "D",
+                },
             },
             "required": [],
-            "additionalProperties": False
+            "additionalProperties": False,
         }
 
     def execute(self, parameters: Dict[str, Any]) -> ToolResult:
         """执行数据准备"""
         if not HYDROMODEL_AVAILABLE:
-            return self._create_error_result(
-                "水文模型模块不可用，请检查依赖安装"
-            )
+            return self._create_error_result("水文模型模块不可用，请检查依赖安装")
 
         # 获取参数，设置默认值
         data_dir = parameters.get("data_dir", DATASET_DIR)
@@ -127,7 +130,7 @@ class PrepareDataTool(BaseTool):
                 data_dir,
                 os.path.join(DATASET_DIR, data_dir),
                 f"data/{data_dir}",
-                data_dir.replace("data/", DATASET_DIR + "/")
+                data_dir.replace("data/", DATASET_DIR + "/"),
             ]
 
             for path in possible_paths:
@@ -139,7 +142,9 @@ class PrepareDataTool(BaseTool):
             if valid_data_dir is None:
                 if os.path.exists(DATASET_DIR):
                     valid_data_dir = DATASET_DIR
-                    self.logger.warning(f"指定数据目录不存在: {data_dir}，使用默认目录: {DATASET_DIR}")
+                    self.logger.warning(
+                        f"指定数据目录不存在: {data_dir}，使用默认目录: {DATASET_DIR}"
+                    )
                 else:
                     return self._create_error_result(f"数据目录不存在: {data_dir}")
 
@@ -153,13 +158,15 @@ class PrepareDataTool(BaseTool):
                 )
 
             # 处理数据
-            self.logger.info(f"开始处理数据目录: {data_dir}, 时间尺度: {target_data_scale}")
+            self.logger.info(
+                f"开始处理数据目录: {data_dir}, 时间尺度: {target_data_scale}"
+            )
 
             # 调用数据处理函数
             success = process_and_save_data_as_nc(
                 folder_path=data_dir,
                 target_data_scale=target_data_scale,
-                save_folder=data_dir
+                save_folder=data_dir,
             )
 
             if success:
@@ -177,16 +184,16 @@ class PrepareDataTool(BaseTool):
                     "processing_details": {
                         "input_format": "csv/txt",
                         "output_format": "netcdf",
-                        "time_scale": target_data_scale
-                    }
+                        "time_scale": target_data_scale,
+                    },
                 }
 
-                self.logger.info(f"数据处理成功，生成 {len(processed_files['nc_files'])} 个文件")
+                self.logger.info(
+                    f"数据处理成功，生成 {len(processed_files['nc_files'])} 个文件"
+                )
                 return self._create_success_result(output)
             else:
-                return self._create_error_result(
-                    "数据准备失败，请检查数据格式和内容"
-                )
+                return self._create_error_result("数据准备失败，请检查数据格式和内容")
 
         except Exception as e:
             error_msg = f"数据准备失败: {str(e)}"
@@ -214,7 +221,7 @@ class PrepareDataTool(BaseTool):
                 "has_required_files": has_required_files,
                 "found_files": found_file_names,
                 "missing_files": [] if has_required_files else required_patterns,
-                "total_files": len(found_files)
+                "total_files": len(found_files),
             }
 
         except Exception as e:
@@ -223,7 +230,7 @@ class PrepareDataTool(BaseTool):
                 "has_required_files": False,
                 "found_files": [],
                 "missing_files": ["检查失败"],
-                "total_files": 0
+                "total_files": 0,
             }
 
     def _check_processed_files(self, data_dir: str) -> Dict[str, Any]:
@@ -233,14 +240,8 @@ class PrepareDataTool(BaseTool):
             nc_files = list(data_path.glob("*.nc"))
             nc_file_names = [f.name for f in nc_files]
 
-            return {
-                "nc_files": nc_file_names,
-                "count": len(nc_files)
-            }
+            return {"nc_files": nc_file_names, "count": len(nc_files)}
 
         except Exception as e:
             self.logger.error(f"检查处理后文件失败: {e}")
-            return {
-                "nc_files": [],
-                "count": 0
-            }
+            return {"nc_files": [], "count": 0}

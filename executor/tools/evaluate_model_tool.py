@@ -26,6 +26,7 @@ from .base_tool import BaseTool, ToolResult
 try:
     from hydromodel.trainers.evaluate import Evaluator, read_yaml_config
     from hydromodel.datasets.data_preprocess import cross_val_split_tsdata
+
     HYDROMODEL_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"水文模型模块导入失败: {e}")
@@ -38,7 +39,7 @@ class EvaluateModelTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="evaluate_model",
-            description="评估已率定的水文模型性能，计算训练期和测试期的评估指标"
+            description="评估已率定的水文模型性能，计算训练期和测试期的评估指标",
         )
 
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
@@ -74,21 +75,21 @@ class EvaluateModelTool(BaseTool):
             "properties": {
                 "result_dir": {
                     "type": "string",
-                    "description": "率定结果保存目录，应包含config.yaml配置文件"
+                    "description": "率定结果保存目录，应包含config.yaml配置文件",
                 },
                 "exp_name": {
                     "type": "string",
                     "description": "实验名称",
-                    "default": "exp_evaluation"
+                    "default": "exp_evaluation",
                 },
                 "cv_fold": {
                     "type": "integer",
                     "description": "交叉验证折数，如果不提供则从config.yaml读取",
-                    "default": None
-                }
+                    "default": None,
+                },
             },
             "required": ["result_dir"],
-            "additionalProperties": False
+            "additionalProperties": False,
         }
 
     def _evaluate(self, cali_dir: str, param_dir: str, train_data, test_data) -> None:
@@ -121,7 +122,7 @@ class EvaluateModelTool(BaseTool):
             metrics = {}
             if not df.empty:
                 for col in df.columns:
-                    if col != 'basin_id':  # 跳过流域ID列
+                    if col != "basin_id":  # 跳过流域ID列
                         metrics[col] = float(df.loc[0, col])
             return metrics
         except (FileNotFoundError, KeyError, pd.errors.EmptyDataError) as e:
@@ -187,8 +188,12 @@ class EvaluateModelTool(BaseTool):
 
             if cv_fold <= 1:
                 param_dir = os.path.join(where_save, "sceua_gr_model")
-                train_metrics_path = os.path.join(param_dir, "train", "basins_metrics.csv")
-                test_metrics_path = os.path.join(param_dir, "test", "basins_metrics.csv")
+                train_metrics_path = os.path.join(
+                    param_dir, "train", "basins_metrics.csv"
+                )
+                test_metrics_path = os.path.join(
+                    param_dir, "test", "basins_metrics.csv"
+                )
 
                 train_metrics = self._read_metrics(train_metrics_path)
                 test_metrics = self._read_metrics(test_metrics_path)
@@ -197,24 +202,30 @@ class EvaluateModelTool(BaseTool):
                     "train_metrics": train_metrics,
                     "test_metrics": test_metrics,
                     "train_R2": train_metrics.get("R2"),
-                    "test_R2": test_metrics.get("R2")
+                    "test_R2": test_metrics.get("R2"),
                 }
             else:
                 # 对于交叉验证，可以计算平均指标
                 fold_results = []
                 for i in range(cv_fold):
                     fold_dir = os.path.join(where_save, f"sceua_gr_model_cv{i+1}")
-                    train_metrics_path = os.path.join(fold_dir, "train", "basins_metrics.csv")
-                    test_metrics_path = os.path.join(fold_dir, "test", "basins_metrics.csv")
+                    train_metrics_path = os.path.join(
+                        fold_dir, "train", "basins_metrics.csv"
+                    )
+                    test_metrics_path = os.path.join(
+                        fold_dir, "test", "basins_metrics.csv"
+                    )
 
                     train_metrics = self._read_metrics(train_metrics_path)
                     test_metrics = self._read_metrics(test_metrics_path)
 
-                    fold_results.append({
-                        "fold": i + 1,
-                        "train_metrics": train_metrics,
-                        "test_metrics": test_metrics
-                    })
+                    fold_results.append(
+                        {
+                            "fold": i + 1,
+                            "train_metrics": train_metrics,
+                            "test_metrics": test_metrics,
+                        }
+                    )
 
                 evaluation_results["cv_results"] = fold_results
                 evaluation_results["cv_fold"] = cv_fold
@@ -225,7 +236,7 @@ class EvaluateModelTool(BaseTool):
                 "result_dir": str(where_save),
                 "exp_name": exp_name,
                 "cv_fold": cv_fold,
-                "evaluation_results": evaluation_results
+                "evaluation_results": evaluation_results,
             }
 
             # 添加简化的评估信息用于快速查看
@@ -234,8 +245,12 @@ class EvaluateModelTool(BaseTool):
                 train_r2 = evaluation_results.get("train_R2")
                 test_r2 = evaluation_results.get("test_R2")
                 evl_info = {
-                    "训练期R2": f"{round(train_r2, 4)}" if train_r2 is not None else "N/A",
-                    "测试期R2": f"{round(test_r2, 4)}" if test_r2 is not None else "N/A",
+                    "训练期R2": (
+                        f"{round(train_r2, 4)}" if train_r2 is not None else "N/A"
+                    ),
+                    "测试期R2": (
+                        f"{round(test_r2, 4)}" if test_r2 is not None else "N/A"
+                    ),
                 }
             else:
                 evl_info["交叉验证折数"] = cv_fold
@@ -248,6 +263,7 @@ class EvaluateModelTool(BaseTool):
 
         except Exception as e:
             import traceback
+
             error_trace = traceback.format_exc()
             error_msg = f"模型评估失败: {str(e)}"
             self.logger.error(f"{error_msg}\n{error_trace}")

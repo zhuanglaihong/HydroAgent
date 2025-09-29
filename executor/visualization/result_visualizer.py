@@ -22,7 +22,9 @@ from .chart_generator import ChartGenerator
 class ResultVisualizer:
     """结果可视化器"""
 
-    def __init__(self, output_dir: str = "output/visualizations", enable_debug: bool = False):
+    def __init__(
+        self, output_dir: str = "output/visualizations", enable_debug: bool = False
+    ):
         """
         初始化可视化器
 
@@ -44,7 +46,7 @@ class ResultVisualizer:
         self,
         result: WorkflowResult,
         workflow: Optional[Workflow] = None,
-        generate_charts: bool = True
+        generate_charts: bool = True,
     ) -> Dict[str, Any]:
         """
         可视化工作流执行结果
@@ -61,14 +63,16 @@ class ResultVisualizer:
             visualization_result = {
                 "summary": self._generate_summary(result, workflow),
                 "charts": {},
-                "output_files": []
+                "output_files": [],
             }
 
             if generate_charts:
                 # 生成执行概览图
                 overview_chart = self._generate_execution_overview(result, workflow)
                 if overview_chart:
-                    visualization_result["charts"]["execution_overview"] = overview_chart
+                    visualization_result["charts"][
+                        "execution_overview"
+                    ] = overview_chart
 
                 # 生成任务执行时间线图
                 timeline_chart = self._generate_task_timeline(result, workflow)
@@ -82,7 +86,9 @@ class ResultVisualizer:
 
                 # 如果是React模式，生成迭代图表
                 if result.react_iterations:
-                    react_chart = self._generate_react_iterations_chart(result, workflow)
+                    react_chart = self._generate_react_iterations_chart(
+                        result, workflow
+                    )
                     if react_chart:
                         visualization_result["charts"]["react_iterations"] = react_chart
 
@@ -91,18 +97,18 @@ class ResultVisualizer:
                 if hydro_charts:
                     visualization_result["charts"].update(hydro_charts)
 
-            self.logger.info(f"工作流结果可视化完成，生成了 {len(visualization_result['charts'])} 个图表")
+            self.logger.info(
+                f"工作流结果可视化完成，生成了 {len(visualization_result['charts'])} 个图表"
+            )
             return visualization_result
 
         except Exception as e:
             self.logger.error(f"工作流结果可视化失败: {e}")
-            return {
-                "summary": {"error": str(e)},
-                "charts": {},
-                "output_files": []
-            }
+            return {"summary": {"error": str(e)}, "charts": {}, "output_files": []}
 
-    def _generate_summary(self, result: WorkflowResult, workflow: Optional[Workflow]) -> Dict[str, Any]:
+    def _generate_summary(
+        self, result: WorkflowResult, workflow: Optional[Workflow]
+    ) -> Dict[str, Any]:
         """生成执行概览"""
         summary = {
             "execution_id": result.execution_id,
@@ -112,22 +118,32 @@ class ResultVisualizer:
             "end_time": result.end_time.isoformat() if result.end_time else None,
             "total_duration": result.total_duration,
             "task_count": len(result.task_results),
-            "success_rate": result.metrics.success_rate if hasattr(result, 'metrics') else 0.0,
-            "mode": workflow.mode.value if workflow else "unknown"
+            "success_rate": (
+                result.metrics.success_rate if hasattr(result, "metrics") else 0.0
+            ),
+            "mode": workflow.mode.value if workflow else "unknown",
         }
 
         # React模式特殊信息
         if result.react_iterations:
-            summary.update({
-                "react_mode": True,
-                "iterations": len(result.react_iterations),
-                "target_achieved": result.target_achieved,
-                "final_metric": result.react_iterations[-1].current_metric if result.react_iterations else None
-            })
+            summary.update(
+                {
+                    "react_mode": True,
+                    "iterations": len(result.react_iterations),
+                    "target_achieved": result.target_achieved,
+                    "final_metric": (
+                        result.react_iterations[-1].current_metric
+                        if result.react_iterations
+                        else None
+                    ),
+                }
+            )
 
         return summary
 
-    def _generate_execution_overview(self, result: WorkflowResult, workflow: Optional[Workflow]) -> Optional[str]:
+    def _generate_execution_overview(
+        self, result: WorkflowResult, workflow: Optional[Workflow]
+    ) -> Optional[str]:
         """生成执行概览图"""
         try:
             # 准备数据
@@ -135,24 +151,38 @@ class ResultVisualizer:
                 "title": f"工作流执行概览 - {result.workflow_id}",
                 "execution_id": result.execution_id,
                 "status": result.status.value,
-                "task_results": []
+                "task_results": [],
             }
 
             for task_id, task_result in result.task_results.items():
-                chart_data["task_results"].append({
-                    "task_id": task_id,
-                    "status": task_result.status.value,
-                    "duration": task_result.duration,
-                    "start_time": task_result.start_time.isoformat() if task_result.start_time else None,
-                    "end_time": task_result.end_time.isoformat() if task_result.end_time else None
-                })
+                chart_data["task_results"].append(
+                    {
+                        "task_id": task_id,
+                        "status": task_result.status.value,
+                        "duration": task_result.duration,
+                        "start_time": (
+                            task_result.start_time.isoformat()
+                            if task_result.start_time
+                            else None
+                        ),
+                        "end_time": (
+                            task_result.end_time.isoformat()
+                            if task_result.end_time
+                            else None
+                        ),
+                    }
+                )
 
             # 生成图表文件
-            output_file = self.output_dir / f"execution_overview_{result.execution_id}.html"
-            chart_html = self.chart_generator.generate_execution_overview_chart(chart_data)
+            output_file = (
+                self.output_dir / f"execution_overview_{result.execution_id}.html"
+            )
+            chart_html = self.chart_generator.generate_execution_overview_chart(
+                chart_data
+            )
 
             if chart_html:
-                output_file.write_text(chart_html, encoding='utf-8')
+                output_file.write_text(chart_html, encoding="utf-8")
                 return str(output_file)
 
         except Exception as e:
@@ -160,24 +190,28 @@ class ResultVisualizer:
 
         return None
 
-    def _generate_task_timeline(self, result: WorkflowResult, workflow: Optional[Workflow]) -> Optional[str]:
+    def _generate_task_timeline(
+        self, result: WorkflowResult, workflow: Optional[Workflow]
+    ) -> Optional[str]:
         """生成任务执行时间线图"""
         try:
             # 准备时间线数据
             timeline_data = {
                 "title": f"任务执行时间线 - {result.workflow_id}",
-                "tasks": []
+                "tasks": [],
             }
 
             for task_id, task_result in result.task_results.items():
                 if task_result.start_time and task_result.end_time:
-                    timeline_data["tasks"].append({
-                        "task_id": task_id,
-                        "start": task_result.start_time.isoformat(),
-                        "end": task_result.end_time.isoformat(),
-                        "status": task_result.status.value,
-                        "duration": task_result.duration
-                    })
+                    timeline_data["tasks"].append(
+                        {
+                            "task_id": task_id,
+                            "start": task_result.start_time.isoformat(),
+                            "end": task_result.end_time.isoformat(),
+                            "status": task_result.status.value,
+                            "duration": task_result.duration,
+                        }
+                    )
 
             if not timeline_data["tasks"]:
                 return None
@@ -187,7 +221,7 @@ class ResultVisualizer:
             chart_html = self.chart_generator.generate_timeline_chart(timeline_data)
 
             if chart_html:
-                output_file.write_text(chart_html, encoding='utf-8')
+                output_file.write_text(chart_html, encoding="utf-8")
                 return str(output_file)
 
         except Exception as e:
@@ -216,8 +250,8 @@ class ResultVisualizer:
                 "title": f"任务执行成功率 - {result.workflow_id}",
                 "data": [
                     {"name": "成功", "value": success_count, "color": "#28a745"},
-                    {"name": "失败", "value": failed_count, "color": "#dc3545"}
-                ]
+                    {"name": "失败", "value": failed_count, "color": "#dc3545"},
+                ],
             }
 
             # 生成饼图
@@ -225,7 +259,7 @@ class ResultVisualizer:
             chart_html = self.chart_generator.generate_pie_chart(pie_data)
 
             if chart_html:
-                output_file.write_text(chart_html, encoding='utf-8')
+                output_file.write_text(chart_html, encoding="utf-8")
                 return str(output_file)
 
         except Exception as e:
@@ -233,7 +267,9 @@ class ResultVisualizer:
 
         return None
 
-    def _generate_react_iterations_chart(self, result: WorkflowResult, workflow: Optional[Workflow]) -> Optional[str]:
+    def _generate_react_iterations_chart(
+        self, result: WorkflowResult, workflow: Optional[Workflow]
+    ) -> Optional[str]:
         """生成React迭代图表"""
         try:
             if not result.react_iterations:
@@ -242,26 +278,42 @@ class ResultVisualizer:
             # 准备迭代数据
             iterations_data = {
                 "title": f"React模式迭代过程 - {result.workflow_id}",
-                "target": workflow.target.dict() if workflow and workflow.target else None,
-                "iterations": []
+                "target": (
+                    workflow.target.dict() if workflow and workflow.target else None
+                ),
+                "iterations": [],
             }
 
             for iteration in result.react_iterations:
-                iterations_data["iterations"].append({
-                    "iteration": iteration.iteration,
-                    "current_metric": iteration.current_metric,
-                    "target_metric": iteration.target_metric,
-                    "target_achieved": iteration.target_achieved,
-                    "start_time": iteration.start_time.isoformat() if iteration.start_time else None,
-                    "end_time": iteration.end_time.isoformat() if iteration.end_time else None
-                })
+                iterations_data["iterations"].append(
+                    {
+                        "iteration": iteration.iteration,
+                        "current_metric": iteration.current_metric,
+                        "target_metric": iteration.target_metric,
+                        "target_achieved": iteration.target_achieved,
+                        "start_time": (
+                            iteration.start_time.isoformat()
+                            if iteration.start_time
+                            else None
+                        ),
+                        "end_time": (
+                            iteration.end_time.isoformat()
+                            if iteration.end_time
+                            else None
+                        ),
+                    }
+                )
 
             # 生成迭代图表
-            output_file = self.output_dir / f"react_iterations_{result.execution_id}.html"
-            chart_html = self.chart_generator.generate_react_iterations_chart(iterations_data)
+            output_file = (
+                self.output_dir / f"react_iterations_{result.execution_id}.html"
+            )
+            chart_html = self.chart_generator.generate_react_iterations_chart(
+                iterations_data
+            )
 
             if chart_html:
-                output_file.write_text(chart_html, encoding='utf-8')
+                output_file.write_text(chart_html, encoding="utf-8")
                 return str(output_file)
 
         except Exception as e:
@@ -278,19 +330,25 @@ class ResultVisualizer:
             for task_id, task_result in result.task_results.items():
                 # 模型率定结果图表
                 if "calibrate" in task_id.lower() or "calibration" in task_id.lower():
-                    calibration_chart = self._generate_calibration_result_chart(task_result, result.execution_id)
+                    calibration_chart = self._generate_calibration_result_chart(
+                        task_result, result.execution_id
+                    )
                     if calibration_chart:
                         hydro_charts["calibration_result"] = calibration_chart
 
                 # 模型评估结果图表
                 if "evaluate" in task_id.lower() or "evaluation" in task_id.lower():
-                    evaluation_chart = self._generate_evaluation_result_chart(task_result, result.execution_id)
+                    evaluation_chart = self._generate_evaluation_result_chart(
+                        task_result, result.execution_id
+                    )
                     if evaluation_chart:
                         hydro_charts["evaluation_result"] = evaluation_chart
 
                 # 模型性能指标图表
                 if task_result.metrics:
-                    metrics_chart = self._generate_metrics_chart(task_result, result.execution_id, task_id)
+                    metrics_chart = self._generate_metrics_chart(
+                        task_result, result.execution_id, task_id
+                    )
                     if metrics_chart:
                         hydro_charts[f"metrics_{task_id}"] = metrics_chart
 
@@ -299,7 +357,9 @@ class ResultVisualizer:
 
         return hydro_charts
 
-    def _generate_calibration_result_chart(self, task_result, execution_id: str) -> Optional[str]:
+    def _generate_calibration_result_chart(
+        self, task_result, execution_id: str
+    ) -> Optional[str]:
         """生成率定结果图表"""
         try:
             # 这里是占位符实现，实际需要根据具体的率定结果数据结构来实现
@@ -307,14 +367,14 @@ class ResultVisualizer:
                 "title": "模型率定结果",
                 "type": "calibration",
                 "placeholder": True,  # 标记为占位符
-                "message": "率定结果图表功能待实现，将根据实际率定算法输出的数据格式来生成对应的图表"
+                "message": "率定结果图表功能待实现，将根据实际率定算法输出的数据格式来生成对应的图表",
             }
 
             output_file = self.output_dir / f"calibration_result_{execution_id}.html"
             chart_html = self.chart_generator.generate_placeholder_chart(chart_data)
 
             if chart_html:
-                output_file.write_text(chart_html, encoding='utf-8')
+                output_file.write_text(chart_html, encoding="utf-8")
                 return str(output_file)
 
         except Exception as e:
@@ -322,7 +382,9 @@ class ResultVisualizer:
 
         return None
 
-    def _generate_evaluation_result_chart(self, task_result, execution_id: str) -> Optional[str]:
+    def _generate_evaluation_result_chart(
+        self, task_result, execution_id: str
+    ) -> Optional[str]:
         """生成评估结果图表"""
         try:
             # 这里是占位符实现
@@ -330,14 +392,14 @@ class ResultVisualizer:
                 "title": "模型评估结果",
                 "type": "evaluation",
                 "placeholder": True,
-                "message": "模型评估图表功能待实现，将包括观测值vs模拟值对比图、误差分析图等"
+                "message": "模型评估图表功能待实现，将包括观测值vs模拟值对比图、误差分析图等",
             }
 
             output_file = self.output_dir / f"evaluation_result_{execution_id}.html"
             chart_html = self.chart_generator.generate_placeholder_chart(chart_data)
 
             if chart_html:
-                output_file.write_text(chart_html, encoding='utf-8')
+                output_file.write_text(chart_html, encoding="utf-8")
                 return str(output_file)
 
         except Exception as e:
@@ -345,7 +407,9 @@ class ResultVisualizer:
 
         return None
 
-    def _generate_metrics_chart(self, task_result, execution_id: str, task_id: str) -> Optional[str]:
+    def _generate_metrics_chart(
+        self, task_result, execution_id: str, task_id: str
+    ) -> Optional[str]:
         """生成性能指标图表"""
         try:
             if not task_result.metrics:
@@ -354,14 +418,14 @@ class ResultVisualizer:
             # 准备指标数据
             metrics_data = {
                 "title": f"性能指标 - {task_id}",
-                "metrics": task_result.metrics
+                "metrics": task_result.metrics,
             }
 
             output_file = self.output_dir / f"metrics_{task_id}_{execution_id}.html"
             chart_html = self.chart_generator.generate_metrics_chart(metrics_data)
 
             if chart_html:
-                output_file.write_text(chart_html, encoding='utf-8')
+                output_file.write_text(chart_html, encoding="utf-8")
                 return str(output_file)
 
         except Exception as e:
@@ -369,18 +433,22 @@ class ResultVisualizer:
 
         return None
 
-    def generate_summary_report(self, result: WorkflowResult, workflow: Optional[Workflow] = None) -> str:
+    def generate_summary_report(
+        self, result: WorkflowResult, workflow: Optional[Workflow] = None
+    ) -> str:
         """生成总结报告HTML"""
         try:
             # 获取可视化结果
-            viz_result = self.visualize_workflow_result(result, workflow, generate_charts=True)
+            viz_result = self.visualize_workflow_result(
+                result, workflow, generate_charts=True
+            )
 
             # 生成总结报告HTML
             report_html = self._build_summary_report_html(viz_result, result, workflow)
 
             # 保存报告
             report_file = self.output_dir / f"summary_report_{result.execution_id}.html"
-            report_file.write_text(report_html, encoding='utf-8')
+            report_file.write_text(report_html, encoding="utf-8")
 
             self.logger.info(f"总结报告已生成: {report_file}")
             return str(report_file)
@@ -389,7 +457,12 @@ class ResultVisualizer:
             self.logger.error(f"生成总结报告失败: {e}")
             return ""
 
-    def _build_summary_report_html(self, viz_result: Dict[str, Any], result: WorkflowResult, workflow: Optional[Workflow]) -> str:
+    def _build_summary_report_html(
+        self,
+        viz_result: Dict[str, Any],
+        result: WorkflowResult,
+        workflow: Optional[Workflow],
+    ) -> str:
         """构建总结报告HTML"""
         summary = viz_result["summary"]
         charts = viz_result["charts"]
@@ -448,7 +521,7 @@ class ResultVisualizer:
         """
 
         # React模式信息
-        if summary.get('react_mode'):
+        if summary.get("react_mode"):
             html += f"""
             <div class="summary-card">
                 <h4>React迭代</h4>
@@ -477,7 +550,7 @@ class ResultVisualizer:
             "success_rate": "成功率分布",
             "react_iterations": "React迭代过程",
             "calibration_result": "率定结果",
-            "evaluation_result": "评估结果"
+            "evaluation_result": "评估结果",
         }
 
         for chart_key, chart_file in charts.items():

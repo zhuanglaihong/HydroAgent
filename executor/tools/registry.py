@@ -18,11 +18,14 @@ from .base_tool import BaseTool, ToolResult
 
 class ToolInfo(BaseModel):
     """工具信息"""
+
     name: str = Field(..., description="工具名称")
     description: str = Field(..., description="工具描述")
     tool_class: str = Field(..., description="工具类名")
     parameter_schema: Dict[str, Any] = Field(..., description="参数模式")
-    registered_at: datetime = Field(default_factory=datetime.now, description="注册时间")
+    registered_at: datetime = Field(
+        default_factory=datetime.now, description="注册时间"
+    )
     version: str = Field(default="1.0.0", description="工具版本")
     category: str = Field(default="general", description="工具分类")
 
@@ -42,7 +45,9 @@ class HydroToolRegistry:
 
         self.logger.info("工具注册表初始化完成")
 
-    def register_tool(self, tool: BaseTool, category: str = "general", version: str = "1.0.0") -> bool:
+    def register_tool(
+        self, tool: BaseTool, category: str = "general", version: str = "1.0.0"
+    ) -> bool:
         """
         注册工具
 
@@ -73,7 +78,7 @@ class HydroToolRegistry:
                 tool_class=tool.__class__.__name__,
                 parameter_schema=tool.get_parameter_schema(),
                 version=version,
-                category=category
+                category=category,
             )
 
             # 更新分类索引
@@ -107,8 +112,7 @@ class HydroToolRegistry:
         tool_category = self.tool_info[tool_name].category
         if tool_category in self.categories:
             self.categories[tool_category] = [
-                name for name in self.categories[tool_category]
-                if name != tool_name
+                name for name in self.categories[tool_category] if name != tool_name
             ]
 
         # 移除工具
@@ -178,18 +182,12 @@ class HydroToolRegistry:
         """
         tool = self.get_tool(tool_name)
         if not tool:
-            return ToolResult(
-                success=False,
-                error=f"工具 {tool_name} 不存在"
-            )
+            return ToolResult(success=False, error=f"工具 {tool_name} 不存在")
 
         try:
             # 验证参数
             if not tool.validate_parameters(parameters):
-                return ToolResult(
-                    success=False,
-                    error=f"工具 {tool_name} 参数验证失败"
-                )
+                return ToolResult(success=False, error=f"工具 {tool_name} 参数验证失败")
 
             # 执行工具
             result = tool.execute(parameters)
@@ -199,8 +197,7 @@ class HydroToolRegistry:
         except Exception as e:
             self.logger.error(f"工具 {tool_name} 执行失败: {e}")
             return ToolResult(
-                success=False,
-                error=f"工具 {tool_name} 执行失败: {str(e)}"
+                success=False, error=f"工具 {tool_name} 执行失败: {str(e)}"
             )
 
     def get_registry_stats(self) -> Dict[str, Any]:
@@ -213,24 +210,28 @@ class HydroToolRegistry:
         return {
             "total_tools": len(self.tools),
             "categories": {cat: len(tools) for cat, tools in self.categories.items()},
-            "tool_list": list(self.tools.keys())
+            "tool_list": list(self.tools.keys()),
         }
 
     def _validate_tool(self, tool: BaseTool) -> bool:
         """验证工具是否符合规范"""
         try:
             # 检查必要属性
-            if not hasattr(tool, 'name') or not tool.name:
+            if not hasattr(tool, "name") or not tool.name:
                 return False
-            if not hasattr(tool, 'description') or not tool.description:
+            if not hasattr(tool, "description") or not tool.description:
                 return False
 
             # 检查必要方法
-            if not hasattr(tool, 'execute') or not callable(tool.execute):
+            if not hasattr(tool, "execute") or not callable(tool.execute):
                 return False
-            if not hasattr(tool, 'validate_parameters') or not callable(tool.validate_parameters):
+            if not hasattr(tool, "validate_parameters") or not callable(
+                tool.validate_parameters
+            ):
                 return False
-            if not hasattr(tool, 'get_parameter_schema') or not callable(tool.get_parameter_schema):
+            if not hasattr(tool, "get_parameter_schema") or not callable(
+                tool.get_parameter_schema
+            ):
                 return False
 
             return True
@@ -252,10 +253,7 @@ class HydroToolRegistry:
             Dict[str, Any]: 工具定义字典
         """
         return {
-            tool_name: {
-                "info": info.dict(),
-                "schema": info.parameter_schema
-            }
+            tool_name: {"info": info.dict(), "schema": info.parameter_schema}
             for tool_name, info in self.tool_info.items()
         }
 
