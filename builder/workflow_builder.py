@@ -14,6 +14,14 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
+# Import project definitions and path utilities
+import sys
+from pathlib import Path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+import definitions as defs
+from utils.filepath import get_absolute_path, get_basin_data_dir, get_result_dir, get_param_range_file, normalize_path
+
 from .rag_planner import RAGPlanner, PlanningResult, get_rag_planner
 from .execution_mode import (
     ExecutionModeAnalyzer,
@@ -445,6 +453,9 @@ class WorkflowBuilder:
             )
             workflow["metadata"] = metadata
 
+            # 关键补全：检查和补全数据路径参数
+            workflow = self._ensure_data_paths(workflow, intent_result)
+
             # 验证工作流
             validation = self.rag_planner.validate_workflow(workflow)
             if not validation["is_valid"]:
@@ -503,6 +514,164 @@ class WorkflowBuilder:
             ) / total_builds
 
         self.stats["execution_mode_distribution"][mode.value] += 1
+
+    def _ensure_data_paths(self, workflow: Dict[str, Any], intent_result) -> Dict[str, Any]:
+        """确保工作流包含必要的数据路径参数"""
+        try:
+            logger.info("检查和补全工作流数据路径参数...")
+
+            # 从意图解析中提取数据路径信息
+            detected_paths = self._extract_data_paths_from_intent(intent_result)
+
+            # 检查每个任务的数据路径参数
+            tasks = workflow.get("tasks", [])
+            path_issues = []
+
+            for i, task in enumerate(tasks):
+                tool_name = task.get("tool_name", "")
+                parameters = task.get("parameters", {})
+
+                # 检查需要数据路径的工具
+                if tool_name in ["prepare_data", "calibrate_model"]:
+                    issues = self._check_task_data_paths(task, tool_name, detected_paths)
+                    if issues:
+                        path_issues.extend([f"任务{i+1}({task.get('task_id', 'unknown')}): {issue}" for issue in issues])
+                        # 自动补全缺失的路径
+                        task["parameters"] = self._auto_complete_data_paths(parameters, tool_name, detected_paths)
+
+            if path_issues:
+                logger.warning(f"发现数据路径问题并已自动修复: {path_issues}")
+
+                # 在工作流元数据中记录修复信息
+                metadata = workflow.get("metadata", {})
+                metadata["data_path_fixes"] = path_issues
+                workflow["metadata"] = metadata
+            else:
+                logger.info("✓ 数据路径参数检查通过")
+
+            return workflow
+
+        except Exception as e:
+            logger.error(f"数据路径检查失败: {e}")
+            return workflow
+
+    def _extract_data_paths_from_intent(self, intent_result) -> Dict[str, str]:
+        """从意图解析结果中提取数据路径信息"""
+        detected_paths = {}
+
+        try:
+            # 从实体中提取路径信息
+            entities = intent_result.entities
+
+            # 检查文件路径实体
+            if "file_paths" in entities:
+                for path in entities["file_paths"]:
+                    if "data" in path.lower() or "camels" in path.lower():
+                        detected_paths["data_dir"] = path
+
+            # 检查流域ID实体，用于构建路径
+            if "basin_ids" in entities:
+                basin_ids = entities["basin_ids"]
+                if basin_ids:
+                    # 使用utils.filepath中的路径配置
+                    detected_paths["basin_id"] = basin_ids[0]
+                    if "data_dir" not in detected_paths:
+                        detected_paths["data_dir"] = get_basin_data_dir(basin_ids[0])
+
+            # 如果没有检测到任何路径，使用默认路径
+            if not detected_paths:
+                # 使用utils.filepath中的路径配置
+                default_basin_id = "11532500"  # 可以配置为可选项
+                detected_paths.update({
+                    "data_dir": get_basin_data_dir(default_basin_id),
+                    "result_dir": get_result_dir(),
+                    "basin_id": default_basin_id
+                })
+                logger.info("使用默认数据路径配置")
+
+            logger.info(f"检测到的数据路径: {detected_paths}")
+            return detected_paths
+
+        except Exception as e:
+            logger.error(f"提取数据路径失败: {e}")
+            default_basin_id = "11532500"
+            return {
+                "data_dir": get_basin_data_dir(default_basin_id),
+                "result_dir": get_result_dir(),
+                "basin_id": default_basin_id
+            }
+
+    def _check_task_data_paths(self, task: Dict[str, Any], tool_name: str, detected_paths: Dict[str, str]) -> List[str]:
+        """检查单个任务的数据路径参数"""
+        issues = []
+        parameters = task.get("parameters", {})
+
+        if tool_name == "prepare_data":
+            # prepare_data需要data_dir参数
+            if "data_dir" not in parameters or not parameters["data_dir"]:
+                issues.append("缺少data_dir参数")
+            elif parameters["data_dir"] in ["{{DATA_DIR}}", "path/to/data", ""]:
+                issues.append("data_dir参数为占位符，需要具体路径")
+
+        elif tool_name == "calibrate_model":
+            # calibrate_model需要data_dir和result_dir参数
+            required_paths = ["data_dir", "result_dir"]
+            for path_param in required_paths:
+                if path_param not in parameters or not parameters[path_param]:
+                    issues.append(f"缺少{path_param}参数")
+                elif parameters[path_param] in [f"{{{{{path_param.upper()}}}}}", "path/to/data", ""]:
+                    issues.append(f"{path_param}参数为占位符，需要具体路径")
+
+            # 检查basin_ids参数
+            if "basin_ids" not in parameters or not parameters["basin_ids"]:
+                issues.append("缺少basin_ids参数")
+            elif isinstance(parameters["basin_ids"], list) and len(parameters["basin_ids"]) == 0:
+                issues.append("basin_ids参数为空列表")
+
+        return issues
+
+    def _auto_complete_data_paths(self, parameters: Dict[str, Any], tool_name: str, detected_paths: Dict[str, str]) -> Dict[str, Any]:
+        """自动补全任务的数据路径参数"""
+        updated_params = parameters.copy()
+
+        if tool_name == "prepare_data":
+            if "data_dir" not in updated_params or not updated_params["data_dir"] or updated_params["data_dir"] in ["{{DATA_DIR}}", "path/to/data"]:
+                default_basin_id = detected_paths.get("basin_id", "11532500")
+                updated_params["data_dir"] = normalize_path(detected_paths.get("data_dir", get_basin_data_dir(default_basin_id)))
+                logger.info(f"自动补全prepare_data的data_dir: {updated_params['data_dir']}")
+
+        elif tool_name == "calibrate_model":
+            # 补全data_dir
+            if "data_dir" not in updated_params or not updated_params["data_dir"] or updated_params["data_dir"] in ["{{DATA_DIR}}", "path/to/data"]:
+                default_basin_id = detected_paths.get("basin_id", "11532500")
+                updated_params["data_dir"] = normalize_path(detected_paths.get("data_dir", get_basin_data_dir(default_basin_id)))
+                logger.info(f"自动补全calibrate_model的data_dir: {updated_params['data_dir']}")
+
+            # 补全result_dir
+            if "result_dir" not in updated_params or not updated_params["result_dir"] or updated_params["result_dir"] in ["{{RESULT_DIR}}", "path/to/results"]:
+                updated_params["result_dir"] = normalize_path(detected_paths.get("result_dir", get_result_dir()))
+                logger.info(f"自动补全calibrate_model的result_dir: {updated_params['result_dir']}")
+
+            # 补全basin_ids
+            if "basin_ids" not in updated_params or not updated_params["basin_ids"]:
+                basin_id = detected_paths.get("basin_id", "11532500")
+                updated_params["basin_ids"] = [basin_id]
+                logger.info(f"自动补全calibrate_model的basin_ids: {updated_params['basin_ids']}")
+
+            # 确保其他必要参数有默认值
+            if "exp_name" not in updated_params or not updated_params["exp_name"]:
+                updated_params["exp_name"] = f"auto_experiment_{int(time.time())}"
+
+            if "param_range_file" not in updated_params or not updated_params["param_range_file"]:
+                updated_params["param_range_file"] = normalize_path(get_param_range_file())
+
+        # 规范化所有路径参数
+        for key, value in updated_params.items():
+            if isinstance(value, str) and ("dir" in key.lower() or "path" in key.lower() or "file" in key.lower()):
+                if value and not value.startswith("{{") and ("/" in value or "\\" in value):
+                    updated_params[key] = normalize_path(value)
+
+        return updated_params
 
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

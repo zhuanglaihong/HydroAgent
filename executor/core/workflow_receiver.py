@@ -18,9 +18,17 @@ from pathlib import Path
 from ..models.workflow import Workflow
 from ..models.task import Task
 
-# 添加项目根目录到路径以便导入utils模块
+# 添加项目根目录到路径以便导入utils模块和definitions
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from utils.filepath import process_workflow_paths
+from utils.filepath import (
+    process_workflow_paths,
+    get_absolute_path,
+    get_basin_data_dir,
+    get_result_dir,
+    get_param_range_file,
+    normalize_path
+)
+import definitions as defs
 
 
 class ValidationError(Exception):
@@ -520,7 +528,135 @@ class WorkflowReceiver:
         pass
 
     def _optimize_task_parameters(self, workflow: Workflow):
-        """优化任务参数"""
-        # 这里可以添加参数优化逻辑
-        # 例如根据系统配置调整默认参数
+        """优化任务参数，补全缺失的路径和关键参数"""
+        self.logger.info("开始执行阶段的参数优化和补全...")
+
+        # 获取工作流中的所有任务
+        for task in workflow.tasks:
+            try:
+                self._complete_task_parameters(task)
+                # 对所有路径参数进行最终规范化
+                self._normalize_all_path_parameters(task)
+            except Exception as e:
+                self.logger.error(f"任务 {task.task_id} 参数优化失败: {e}")
+
+    def _normalize_all_path_parameters(self, task: Task):
+        """规范化任务中的所有路径参数"""
+        parameters = task.parameters
+
+        # 规范化所有可能的路径参数
+        for key, value in parameters.items():
+            if isinstance(value, str) and value:
+                # 检测路径参数
+                if ("dir" in key.lower() or "path" in key.lower() or "file" in key.lower() or
+                    "_dir" in key or "_path" in key or "_file" in key):
+                    # 排除占位符和参数引用
+                    if not value.startswith("{{") and not value.startswith("${"):
+                        # 检查是否包含路径分隔符
+                        if "/" in value or "\\" in value:
+                            normalized = normalize_path(value)
+                            if normalized != value:
+                                self.logger.debug(f"[EXECUTOR] 规范化 {task.task_id}.{key}: '{value}' -> '{normalized}'")
+                                parameters[key] = normalized
+
+    def _complete_task_parameters(self, task: Task):
+        """完成单个任务的参数补全"""
+        tool_name = task.tool_name
+        parameters = task.parameters
+
+        self.logger.debug(f"优化任务 {task.task_id} ({tool_name}) 的参数...")
+
+        if tool_name == "prepare_data":
+            self._complete_prepare_data_params(parameters)
+        elif tool_name == "calibrate_model":
+            self._complete_calibrate_model_params(parameters)
+        elif tool_name == "evaluate_model":
+            self._complete_evaluate_model_params(parameters)
+        elif tool_name == "get_model_params":
+            self._complete_get_model_params_params(parameters)
+
+    def _complete_prepare_data_params(self, parameters: Dict[str, Any]):
+        """补全prepare_data工具的参数"""
+        # 补全data_dir
+        if "data_dir" not in parameters or not parameters["data_dir"]:
+            # 尝试从其他参数推断basin_id
+            basin_id = self._extract_basin_id_from_params(parameters)
+            parameters["data_dir"] = normalize_path(get_basin_data_dir(basin_id))
+            self.logger.info(f"[EXECUTOR] 补全prepare_data的data_dir: {parameters['data_dir']}")
+
+        # 确保路径是绝对路径和规范化
+        if "data_dir" in parameters:
+            parameters["data_dir"] = normalize_path(get_absolute_path(parameters["data_dir"]))
+
+        # 补全其他默认参数
+        if "target_data_scale" not in parameters:
+            parameters["target_data_scale"] = "D"  # 默认日尺度
+
+    def _complete_calibrate_model_params(self, parameters: Dict[str, Any]):
+        """补全calibrate_model工具的参数"""
+        # 补全data_dir
+        if "data_dir" not in parameters or not parameters["data_dir"]:
+            basin_id = self._extract_basin_id_from_params(parameters)
+            parameters["data_dir"] = normalize_path(get_basin_data_dir(basin_id))
+            self.logger.info(f"[EXECUTOR] 补全calibrate_model的data_dir: {parameters['data_dir']}")
+
+        # 补全result_dir
+        if "result_dir" not in parameters or not parameters["result_dir"]:
+            exp_name = parameters.get("exp_name", "default_experiment")
+            parameters["result_dir"] = normalize_path(get_result_dir(exp_name))
+            self.logger.info(f"[EXECUTOR] 补全calibrate_model的result_dir: {parameters['result_dir']}")
+
+        # 补全basin_ids
+        if "basin_ids" not in parameters or not parameters["basin_ids"]:
+            basin_id = self._extract_basin_id_from_params(parameters)
+            parameters["basin_ids"] = [basin_id]
+            self.logger.info(f"[EXECUTOR] 补全calibrate_model的basin_ids: {parameters['basin_ids']}")
+
+        # 确保路径是绝对路径和规范化
+        for path_key in ["data_dir", "result_dir"]:
+            if path_key in parameters:
+                parameters[path_key] = normalize_path(get_absolute_path(parameters[path_key]))
+
+        # 补全param_range_file
+        if "param_range_file" not in parameters or not parameters["param_range_file"]:
+            parameters["param_range_file"] = normalize_path(get_param_range_file())
+
+        # 补全实验名称
+        if "exp_name" not in parameters or not parameters["exp_name"]:
+            parameters["exp_name"] = f"auto_experiment_{int(time.time())}"
+
+    def _complete_evaluate_model_params(self, parameters: Dict[str, Any]):
+        """补全evaluate_model工具的参数"""
+        # 补全result_dir
+        if "result_dir" not in parameters or not parameters["result_dir"]:
+            parameters["result_dir"] = normalize_path(get_result_dir())
+            self.logger.info(f"[EXECUTOR] 补全evaluate_model的result_dir: {parameters['result_dir']}")
+
+        # 确保路径是绝对路径和规范化
+        if "result_dir" in parameters:
+            parameters["result_dir"] = normalize_path(get_absolute_path(parameters["result_dir"]))
+
+    def _complete_get_model_params_params(self, parameters: Dict[str, Any]):
+        """补全get_model_params工具的参数"""
+        # 大多数参数由工具内部处理，这里只做基础验证
         pass
+
+    def _extract_basin_id_from_params(self, parameters: Dict[str, Any]) -> str:
+        """从参数中提取流域ID"""
+        # 尝试从各种可能的参数中提取basin_id
+        if "basin_ids" in parameters and parameters["basin_ids"]:
+            return str(parameters["basin_ids"][0])
+        elif "basin_id" in parameters and parameters["basin_id"]:
+            return str(parameters["basin_id"])
+        elif "data_dir" in parameters and parameters["data_dir"]:
+            # 尝试从data_dir路径中提取
+            data_dir = parameters["data_dir"]
+            if "camels_" in data_dir:
+                # 提取camels_后面的数字
+                import re
+                match = re.search(r'camels_(\d+)', data_dir)
+                if match:
+                    return match.group(1)
+
+        # 默认流域ID
+        return "11532500"

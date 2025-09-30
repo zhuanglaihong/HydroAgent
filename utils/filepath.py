@@ -42,52 +42,54 @@ MACOS = sys.platform.startswith('darwin')
 
 def normalize_path(path: Union[str, Path]) -> str:
     """
-    规范化文件路径，统一使用当前操作系统的正确分隔符
-    
+    规范化文件路径，统一使用正斜杠分隔符实现跨平台兼容
+
     参数:
         path: 原始路径字符串或Path对象
-        
+
     返回:
-        规范化后的路径字符串
-        
+        规范化后的路径字符串（统一使用正斜杠分隔符）
+
     示例:
         >>> normalize_path("C:\\Users\\test//doc.txt")
-        'C:\\Users\\test\\doc.txt'  # Windows
-        '/home/user/test/doc.txt'   # Linux/Mac
+        'C:/Users/test/doc.txt'  # 跨平台统一格式
+        >>> normalize_path("/home/user//doc.txt")
+        '/home/user/doc.txt'     # 跨平台统一格式
     """
-    # 如果输入是Path对象，直接转换为字符串
+    # 如果输入是Path对象，先转换为字符串
     if isinstance(path, Path):
-        return str(path)
-    
-    # 处理AI生成的路径常见问题
-    # 1. 替换多余的分隔符
-    # 2. 替换错误的分隔符
-    # 3. 处理混合分隔符
-    if WINDOWS:
-        # Windows系统处理
-        path = re.sub(r'[/\\]+', os.sep, path)
-        # 处理AI可能生成的类Unix路径
-        if path.startswith('/'):
-            # 尝试将类Unix路径转换为Windows路径
-            if len(path) > 2 and path[1] == '/':
-                # 处理类似 //C:/Users 的路径
-                path = path[1:]
-            else:
-                # 处理类似 /mnt/c/Users 的路径 (WSL风格)
-                if path.startswith('/mnt/'):
-                    drive = path[5].upper() + ':'
-                    path = drive + path[6:]
-    else:
-        # Linux/Mac系统处理
-        path = re.sub(r'[/\\]+', os.sep, path)
-        # 处理AI可能生成的Windows路径
-        if ':' in path and len(path) > 1 and path[1] == ':':
-            # 处理类似 C:\Users 的路径
-            drive, rest = path.split(':', 1)
-            path = os.path.join('/mnt', drive.lower(), rest.replace('\\', '/'))
-    
-    # 使用pathlib进行最终规范化
-    return str(Path(path).resolve())
+        path = str(path)
+
+    # 使用pathlib.Path处理路径规范化
+    try:
+        # Path会自动处理不同操作系统的分隔符差异
+        normalized_path = Path(path).resolve()
+
+        # 将路径转换为字符串，并统一使用正斜杠
+        # 这样在所有平台上路径格式都保持一致
+        path_str = str(normalized_path)
+
+        # 统一转换为正斜杠格式（跨平台兼容）
+        if WINDOWS:
+            # Windows下将反斜杠转换为正斜杠
+            path_str = path_str.replace('\\', '/')
+
+        return path_str
+
+    except (OSError, ValueError) as e:
+        # 如果Path.resolve()失败，进行基础清理
+        # 统一分隔符为正斜杠
+        cleaned = re.sub(r'[/\\]+', '/', str(path))
+
+        # 处理Windows驱动器路径格式
+        if ':' in cleaned and len(cleaned) > 1:
+            # 确保驱动器字母后的路径使用正斜杠
+            parts = cleaned.split(':', 1)
+            if len(parts) == 2:
+                drive, rest = parts
+                cleaned = f"{drive}:{rest}"
+
+        return cleaned
 
 def path_exists(path: Union[str, Path]) -> bool:
     """
@@ -155,68 +157,70 @@ def is_valid_path(path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
 
 def to_absolute_path(path: Union[str, Path], base_dir: Union[str, Path, None] = None) -> str:
     """
-    将相对路径转换为绝对路径
-    
+    将相对路径转换为绝对路径，统一使用正斜杠分隔符
+
     参数:
         path: 要转换的路径
         base_dir: 相对路径的基准目录（默认为当前工作目录）
-        
+
     返回:
-        绝对路径字符串
+        绝对路径字符串（使用正斜杠分隔符）
     """
-    normalized = normalize_path(path)
-    
-    # 如果已经是绝对路径，直接返回
-    if os.path.isabs(normalized):
-        return normalized
-    
+    # 使用pathlib.Path处理路径转换
+    path_obj = Path(path)
+
+    # 如果已经是绝对路径，直接规范化返回
+    if path_obj.is_absolute():
+        return normalize_path(path_obj)
+
     # 确定基准目录
     if base_dir is None:
-        base = os.getcwd()
+        base_path = Path.cwd()
     else:
-        base = normalize_path(base_dir)
-        if not os.path.isabs(base):
-            base = os.path.abspath(base)
-    
-    # 组合路径
-    return os.path.join(base, normalized)
+        base_path = Path(base_dir)
+        if not base_path.is_absolute():
+            base_path = base_path.resolve()
+
+    # 组合路径并规范化
+    combined_path = base_path / path_obj
+    return normalize_path(combined_path.resolve())
 
 def correct_path(path: Union[str, Path], base_dir: Union[str, Path, None] = None) -> str:
     """
     修复路径的常见问题：
-    1. 规范化分隔符
+    1. 规范化分隔符（统一使用正斜杠）
     2. 转换为绝对路径
     3. 修复AI生成的路径问题
-    
+
     参数:
         path: 要修复的路径
         base_dir: 相对路径的基准目录（默认为当前工作目录）
-        
+
     返回:
-        修复后的路径字符串
+        修复后的路径字符串（使用正斜杠分隔符）
     """
-    # 规范化路径
-    normalized = normalize_path(path)
-    
-    # 转换为绝对路径
-    absolute = to_absolute_path(normalized, base_dir)
-    
-    # 处理AI生成的特定问题
-    if WINDOWS:
-        # 修复AI可能生成的双斜杠问题（除了网络路径）
-        if not absolute.startswith('\\\\'):
-            absolute = absolute.replace('\\\\', '\\')
-    else:
-        # 修复AI可能生成的Windows风格路径
-        if ':\\' in absolute:
-            parts = absolute.split(':\\')
-            if len(parts) > 1:
-                drive = parts[0].lower()
-                rest = '\\'.join(parts[1:])
-                absolute = f"/mnt/{drive}/{rest}"
-    
-    # 使用pathlib进行最终清理
-    return str(Path(absolute).resolve())
+    # 直接使用pathlib进行路径处理，它会自动处理跨平台问题
+    try:
+        path_obj = Path(path)
+
+        # 如果是相对路径，需要基于base_dir解析
+        if not path_obj.is_absolute():
+            if base_dir is None:
+                base_path = Path.cwd()
+            else:
+                base_path = Path(base_dir).resolve()
+            path_obj = base_path / path_obj
+
+        # 解析为绝对路径并规范化
+        resolved_path = path_obj.resolve()
+
+        # 统一使用正斜杠分隔符
+        return normalize_path(resolved_path)
+
+    except (OSError, ValueError):
+        # 如果pathlib处理失败，使用传统方法
+        normalized = normalize_path(path)
+        return to_absolute_path(normalized, base_dir)
 
 def safe_join(base: Union[str, Path], *paths: Union[str, Path]) -> str:
     """
@@ -573,3 +577,128 @@ def validate_path_exists(path: Union[str, Path], create_if_missing: bool = False
             return False
 
     return False
+
+
+# ============================================================================
+# HydroAgent项目特定的路径管理函数
+# ============================================================================
+
+def get_absolute_path(path_or_relative: Union[str, Path], base_dir: Union[str, Path, None] = None) -> str:
+    """
+    Convert relative path to absolute path using PROJECT_DIR as base, with proper normalization
+
+    Args:
+        path_or_relative: Path string (absolute or relative)
+        base_dir: Base directory (defaults to PROJECT_DIR)
+
+    Returns:
+        Normalized absolute path string (using forward slashes)
+    """
+    if base_dir is None:
+        base_dir = definitions.PROJECT_DIR
+
+    # 使用pathlib.Path处理路径
+    path_obj = Path(path_or_relative)
+    base_obj = Path(base_dir)
+
+    # 如果已经是绝对路径，直接规范化返回
+    if path_obj.is_absolute():
+        return normalize_path(path_obj)
+    else:
+        # 组合相对路径和基础路径
+        combined_path = base_obj / path_obj
+        return normalize_path(combined_path.resolve())
+
+
+def get_basin_data_dir(basin_id: str, base_template: Optional[str] = None) -> str:
+    """
+    Generate basin-specific data directory path with proper normalization
+
+    Args:
+        basin_id: Basin identifier (e.g., "11532500")
+        base_template: Template string with {basin_id} placeholder
+
+    Returns:
+        Normalized absolute path to basin data directory (using forward slashes)
+    """
+    if base_template is None:
+        base_template = getattr(definitions, 'DEFAULT_BASIN_DATA_DIR', "data/camels_{basin_id}")
+
+    relative_path = base_template.format(basin_id=basin_id)
+    absolute_path = get_absolute_path(relative_path)
+    return normalize_path(absolute_path)
+
+
+def get_result_dir(experiment_name: Optional[str] = None, base_dir: Optional[str] = None) -> str:
+    """
+    Generate result directory path for experiments with proper normalization
+
+    Args:
+        experiment_name: Optional experiment name
+        base_dir: Base result directory (defaults to RESULT_DIR)
+
+    Returns:
+        Normalized absolute path to result directory (using forward slashes)
+    """
+    if base_dir is None:
+        base_dir = definitions.RESULT_DIR
+
+    base_path = Path(get_absolute_path(base_dir))
+
+    if experiment_name:
+        combined_path = base_path / experiment_name
+        return normalize_path(combined_path)
+    else:
+        return normalize_path(base_path)
+
+
+def ensure_directory_exists_abs(path: Union[str, Path]) -> str:
+    """
+    Create directory if it doesn't exist with proper normalization
+
+    Args:
+        path: Directory path to create
+
+    Returns:
+        Normalized absolute path to the directory (using forward slashes)
+    """
+    abs_path = get_absolute_path(path)
+    normalized_path = normalize_path(abs_path)
+
+    # 使用pathlib创建目录（自动处理跨平台问题）
+    Path(normalized_path).mkdir(parents=True, exist_ok=True)
+
+    return normalized_path
+
+
+def get_workflow_generated_dir() -> str:
+    """
+    Get the workflow generated directory path with proper normalization
+
+    Returns:
+        Normalized absolute path to workflow generated directory
+    """
+    workflow_dir = getattr(definitions, 'WORKFLOW_GENERATED_DIR', 'workflow/generated')
+    return normalize_path(get_absolute_path(workflow_dir))
+
+
+def get_test_results_dir() -> str:
+    """
+    Get the test results directory path with proper normalization
+
+    Returns:
+        Normalized absolute path to test results directory
+    """
+    test_dir = getattr(definitions, 'TEST_RESULTS_DIR', 'test/results')
+    return normalize_path(get_absolute_path(test_dir))
+
+
+def get_param_range_file() -> str:
+    """
+    Get the parameter range file path with proper normalization
+
+    Returns:
+        Normalized absolute path to parameter range file
+    """
+    param_file = getattr(definitions, 'PARAM_RANGE_FILE', 'hydromodel/models/param.yaml')
+    return normalize_path(get_absolute_path(param_file))

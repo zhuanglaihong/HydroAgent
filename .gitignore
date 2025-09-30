@@ -192,6 +192,7 @@ chunks_result.txt
 documents/processed/
 documents/backup/
 documents/backups/
+documents/vector_db/
 documents/*.json
 output/
 /.claude/

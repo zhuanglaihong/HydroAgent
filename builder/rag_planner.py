@@ -140,9 +140,12 @@ class RAGPlanner:
    - 每个步骤的具体操作是什么？
    - 步骤间的依赖关系如何？
 
-3. **工具选择**
+3. **工具选择和参数设置**
    - 每个步骤应该使用哪个工具？
-   - 工具的参数如何设置？
+   - **重要：数据路径参数设置**
+     * prepare_data工具必须包含具体的data_dir路径
+     * calibrate_model工具必须包含data_dir, result_dir, basin_ids参数
+     * 避免使用占位符如{{DATA_DIR}}，要使用具体路径
    - 是否需要条件判断或循环？
 
 4. **复杂度评估**
@@ -167,7 +170,10 @@ class RAGPlanner:
       "tool_name": "工具名称",
       "type": "simple/complex",
       "parameters": {{
-        "参数名": "参数值"
+        "参数名": "参数值",
+        // 特别注意：
+        // prepare_data必须包含: "data_dir": "具体路径"
+        // calibrate_model必须包含: "data_dir": "具体路径", "result_dir": "具体路径", "basin_ids": ["流域ID"]
       }},
       "dependencies": ["依赖的任务ID"],
       "conditions": {{
@@ -236,7 +242,7 @@ class RAGPlanner:
             if response.success:
                 logger.info(f"LLM响应长度: {len(response.content)} 字符")
                 logger.info(
-                    f"LLM响应内容预览 (前1000字符):\n{response.content[:1000]}..."
+                    f"LLM响应内容预览 (前100字符):\n{response.content[:100]}..."
                 )
             else:
                 logger.error(f"LLM调用失败详情: {response.error_message}")
@@ -349,6 +355,12 @@ class RAGPlanner:
                 source="fallback_system",
                 score=0.8,
                 fragment_type="system_info",
+            ),
+            KnowledgeFragment(
+                content="数据路径参数设置：prepare_data需要data_dir参数指向原始数据目录，calibrate_model需要data_dir（原始数据）、result_dir（结果存储）、basin_ids（流域ID列表）参数。常用路径格式：D:\\MCP\\HydroAgent\\data\\camels_11532500",
+                source="fallback_system",
+                score=0.95,
+                fragment_type="parameter_guide",
             ),
         ]
 
