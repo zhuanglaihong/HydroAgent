@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, Tuple
 from .core.workflow_receiver import WorkflowReceiver
 from .core.task_dispatcher import TaskDispatcher, ExecutorType
 from .core.simple_executor import SimpleTaskExecutor
-from .core.complex_solver import ComplexTaskSolver
+from .core.complex_executor import ComplexTaskExecutor
 from .core.react_executor import ReactExecutor
 from .core.llm_client import LLMClientFactory
 from .models.workflow import Workflow, WorkflowMode
@@ -50,7 +50,7 @@ class ExecutorEngine:
         self.llm_client = LLMClientFactory.create_default_client()
 
         # 初始化复杂任务解决器
-        self.complex_solver = ComplexTaskSolver(
+        self.complex_executor = ComplexTaskExecutor(
             simple_executor=self.simple_executor,
             llm_client=self.llm_client,
             enable_debug=enable_debug,
@@ -60,7 +60,7 @@ class ExecutorEngine:
         self.react_executor = ReactExecutor(
             task_dispatcher=self.task_dispatcher,
             simple_executor=self.simple_executor,
-            complex_solver=self.complex_solver,
+            complex_executor=self.complex_executor,
             llm_client=self.llm_client,
             enable_debug=enable_debug,
         )
@@ -198,7 +198,7 @@ class ExecutorEngine:
                     task, result.task_results
                 )
             elif executor_type == ExecutorType.COMPLEX_SOLVER:
-                task_result = self.complex_solver.solve_complex_task(
+                task_result = self.complex_executor.solve_complex_task(
                     task, result.task_results
                 )
             else:

@@ -1,10 +1,10 @@
 """
 Author: zhuanglaihong
 Date: 2024-09-26 16:40:00
-LastEditTime: 2024-09-26 16:40:00
+LastEditTime: 2025-10-11 19:30:00
 LastEditors: zhuanglaihong
-Description: 复杂任务解决器 - 使用LLM+RAG生成解决方案
-FilePath: \HydroAgent\executor\core\complex_solver.py
+Description: 复杂任务执行器 - 使用LLM+RAG生成解决方案
+FilePath: \HydroAgent\executor\core\complex_executor.py
 Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
@@ -49,8 +49,8 @@ class SolutionPlan(BaseModel):
     confidence: float = Field(default=0.8, description="解决方案置信度")
 
 
-class ComplexTaskSolver:
-    """复杂任务智能解决器"""
+class ComplexTaskExecutor:
+    """复杂任务执行器"""
 
     def __init__(
         self,
@@ -60,7 +60,7 @@ class ComplexTaskSolver:
         enable_debug: bool = False,
     ):
         """
-        初始化复杂任务解决器
+        初始化复杂任务执行器
 
         Args:
             simple_executor: 简单任务执行器实例
@@ -77,7 +77,7 @@ class ComplexTaskSolver:
         # 获取可用工具列表
         self.available_tools = self._get_available_tools()
 
-        self.logger.info("复杂任务解决器初始化完成")
+        self.logger.info("复杂任务执行器初始化完成")
 
     def solve_complex_task(
         self, task: Task, context: Dict[str, Any] = None
@@ -164,15 +164,34 @@ class ComplexTaskSolver:
                 # 使用HydroRAG系统检索知识
                 query = task.knowledge_query or task.description
                 if query:
-                    # TODO: 实际集成HydroRAG
-                    # knowledge_chunks = self.rag_system.search(query, top_k=5)
-                    pass
+                    self.logger.info(f"使用RAG系统检索知识: {query}")
+                    try:
+                        # 调用RAG系统的query方法
+                        rag_response = self.rag_system.query(query, top_k=5)
+
+                        # 检查响应状态
+                        if rag_response.get("status") == "success":
+                            results = rag_response.get("results", [])
+                            # 转换RAG结果为标准格式
+                            for result in results:
+                                knowledge_chunks.append({
+                                    "content": result.get("content", ""),
+                                    "source": result.get("metadata", {}).get("source", "rag_system"),
+                                    "relevance": result.get("score", 0.8),
+                                    "metadata": result.get("metadata", {})
+                                })
+                            self.logger.info(f"RAG系统返回 {len(knowledge_chunks)} 个知识片段")
+                        else:
+                            self.logger.warning(f"RAG查询无结果: {rag_response.get('status')}")
+                    except Exception as rag_error:
+                        self.logger.warning(f"RAG系统调用失败: {rag_error}")
 
             # 如果没有RAG系统或检索失败，使用预设知识
             if not knowledge_chunks:
+                self.logger.info("使用默认知识库")
                 knowledge_chunks = self._get_default_knowledge(task)
 
-            self.logger.info(f"检索到 {len(knowledge_chunks)} 个知识片段")
+            self.logger.info(f"最终检索到 {len(knowledge_chunks)} 个知识片段")
             return knowledge_chunks
 
         except Exception as e:
@@ -308,12 +327,22 @@ class ComplexTaskSolver:
 
     def _get_system_prompt(self) -> str:
         """获取系统提示词"""
-        return """你是一个水文建模专家，擅长将复杂的水文建模任务分解为简单的工具调用序列。
+        return """你是一个水文建模专家，擅长分析复杂的水文建模任务并决定最佳解决方案。
+
+**重要原则**:
+1. 如果任务描述中明确要求"生成代码"、"编写脚本"或"生成Python代码"，你必须使用"generate_code"工具来生成代码，而不是调用现有工具
+2. 如果任务要求自定义分析、特殊计算或没有对应的现有工具，应该生成代码来实现
+3. 只有在任务可以直接通过现有工具完成时，才调用现有工具
 
 可用工具:
 {tools}
 
-请根据用户的复杂任务描述和相关知识，生成一个工具调用序列来解决问题。
+**代码生成工具**:
+- generate_code: 用于生成Python代码来完成自定义任务
+  当任务描述包含以下关键词时，优先使用此工具：
+  * "生成代码"、"编写脚本"、"生成Python代码"
+  * "自定义分析"、"特殊处理"、"自适应"
+  * "创建函数"、"实现算法"
 
 输出格式要求:
 - 必须是有效的JSON格式
@@ -321,10 +350,24 @@ class ComplexTaskSolver:
 - steps是工具调用列表，每个包含step_id、tool_name、parameters、description字段
 - 参数可以使用引用格式 ${{step_X.output.field_name}} 来引用前面步骤的输出
 
-示例输出:
+**代码生成任务示例**:
+{{
+  "solution_type": "code_generation",
+  "description": "生成Python代码实现自定义数据分析",
+  "steps": [
+    {{
+      "step_id": 1,
+      "tool_name": "generate_code",
+      "parameters": {{"task_type": "data_analysis", "requirements": "读取和分析水文数据"}},
+      "description": "生成数据分析Python代码"
+    }}
+  ]
+}}
+
+**工具调用任务示例**:
 {{
   "solution_type": "tool_sequence",
-  "description": "使用工具序列解决复杂任务",
+  "description": "使用现有工具序列",
   "steps": [
     {{
       "step_id": 1,
@@ -560,25 +603,55 @@ class ComplexTaskSolver:
     ) -> Any:
         """执行代码生成步骤"""
         try:
+            # 如果有RAG系统，检索相关代码示例和知识
+            code_knowledge = []
+            if self.rag_system:
+                try:
+                    self.logger.info(f"为代码生成步骤检索知识: {step.description}")
+                    rag_response = self.rag_system.query(step.description, top_k=3)
+                    if rag_response.get("status") == "success":
+                        results = rag_response.get("results", [])
+                        for result in results:
+                            code_knowledge.append({
+                                "content": result.get("content", ""),
+                                "source": result.get("metadata", {}).get("source", "rag_system")
+                            })
+                except Exception as e:
+                    self.logger.warning(f"代码知识检索失败: {e}")
+
             # 构建代码生成提示
             code_prompt = self._build_code_generation_prompt(
-                step, resolved_params, context
+                step, resolved_params, context, code_knowledge
             )
 
             # 使用代码生成模式调用LLM
+            system_prompt = """你是一个专业的Python代码生成助手，擅长水文数据分析和建模。
+请生成符合要求的高质量代码，遵循以下原则：
+1. 代码清晰、可读、高效
+2. 包含完整的错误处理
+3. 添加必要的文档字符串和注释
+4. 使用合适的数据结构和算法
+5. 遵循水文建模领域的最佳实践
+6. 返回标准格式的结果（dict/JSON）
+"""
             messages = [
-                LLMMessage(
-                    role="system",
-                    content="你是一个专业的Python代码生成助手。请生成符合要求的高质量代码。",
-                ),
+                LLMMessage(role="system", content=system_prompt),
                 LLMMessage(role="user", content=code_prompt),
             ]
 
             response = self.llm_client.chat(
-                messages, task_type="coding", temperature=0.1, max_tokens=2000
+                messages, task_type="coding", temperature=0.1, max_tokens=3000
             )
 
             if response.success:
+                # 保存生成的代码到tmp目录
+                generated_code = response.content
+                code_file_path = self._save_generated_code(
+                    generated_code,
+                    step.tool_name,
+                    step.description
+                )
+
                 # 模拟工具调用结果格式
                 return type(
                     "ToolResult",
@@ -586,7 +659,8 @@ class ComplexTaskSolver:
                     {
                         "success": True,
                         "output": {
-                            "generated_code": response.content,
+                            "generated_code": generated_code,
+                            "code_file_path": code_file_path,
                             "step_description": step.description,
                             "model_used": response.metadata.get(
                                 "model_used", "unknown"
@@ -614,9 +688,20 @@ class ComplexTaskSolver:
             )()
 
     def _build_code_generation_prompt(
-        self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any]
+        self, step: ToolCall, resolved_params: Dict[str, Any], context: Dict[str, Any],
+        code_knowledge: List[Dict[str, Any]] = None
     ) -> str:
         """构建代码生成提示词"""
+
+        # 格式化代码知识
+        knowledge_section = ""
+        if code_knowledge:
+            knowledge_section = "\n相关代码示例和知识:\n"
+            for i, knowledge in enumerate(code_knowledge[:3], 1):
+                content = knowledge.get("content", "")
+                source = knowledge.get("source", "unknown")
+                knowledge_section += f"\n示例{i} (来源: {source}):\n{content}\n"
+
         prompt = f"""任务描述: {step.description}
 
 参数信息:
@@ -624,14 +709,18 @@ class ComplexTaskSolver:
 
 上下文信息:
 {self._format_context(context)}
+{knowledge_section}
 
 请根据以上信息生成相应的Python代码。要求:
 1. 代码要清晰、可读、高效
-2. 包含必要的注释
-3. 处理可能的异常情况
+2. 包含完整的文档字符串和注释
+3. 包含完善的错误处理 (try-except)
 4. 遵循水文建模领域的最佳实践
+5. 使用提供的参数信息
+6. 返回dict格式的结果，包含success字段和结果数据
+7. 如果提供了代码示例，请参考其风格和模式
 
-代码:"""
+请生成完整的可执行代码:"""
         return prompt
 
     def _format_parameters(self, params: Dict[str, Any]) -> str:
@@ -687,6 +776,53 @@ class ComplexTaskSolver:
             available_dirs = [DATASET_DIR]
 
         return available_dirs
+
+    def _save_generated_code(
+        self, code: str, tool_name: str, description: str
+    ) -> str:
+        """
+        保存生成的代码到tmp目录
+
+        Args:
+            code: 生成的代码
+            tool_name: 工具名称
+            description: 步骤描述
+
+        Returns:
+            str: 保存的文件路径
+        """
+        try:
+            # 创建tmp目录
+            tmp_dir = Path("tmp")
+            tmp_dir.mkdir(exist_ok=True)
+
+            # 生成文件名（使用时间戳确保唯一性）
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # 从tool_name中提取有意义的名称
+            safe_tool_name = tool_name.replace("_", "").replace(" ", "")
+            filename = f"{safe_tool_name}_{timestamp}.py"
+
+            file_path = tmp_dir / filename
+
+            # 添加文件头注释
+            header = f'''"""
+生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+任务描述: {description[:100]}...
+工具名称: {tool_name}
+"""
+
+'''
+
+            # 写入文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(header + code)
+
+            self.logger.info(f"生成的代码已保存到: {file_path}")
+            return str(file_path)
+
+        except Exception as e:
+            self.logger.error(f"保存生成的代码失败: {e}")
+            return ""
 
     def _create_error_result(self, task_id: str, error_msg: str) -> TaskResult:
         """创建错误结果"""

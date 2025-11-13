@@ -17,7 +17,7 @@ from ..models.workflow import Workflow, WorkflowMode
 from ..models.result import WorkflowResult, ReactIteration, ExecutionStatus
 from .task_dispatcher import TaskDispatcher
 from .simple_executor import SimpleTaskExecutor
-from .complex_solver import ComplexTaskSolver
+from .complex_executor import ComplexTaskExecutor
 from .llm_client import LLMClientFactory, LLMMessage, BaseLLMClient
 
 
@@ -28,7 +28,7 @@ class ReactExecutor:
         self,
         task_dispatcher: TaskDispatcher,
         simple_executor: SimpleTaskExecutor,
-        complex_solver: ComplexTaskSolver = None,
+        complex_executor: ComplexTaskExecutor = None,
         llm_client: BaseLLMClient = None,
         enable_debug: bool = False,
     ):
@@ -38,13 +38,13 @@ class ReactExecutor:
         Args:
             task_dispatcher: 任务分发器
             simple_executor: 简单任务执行器
-            complex_solver: 复杂任务解决器
+            complex_executor: 复杂任务执行器
             llm_client: LLM客户端
             enable_debug: 是否启用调试模式
         """
         self.task_dispatcher = task_dispatcher
         self.simple_executor = simple_executor
-        self.complex_solver = complex_solver
+        self.complex_executor = complex_executor
         self.llm_client = llm_client or LLMClientFactory.create_default_client()
         self.enable_debug = enable_debug
         self.logger = logging.getLogger(__name__)
@@ -218,8 +218,11 @@ class ReactExecutor:
             # 分发任务
             from .task_dispatcher import ExecutorType
 
+            # 将task_results转换为context格式（用于参数解析）
+            context = self._build_execution_context(result.task_results)
+
             executor_type, execution_params = self.task_dispatcher.dispatch_task(
-                task, result.task_results
+                task, context
             )
 
             # 根据executor_type调用相应的执行器
@@ -227,14 +230,15 @@ class ReactExecutor:
                 task_result = self.simple_executor.execute_task(
                     task, result.task_results
                 )
-            elif executor_type == ExecutorType.COMPLEX_SOLVER:
-                if self.complex_solver:
-                    task_result = self.complex_solver.solve_complex_task(
-                        task, result.task_results
+            elif executor_type == ExecutorType.COMPLEX_EXECUTOR:
+                if self.complex_executor:
+                    # context已经在上面构建好了
+                    task_result = self.complex_executor.solve_complex_task(
+                        task, context
                     )
                 else:
                     task_result = self._create_placeholder_result(
-                        task, "复杂任务解决器未初始化"
+                        task, "复杂任务执行器未初始化"
                     )
             else:
                 task_result = self._create_placeholder_result(
@@ -500,6 +504,28 @@ class ReactExecutor:
             encountered_issues=encountered_issues,
             recommendations=recommendations,
         )
+
+    def _build_execution_context(self, task_results: Dict) -> Dict[str, Any]:
+        """
+        将task_results转换为execution context格式
+
+        Args:
+            task_results: 任务结果字典 {task_id: TaskResult}
+
+        Returns:
+            Dict: 上下文字典，格式为 {task_id: {success: bool, output: dict}}
+        """
+        context = {}
+
+        for task_id, task_result in task_results.items():
+            context[task_id] = {
+                "success": task_result.is_successful(),
+                "output": task_result.outputs if hasattr(task_result, 'outputs') else {}
+            }
+
+            self.logger.debug(f"上下文包含任务: {task_id}, 输出键: {list(context[task_id]['output'].keys())}")
+
+        return context
 
     def _create_placeholder_result(self, task, message: str):
         """创建占位符结果"""

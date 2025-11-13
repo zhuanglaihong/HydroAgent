@@ -11,7 +11,7 @@ Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 from .core import (
     SimpleTaskExecutor,
     ReactExecutor,
-    ComplexTaskSolver,
+    ComplexTaskExecutor,
     TaskDispatcher,
     WorkflowReceiver,
     LLMClientFactory,
@@ -27,7 +27,7 @@ __all__ = [
     # Core components
     "SimpleTaskExecutor",
     "ReactExecutor",
-    "ComplexTaskSolver",
+    "ComplexTaskExecutor",
     "TaskDispatcher",
     "WorkflowReceiver",
     "LLMClientFactory",

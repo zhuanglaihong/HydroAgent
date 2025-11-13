@@ -218,20 +218,20 @@ def test_complex_task_solver_integration():
     print("=" * 60)
 
     try:
-        from executor import ComplexTaskSolver, SimpleTaskExecutor
+        from executor import ComplexTaskExecutor, SimpleTaskExecutor
         from executor.models import Task, TaskType
 
         # 创建简单任务执行器
         simple_executor = SimpleTaskExecutor()
 
         # 创建复杂任务解决器（将自动使用智能客户端）
-        complex_solver = ComplexTaskSolver(
+        complex_executor = ComplexTaskExecutor(
             simple_executor=simple_executor,
             enable_debug=True
         )
 
         print("[OK] 复杂任务解决器创建成功")
-        print(f"LLM客户端类型: {type(complex_solver.llm_client).__name__}")
+        print(f"LLM客户端类型: {type(complex_executor.llm_client).__name__}")
 
         # 测试一：推理任务（任务分析和解决方案生成）
         print("\n1. 测试推理任务 - 任务解决方案生成:")
@@ -245,8 +245,8 @@ def test_complex_task_solver_integration():
         )
 
         # 直接测试解决方案生成（不执行完整流程）
-        knowledge_chunks = complex_solver._query_knowledge_base(reasoning_task)
-        solution_plan = complex_solver._generate_solution_plan(reasoning_task, knowledge_chunks)
+        knowledge_chunks = complex_executor._query_knowledge_base(reasoning_task)
+        solution_plan = complex_executor._generate_solution_plan(reasoning_task, knowledge_chunks)
 
         if solution_plan:
             print("[OK] 推理任务 - 解决方案生成成功!")
@@ -265,7 +265,7 @@ def test_complex_task_solver_integration():
         print("\n2. 测试代码生成功能:")
         print("-" * 40)
 
-        from executor.core.complex_solver import ToolCall
+        from executor.core.complex_executor import ToolCall
 
         # 创建一个模拟的代码生成步骤
         code_step = ToolCall(
@@ -276,13 +276,13 @@ def test_complex_task_solver_integration():
         )
 
         # 测试是否正确识别为代码生成步骤
-        is_code_step = complex_solver._is_code_generation_step(code_step)
+        is_code_step = complex_executor._is_code_generation_step(code_step)
         print(f"代码步骤识别: {is_code_step}")
 
         if is_code_step:
             # 测试代码生成执行
             context = {}
-            code_result = complex_solver._execute_code_generation_step(code_step, code_step.parameters, context)
+            code_result = complex_executor._execute_code_generation_step(code_step, code_step.parameters, context)
 
             if code_result.success:
                 print("[OK] 代码生成步骤执行成功!")

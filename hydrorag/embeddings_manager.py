@@ -17,6 +17,8 @@ import signal
 from threading import Thread, Event
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
+from .resource_manager import ResourceManager, CleanupContext
+
 logger = logging.getLogger(__name__)
 
 
@@ -379,6 +381,11 @@ class EmbeddingsManager:
                     # 检查向量格式
                     if isinstance(embedding, list) and len(embedding) > 0:
                         logger.info(f"嵌入向量维度: {len(embedding)}")
+
+                        # 清理测试后的资源
+                        ResourceManager.cleanup_embedding_client(model)
+                        ResourceManager.force_gc()
+
                         return True
                     else:
                         logger.error("嵌入向量格式不正确")
@@ -386,10 +393,14 @@ class EmbeddingsManager:
 
                 except FutureTimeoutError:
                     logger.error(f"模型测试超时（{timeout}秒）")
+                    # 超时也要清理资源
+                    ResourceManager.cleanup_embedding_client(model)
                     return False
 
         except Exception as e:
             logger.error(f"测试嵌入模型失败: {e}")
+            # 异常也要清理资源
+            ResourceManager.cleanup_embedding_client(model)
             return False
 
     def embed_text(self, text: str) -> Optional[List[float]]:
@@ -870,3 +881,46 @@ class EmbeddingsManager:
         except Exception as e:
             logger.error(f"获取嵌入维度失败: {e}")
             return 0
+
+    def cleanup(self):
+        """清理嵌入模型资源，释放httpx连接"""
+        try:
+            logger.info("开始清理嵌入模型资源...")
+
+            cleaned_count = 0
+
+            # 清理API模型
+            if self.api_model:
+                if ResourceManager.cleanup_embedding_client(self.api_model):
+                    cleaned_count += 1
+                    logger.debug("API模型资源已清理")
+                self.api_model = None
+
+            # 清理Ollama模型
+            if self.ollama_model:
+                if ResourceManager.cleanup_embedding_client(self.ollama_model):
+                    cleaned_count += 1
+                    logger.debug("Ollama模型资源已清理")
+                self.ollama_model = None
+
+            # 清理当前模型引用
+            self.current_model = None
+            self.current_model_type = None
+
+            # 强制垃圾回收
+            gc_stats = ResourceManager.force_gc()
+            logger.debug(f"垃圾回收统计: {gc_stats}")
+
+            logger.info(f"嵌入模型资源清理完成，清理了 {cleaned_count} 个模型")
+            return True
+
+        except Exception as e:
+            logger.error(f"清理嵌入模型资源失败: {e}")
+            return False
+
+    def __del__(self):
+        """析构函数，确保资源被释放"""
+        try:
+            self.cleanup()
+        except:
+            pass

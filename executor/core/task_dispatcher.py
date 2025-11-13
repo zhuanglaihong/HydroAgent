@@ -22,7 +22,7 @@ class ExecutorType(str, Enum):
     """执行器类型"""
 
     SIMPLE_EXECUTOR = "simple_executor"  # 简单任务执行器
-    COMPLEX_SOLVER = "complex_solver"  # 复杂任务解决器
+    COMPLEX_EXECUTOR = "complex_executor"  # 复杂任务执行器
 
 
 class DispatchDecision(BaseModel):
@@ -60,7 +60,7 @@ class TaskDispatcher:
         # 执行器负载跟踪
         self.executor_load: Dict[ExecutorType, int] = {
             ExecutorType.SIMPLE_EXECUTOR: 0,
-            ExecutorType.COMPLEX_SOLVER: 0,
+            ExecutorType.COMPLEX_EXECUTOR: 0,
         }
 
         self.logger.info("任务分发器初始化完成")
@@ -256,7 +256,7 @@ class TaskDispatcher:
         if task.type == TaskType.SIMPLE:
             return ExecutorType.SIMPLE_EXECUTOR
         elif task.type == TaskType.COMPLEX:
-            return ExecutorType.COMPLEX_SOLVER
+            return ExecutorType.COMPLEX_EXECUTOR
         else:
             raise ValueError(f"未知任务类型: {task.type}")
 

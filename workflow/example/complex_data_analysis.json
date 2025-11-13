@@ -1,0 +1,144 @@
+{
+  "workflow_id": "complex_data_analysis",
+  "name": "复杂数据分析和模型优化",
+  "description": "复杂任务示例：需要LLM生成自定义数据分析代码，然后进行模型率定和评估",
+  "execution_mode": "sequential",
+  "tasks": [
+    {
+      "task_id": "task_custom_analysis",
+      "name": "自定义数据分析",
+      "description": "生成Python代码来进行水文数据分析：1) 读取netCDF格式的水文数据 2) 计算逐月平均径流量和季节性模式 3) 识别降雨强度大于30mm/day的极端事件 4) 计算降雨-径流相关性分析 5) 保存分析结果为CSV和JSON文件。注意：必须生成完整的Python代码，而不是调用现有工具。",
+      "tool_name": "generate_code",
+      "type": "complex",
+      "knowledge_query": "如何使用pandas和xarray读取netCDF水文数据，进行统计分析和极端事件识别，保存结果为文件",
+      "parameters": {
+        "task_type": "data_analysis",
+        "data_source": "D:\\MCP\\HydroAgent\\data\\camels_11532500",
+        "analysis_requirements": [
+          "计算逐月平均径流量并识别季节性模式",
+          "识别降雨强度大于30mm/day的极端事件",
+          "计算降雨和径流的相关系数和滞后时间",
+          "生成降雨-径流双轴时间序列图"
+        ],
+        "expected_outputs": [
+          "monthly_statistics.csv",
+          "extreme_events.json",
+          "correlation_analysis.json",
+          "rainfall_runoff_plot.png"
+        ]
+      },
+      "dependencies": [],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 600
+      },
+      "expected_output": "数据分析结果文件和统计报告"
+    },
+    {
+      "task_id": "task_prepare",
+      "name": "准备水文数据",
+      "description": "处理和验证水文时间序列数据，转换为模型可用的netCDF格式",
+      "tool_name": "prepare_data",
+      "type": "simple",
+      "parameters": {
+        "data_dir": "D:\\MCP\\HydroAgent\\data\\camels_11532500",
+        "target_data_scale": "D"
+      },
+      "dependencies": ["task_custom_analysis"],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 300
+      },
+      "expected_output": "处理后的数据文件路径"
+    },
+    {
+      "task_id": "task_adaptive_calibration",
+      "name": "自适应模型率定",
+      "description": "生成Python代码来实现自适应模型率定：1) 根据前面的数据分析结果动态调整GR4J模型的参数搜索范围 2) 使用SCE-UA算法进行参数优化 3) 根据流域径流特征自适应调整算法参数 4) 保存优化后的模型参数。注意：必须生成完整的Python代码实现自适应率定逻辑。",
+      "tool_name": "generate_code",
+      "type": "complex",
+      "knowledge_query": "如何实现自适应的水文模型参数率定，根据数据特征动态调整参数范围和优化策略",
+      "parameters": {
+        "data_dir": "D:\\MCP\\HydroAgent\\data\\camels_11532500",
+        "result_dir": "D:\\MCP\\HydroAgent\\result",
+        "exp_name": "complex_adaptive_exp",
+        "model_name": "gr4j",
+        "basin_id": "11532500",
+        "analysis_results": "${task_custom_analysis.output}",
+        "adaptation_strategy": "根据数据分析结果动态调整参数范围"
+      },
+      "dependencies": ["task_prepare"],
+      "conditions": {
+        "retry_count": 1,
+        "timeout": 1800
+      },
+      "expected_output": "自适应率定的模型参数"
+    },
+    {
+      "task_id": "task_evaluate",
+      "name": "评估率定模型",
+      "description": "评估模型性能并生成详细报告",
+      "tool_name": "evaluate_model",
+      "type": "simple",
+      "parameters": {
+        "result_dir": "D:\\MCP\\HydroAgent\\result\\complex_adaptive_exp"
+      },
+      "dependencies": ["task_adaptive_calibration"],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 600
+      },
+      "expected_output": "模型性能评估指标"
+    },
+    {
+      "task_id": "task_result_synthesis",
+      "name": "结果综合分析",
+      "description": "生成Python代码来创建综合分析报告：1) 读取前面步骤的数据分析结果和模型性能指标 2) 生成可视化图表（径流过程线、参数敏感性图等） 3) 编写Markdown格式的分析报告 4) 总结模型性能和改进建议。注意：必须生成完整的Python代码来生成报告。",
+      "tool_name": "generate_code",
+      "type": "complex",
+      "knowledge_query": "如何生成水文模型评估报告，使用matplotlib绘图和markdown格式编写报告",
+      "parameters": {
+        "data_analysis": "${task_custom_analysis.output}",
+        "calibration_result": "${task_adaptive_calibration.output}",
+        "evaluation_metrics": "${task_evaluate.output.evaluation_results}",
+        "report_format": "markdown",
+        "include_plots": true
+      },
+      "dependencies": ["task_evaluate"],
+      "conditions": {
+        "retry_count": 2,
+        "timeout": 600
+      },
+      "expected_output": "综合分析报告"
+    }
+  ],
+  "targets": [
+    {
+      "type": "performance_goal",
+      "metric": "nse",
+      "threshold": 0.6,
+      "comparison": ">=",
+      "max_iterations": 1,
+      "description": "NSE指标应大于等于0.6"
+    }
+  ],
+  "metadata": {
+    "created_time": "2025-10-11T00:00:00.000000",
+    "estimated_duration": "20分钟",
+    "complexity": "非常高",
+    "task_type": "complex_workflow",
+    "features": {
+      "has_complex_tasks": true,
+      "requires_code_generation": true,
+      "has_dependencies": true,
+      "uses_context_references": true,
+      "requires_rag_knowledge": true
+    },
+    "description": "此工作流包含3个复杂任务，需要LLM根据RAG知识生成代码来完成",
+    "complex_tasks_description": {
+      "task_custom_analysis": "需要生成数据分析和特征提取代码",
+      "task_adaptive_calibration": "需要生成自适应参数优化代码",
+      "task_result_synthesis": "需要生成报告生成代码"
+    }
+  }
+}

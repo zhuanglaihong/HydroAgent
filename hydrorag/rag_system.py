@@ -1018,9 +1018,44 @@ class RAGSystem:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """上下文管理器出口"""
-        # 清理资源（如果需要）
-        pass
+        """上下文管理器出口 - 清理所有资源"""
+        self.cleanup()
+        return False
+
+    def cleanup(self):
+        """清理所有RAG系统资源"""
+        try:
+            logger.info("开始清理RAG系统资源...")
+
+            # 清理嵌入模型资源
+            if self.embeddings_manager:
+                try:
+                    self.embeddings_manager.cleanup()
+                    logger.debug("嵌入模型管理器资源已清理")
+                except Exception as e:
+                    logger.warning(f"清理嵌入模型管理器失败: {e}")
+
+            # 清理向量存储（如果有清理方法）
+            if self.vector_store and hasattr(self.vector_store, 'cleanup'):
+                try:
+                    self.vector_store.cleanup()
+                    logger.debug("向量存储资源已清理")
+                except Exception as e:
+                    logger.warning(f"清理向量存储失败: {e}")
+
+            logger.info("RAG系统资源清理完成")
+            return True
+
+        except Exception as e:
+            logger.error(f"清理RAG系统资源失败: {e}")
+            return False
+
+    def __del__(self):
+        """析构函数，确保资源被释放"""
+        try:
+            self.cleanup()
+        except:
+            pass
 
 
 # 便利函数
