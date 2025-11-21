@@ -188,12 +188,12 @@ Always provide clear, actionable suggestions."""
                     "potential_evapotranspiration",
                     "streamflow",
                 ],
-                "train_period": ["1985-10-01", "1995-09-30"],
-                "valid_period": ["1995-10-01", "2005-09-30"],
-                "test_period": ["2005-10-01", "2014-09-30"],
+                "train_period": ["2000-07-01", "2005-09-30"],
+                "valid_period": ["2006-07-01", "2007-09-30"],
+                "test_period": ["2008-07-01", "2010-09-30"],
             },
             "model_cfgs": {
-                "model_name": "xaj_mz",
+                "model_name": "xaj",
                 "model_params": {
                     "source_type": "sources",
                     "source_book": "HF",
@@ -203,7 +203,7 @@ Always provide clear, actionable suggestions."""
             "training_cfgs": {
                 "algorithm_name": "SCE_UA",
                 "algorithm_params": {
-                    "rep": 5000,
+                    "rep": 500,
                     "ngs": 1000,
                 },
                 "loss_config": {
@@ -281,6 +281,13 @@ Always provide clear, actionable suggestions."""
         model_name = config["model_cfgs"]["model_name"]
         self._adjust_algorithm_params(config, model_name)
 
+        # Apply user-specified extra_params (overrides defaults)
+        extra_params = intent_result.get("extra_params", {})
+        if extra_params:
+            for param_name, param_value in extra_params.items():
+                config["training_cfgs"]["algorithm_params"][param_name] = param_value
+                logger.info(f"[ConfigAgent] Applied extra_param: {param_name}={param_value}")
+
         # Set output directory to workspace
         if self.workspace_dir:
             config["training_cfgs"]["output_dir"] = str(self.workspace_dir)
@@ -330,16 +337,16 @@ Always provide clear, actionable suggestions."""
 
             if num_params <= 5:
                 # Simple models: fewer iterations needed
-                config["training_cfgs"]["algorithm_params"]["ngs"] = 500
-                config["training_cfgs"]["algorithm_params"]["rep"] = 3000
+                config["training_cfgs"]["algorithm_params"]["ngs"] = 300
+                config["training_cfgs"]["algorithm_params"]["rep"] = 1000
             elif num_params <= 10:
                 # Medium models
-                config["training_cfgs"]["algorithm_params"]["ngs"] = 1000
-                config["training_cfgs"]["algorithm_params"]["rep"] = 5000
+                config["training_cfgs"]["algorithm_params"]["ngs"] = 500
+                config["training_cfgs"]["algorithm_params"]["rep"] = 2000
             else:
                 # Complex models: more iterations
-                config["training_cfgs"]["algorithm_params"]["ngs"] = 1500
-                config["training_cfgs"]["algorithm_params"]["rep"] = 8000
+                config["training_cfgs"]["algorithm_params"]["ngs"] = 100
+                config["training_cfgs"]["algorithm_params"]["rep"] = 3000
 
             logger.debug(
                 f"[ConfigAgent] Adjusted SCE_UA params for {model_name} "

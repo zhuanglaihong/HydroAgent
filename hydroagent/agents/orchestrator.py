@@ -38,6 +38,8 @@ class Orchestrator(BaseAgent):
         self,
         llm_interface: LLMInterface,
         workspace_root: Optional[Path] = None,
+        show_progress: bool = True,
+        enable_code_gen: bool = True,
         **kwargs
     ):
         """
@@ -46,9 +48,11 @@ class Orchestrator(BaseAgent):
         Args:
             llm_interface: LLM API interface
             workspace_root: Root directory for all workspaces
+            show_progress: Whether to show hydromodel execution progress
+            enable_code_gen: Whether to enable code generation in DeveloperAgent
             **kwargs: Additional configuration
         """
-        workspace_root = workspace_root or Path.cwd() / "workspace"
+        workspace_root = workspace_root or Path.cwd() / "results"
         super().__init__(
             name="Orchestrator",
             llm_interface=llm_interface,
@@ -57,11 +61,13 @@ class Orchestrator(BaseAgent):
         )
 
         self.workspace_root = workspace_root
+        self.show_progress = show_progress
+        self.enable_code_gen = enable_code_gen
         self.current_session_id: Optional[str] = None
         self.current_workspace: Optional[Path] = None
         self.conversation_history: List[Dict[str, Any]] = []
 
-        # Sub-agents will be initialized later
+        # Sub-agents will be initialized when session starts
         self.intent_agent = None
         self.config_agent = None
         self.runner_agent = None
@@ -90,8 +96,8 @@ Always think step-by-step and explain your reasoning."""
 
     def start_new_session(self, session_id: Optional[str] = None) -> str:
         """
-        Start a new workflow session.
-        开始一个新的工作流会话。
+        Start a new workflow session and initialize all sub-agents.
+        开始一个新的工作流会话并初始化所有子智能体。
 
         Args:
             session_id: Optional custom session ID
@@ -106,10 +112,43 @@ Always think step-by-step and explain your reasoning."""
         self.conversation_history.clear()
         self.clear_context()
 
+        # Initialize all sub-agents for this session
+        self._initialize_agents()
+
         logger.info(f"Started new session: {self.current_session_id}")
         logger.info(f"Workspace: {self.current_workspace}")
 
         return self.current_session_id
+
+    def _initialize_agents(self) -> None:
+        """
+        Initialize all sub-agents with current workspace.
+        使用当前工作空间初始化所有子智能体。
+        """
+        from .intent_agent import IntentAgent
+        from .config_agent import ConfigAgent
+        from .runner_agent import RunnerAgent
+        from .developer_agent import DeveloperAgent
+
+        logger.info("[Orchestrator] Initializing sub-agents...")
+
+        self.intent_agent = IntentAgent(llm_interface=self.llm)
+        self.config_agent = ConfigAgent(
+            llm_interface=self.llm,
+            workspace_dir=self.current_workspace
+        )
+        self.runner_agent = RunnerAgent(
+            llm_interface=self.llm,
+            workspace_dir=self.current_workspace,
+            show_progress=self.show_progress
+        )
+        self.developer_agent = DeveloperAgent(
+            llm_interface=self.llm,
+            workspace_dir=self.current_workspace,
+            enable_code_gen=self.enable_code_gen
+        )
+
+        logger.info("[Orchestrator] All sub-agents initialized")
 
     def _generate_session_id(self) -> str:
         """Generate unique session ID."""
@@ -119,8 +158,8 @@ Always think step-by-step and explain your reasoning."""
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Main orchestration logic.
-        主编排逻辑。
+        Main orchestration logic - coordinates all 4 agents.
+        主编排逻辑 - 协调全部4个智能体。
 
         Args:
             input_data: User query and context
@@ -132,11 +171,32 @@ Always think step-by-step and explain your reasoning."""
 
         Returns:
             Dict containing orchestration results
+                {
+                    "success": bool,
+                    "session_id": str,
+                    "workspace": str,
+                    "intent": dict,
+                    "config": dict,
+                    "execution": dict,
+                    "analysis": dict,
+                    "summary": str
+                }
         """
         query = input_data.get("query", "")
-        mode = input_data.get("mode", "auto")
 
-        logger.info(f"Processing query: {query}")
+        if not query:
+            return {
+                "success": False,
+                "error": "No query provided",
+                "session_id": self.current_session_id
+            }
+
+        logger.info(f"[Orchestrator] Processing query: {query}")
+
+        # Ensure session is started
+        if self.current_session_id is None:
+            logger.info("[Orchestrator] No active session, starting new session...")
+            self.start_new_session()
 
         # Add to conversation history
         self.conversation_history.append({
@@ -145,10 +205,10 @@ Always think step-by-step and explain your reasoning."""
             "timestamp": datetime.now().isoformat()
         })
 
-        try:
-            # TODO: Implement full orchestration logic
-            # This is a placeholder structure
+        import time
+        start_time = time.time()
 
+        try:
             # Step 1: Intent recognition
             intent_result = self._process_intent(query)
 
@@ -161,22 +221,103 @@ Always think step-by-step and explain your reasoning."""
             # Step 4: Result analysis
             analysis_result = self._analyze_results(execution_result)
 
-            return {
-                "success": True,
+            # Check overall success
+            overall_success = (
+                intent_result.get("success", False) and
+                config_result.get("success", False) and
+                execution_result.get("success", False)
+                # Note: analysis can fail but we still consider it success if execution worked
+            )
+
+            elapsed_time = time.time() - start_time
+
+            # Generate summary
+            summary = self._generate_summary(
+                intent_result, config_result, execution_result, analysis_result
+            )
+
+            # Add to conversation history
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": summary,
+                "timestamp": datetime.now().isoformat()
+            })
+
+            result = {
+                "success": overall_success,
                 "session_id": self.current_session_id,
+                "workspace": str(self.current_workspace),
                 "intent": intent_result,
                 "config": config_result,
                 "execution": execution_result,
-                "analysis": analysis_result
+                "analysis": analysis_result,
+                "summary": summary,
+                "elapsed_time": elapsed_time
             }
 
+            logger.info(f"[Orchestrator] Pipeline completed in {elapsed_time:.1f}s")
+            return result
+
         except Exception as e:
-            logger.error(f"Orchestration failed: {str(e)}")
+            logger.error(f"[Orchestrator] Pipeline failed: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),
-                "session_id": self.current_session_id
+                "session_id": self.current_session_id,
+                "workspace": str(self.current_workspace) if self.current_workspace else None
             }
+
+    def _generate_summary(
+        self, intent_result: Dict, config_result: Dict,
+        execution_result: Dict, analysis_result: Dict
+    ) -> str:
+        """
+        Generate a summary of the entire pipeline execution.
+        生成整个管道执行的摘要。
+
+        Args:
+            intent_result: Intent analysis result
+            config_result: Config generation result
+            execution_result: Execution result
+            analysis_result: Analysis result
+
+        Returns:
+            Summary text
+        """
+        summary_parts = []
+
+        # Intent summary
+        intent_data = intent_result.get("intent_result", {})
+        intent = intent_data.get("intent", "unknown")
+        model = intent_data.get("model_name", "N/A")
+        basin = intent_data.get("basin_id", "N/A")
+
+        summary_parts.append(f"任务类型: {intent.upper()}")
+        summary_parts.append(f"模型: {model}, 流域: {basin}")
+
+        # Execution summary
+        if execution_result.get("success"):
+            result_data = execution_result.get("result", {})
+            metrics = result_data.get("metrics", {})
+
+            if metrics:
+                summary_parts.append("\n性能指标:")
+                for key, value in metrics.items():
+                    summary_parts.append(f"  {key}: {value}")
+
+        # Analysis summary
+        if analysis_result.get("success"):
+            analysis_data = analysis_result.get("analysis", {})
+            quality = analysis_data.get("quality", "N/A")
+            summary_parts.append(f"\n质量评估: {quality}")
+
+            recommendations = analysis_data.get("recommendations", [])
+            if recommendations:
+                summary_parts.append(f"\n改进建议:")
+                for i, rec in enumerate(recommendations[:3], 1):  # Show max 3
+                    summary_parts.append(f"  {i}. {rec}")
+
+        return "\n".join(summary_parts)
 
     def _process_intent(self, query: str) -> Dict[str, Any]:
         """
@@ -189,14 +330,18 @@ Always think step-by-step and explain your reasoning."""
         Returns:
             Intent analysis result
         """
-        logger.info("Step 1: Processing intent...")
+        logger.info("[Orchestrator] Step 1/4: Processing intent...")
 
         if self.intent_agent is None:
-            logger.warning("IntentAgent not initialized, using placeholder")
-            return {"intent": "calibration", "placeholder": True}
+            raise RuntimeError("IntentAgent not initialized. Call start_new_session() first.")
 
-        # TODO: Call IntentAgent.process()
-        return {"intent": "calibration", "placeholder": True}
+        result = self.intent_agent.process({"query": query})
+
+        if not result.get("success"):
+            raise RuntimeError(f"Intent analysis failed: {result.get('error')}")
+
+        logger.info(f"[Orchestrator] Intent: {result['intent_result'].get('intent')}")
+        return result
 
     def _generate_config(self, intent_result: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -209,14 +354,18 @@ Always think step-by-step and explain your reasoning."""
         Returns:
             Configuration generation result
         """
-        logger.info("Step 2: Generating configuration...")
+        logger.info("[Orchestrator] Step 2/4: Generating configuration...")
 
         if self.config_agent is None:
-            logger.warning("ConfigAgent not initialized, using placeholder")
-            return {"config_path": "placeholder.yaml", "placeholder": True}
+            raise RuntimeError("ConfigAgent not initialized. Call start_new_session() first.")
 
-        # TODO: Call ConfigAgent.process()
-        return {"config_path": "placeholder.yaml", "placeholder": True}
+        result = self.config_agent.process(intent_result)
+
+        if not result.get("success"):
+            raise RuntimeError(f"Config generation failed: {result.get('error')}")
+
+        logger.info("[Orchestrator] Configuration generated successfully")
+        return result
 
     def _execute_workflow(self, config_result: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -229,14 +378,20 @@ Always think step-by-step and explain your reasoning."""
         Returns:
             Execution result
         """
-        logger.info("Step 3: Executing workflow...")
+        logger.info("[Orchestrator] Step 3/4: Executing workflow...")
 
         if self.runner_agent is None:
-            logger.warning("RunnerAgent not initialized, using placeholder")
-            return {"status": "success", "placeholder": True}
+            raise RuntimeError("RunnerAgent not initialized. Call start_new_session() first.")
 
-        # TODO: Call RunnerAgent.process()
-        return {"status": "success", "placeholder": True}
+        result = self.runner_agent.process(config_result)
+
+        if not result.get("success"):
+            logger.error(f"[Orchestrator] Execution failed: {result.get('error')}")
+            # Still return result for DeveloperAgent to analyze the failure
+            return result
+
+        logger.info("[Orchestrator] Workflow executed successfully")
+        return result
 
     def _analyze_results(self, execution_result: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -249,14 +404,20 @@ Always think step-by-step and explain your reasoning."""
         Returns:
             Analysis result
         """
-        logger.info("Step 4: Analyzing results...")
+        logger.info("[Orchestrator] Step 4/4: Analyzing results...")
 
         if self.developer_agent is None:
-            logger.warning("DeveloperAgent not initialized, using placeholder")
-            return {"analysis": "placeholder", "placeholder": True}
+            raise RuntimeError("DeveloperAgent not initialized. Call start_new_session() first.")
 
-        # TODO: Call DeveloperAgent.process()
-        return {"analysis": "placeholder", "placeholder": True}
+        result = self.developer_agent.process(execution_result)
+
+        if not result.get("success"):
+            logger.warning(f"[Orchestrator] Analysis completed with issues: {result.get('error')}")
+            # Return result even if analysis has issues
+            return result
+
+        logger.info("[Orchestrator] Results analyzed successfully")
+        return result
 
     def register_agents(
         self,

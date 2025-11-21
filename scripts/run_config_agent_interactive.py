@@ -1,10 +1,10 @@
 """
-Author: zhuanglaihong & Claude
+Author: zhuanglaihong
 Date: 2025-11-20 22:30:00
 LastEditTime: 2025-11-20 22:30:00
-LastEditors: Claude
+LastEditors: zhuanglaihong
 Description: Interactive test script for ConfigAgent - 配置生成智能体交互测试
-FilePath: \\HydroAgent\\scripts\\test_config_agent_interactive.py
+FilePath: \\HydroAgent\\scripts\\run_config_agent_interactive.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
 

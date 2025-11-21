@@ -1,10 +1,10 @@
 """
-Author: zhuanglaihong & Claude
+Author: zhuanglaihong 
 Date: 2025-11-20 22:00:00
 LastEditTime: 2025-11-20 22:00:00
-LastEditors: Claude
+LastEditors: zhuanglaihong
 Description: Interactive script to test IntentAgent and ConfigAgent integration
-FilePath: \\HydroAgent\\scripts\\run_agent_interactive.py
+FilePath: \\HydroAgent\\scripts\\run_intent_agent_interactive.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
 
@@ -20,6 +20,12 @@ from datetime import datetime
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+# Set console encoding (Windows compatible)
+import io
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # Ensure logs directory exists
 logs_dir = project_root / "logs"
@@ -94,6 +100,14 @@ def print_intent_result(result: dict, elapsed_time: float):
     print(f"Basin:      {intent_result.get('basin_id', 'N/A')}")
     print(f"Algorithm:  {intent_result.get('algorithm', 'N/A')}")
     print(f"Confidence: {intent_result.get('confidence', 0.0):.2f}")
+
+    # Extra parameters
+    extra_params = intent_result.get('extra_params', {})
+    if extra_params:
+        print(f"\nExtra Params:")
+        for key, value in extra_params.items():
+            print(f"  {key}: {value}")
+
     print()
 
     # Time period
@@ -176,7 +190,7 @@ def parse_args():
     parser.add_argument(
         '--backend',
         type=str,
-        default='ollama',
+        default='api',
         choices=['ollama', 'openai', 'api'],
         help='LLM backend to use (default: ollama)'
     )

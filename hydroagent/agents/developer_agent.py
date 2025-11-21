@@ -116,7 +116,16 @@ Always explain your analysis and provide actionable recommendations."""
         处理结果并可选地生成代码。
 
         Args:
-            input_data: Analysis configuration
+            input_data: 可以是以下两种格式之一：
+                1. RunnerAgent的输出（自动分析模式）:
+                {
+                    "success": True,
+                    "mode": "calibrate"|"evaluate",
+                    "result": {...},
+                    "execution_log": {...}
+                }
+
+                2. 手动分析配置:
                 {
                     "mode": "analyze"|"generate_code",
                     "result_dir": Path,
@@ -127,11 +136,19 @@ Always explain your analysis and provide actionable recommendations."""
         Returns:
             Dict containing analysis or code generation result
         """
+        # 检测输入类型：RunnerAgent输出 vs 手动配置
+        # RunnerAgent输出特征：有"success"和"mode"字段
+        if "success" in input_data and "mode" in input_data:
+            # RunnerAgent输出 - 自动分析模式
+            logger.info("[DeveloperAgent] 检测到RunnerAgent输出，进行结果分析")
+            return self._analyze_runner_output(input_data)
+
+        # 手动配置模式
         mode = input_data.get("mode", "analyze")
         result_dir = input_data.get("result_dir")
         workspace_dir = input_data.get("workspace_dir", self.workspace_dir)
 
-        logger.info(f"[DeveloperAgent] Mode: {mode}")
+        logger.info(f"[DeveloperAgent] 手动模式: {mode}")
 
         try:
             if mode == "analyze":
@@ -155,6 +172,233 @@ Always explain your analysis and provide actionable recommendations."""
                 "success": False,
                 "error": str(e)
             }
+
+    def _analyze_runner_output(self, runner_output: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析RunnerAgent的输出结果。
+        Analyze RunnerAgent output.
+
+        Args:
+            runner_output: RunnerAgent的输出
+                {
+                    "success": True/False,
+                    "mode": "calibrate"|"evaluate"|"simulate",
+                    "result": {...},
+                    "execution_log": {...}
+                }
+
+        Returns:
+            分析结果 Analysis result
+        """
+        logger.info("[DeveloperAgent] 分析RunnerAgent输出...")
+
+        if not runner_output.get("success"):
+            logger.error("[DeveloperAgent] RunnerAgent执行失败")
+            return {
+                "success": False,
+                "error": "RunnerAgent execution failed",
+                "runner_error": runner_output.get("error")
+            }
+
+        mode = runner_output.get("mode", "unknown")
+        result_data = runner_output.get("result", {})
+
+        logger.info(f"[DeveloperAgent] 分析模式: {mode}")
+
+        try:
+            # 根据模式进行不同的分析
+            if mode == "calibrate":
+                analysis = self._analyze_calibration_result(result_data)
+            elif mode == "evaluate":
+                analysis = self._analyze_evaluation_result(result_data)
+            elif mode == "simulate":
+                analysis = self._analyze_simulation_result(result_data)
+            else:
+                analysis = {"warning": f"未知模式: {mode}"}
+
+            # 添加执行日志摘要
+            exec_log = runner_output.get("execution_log", {})
+            if exec_log:
+                analysis["execution_summary"] = self._summarize_execution_log(exec_log)
+
+            return {
+                "success": True,
+                "mode": mode,
+                "analysis": analysis,
+                "timestamp": self._get_timestamp()
+            }
+
+        except Exception as e:
+            logger.error(f"[DeveloperAgent] 分析失败: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "traceback": self._format_traceback()
+            }
+
+    def _analyze_calibration_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析率定结果。
+        Analyze calibration result.
+
+        Args:
+            result: 率定结果数据
+
+        Returns:
+            详细分析
+        """
+        logger.info("[DeveloperAgent] 分析率定结果...")
+
+        analysis = {
+            "summary": {},
+            "metrics": {},
+            "parameters": {},
+            "quality": "unknown",
+            "recommendations": []
+        }
+
+        # Initialize quality with default value
+        quality = "unknown"
+
+        # 提取性能指标
+        metrics = result.get("metrics", {})
+        if metrics:
+            analysis["metrics"] = metrics
+
+            # 评估率定质量
+            nse = metrics.get("NSE", 0)
+            if nse > 0.75:
+                quality = "优秀 (Excellent)"
+            elif nse > 0.65:
+                quality = "良好 (Good)"
+            elif nse > 0.50:
+                quality = "可接受 (Acceptable)"
+            else:
+                quality = "不满意 (Unsatisfactory)"
+
+            analysis["quality"] = quality
+            analysis["summary"]["nse"] = nse
+            analysis["summary"]["quality_assessment"] = quality
+
+        # 提取最优参数
+        best_params = result.get("best_params", {})
+        if best_params:
+            analysis["parameters"] = best_params
+            analysis["summary"]["param_count"] = len(best_params)
+
+        # 生成建议
+        recommendations = []
+        if metrics.get("NSE", 0) < 0.65:
+            recommendations.append("NSE较低，建议增加训练时期长度或调整参数范围")
+        if metrics.get("PBIAS", 0) and abs(metrics.get("PBIAS", 0)) > 25:
+            recommendations.append(f"PBIAS={metrics.get('PBIAS'):.2f}%偏高，模型存在系统性偏差")
+
+        analysis["recommendations"] = recommendations
+
+        logger.info(f"[DeveloperAgent] 率定质量: {quality}")
+        return analysis
+
+    def _analyze_evaluation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析评估结果。
+        Analyze evaluation result.
+
+        Args:
+            result: 评估结果数据
+
+        Returns:
+            详细分析
+        """
+        logger.info("[DeveloperAgent] 分析评估结果...")
+
+        analysis = {
+            "summary": {},
+            "metrics": {},
+            "performance": {},
+            "quality": "unknown",
+            "recommendations": []
+        }
+
+        # Initialize quality with default value
+        quality = "unknown"
+
+        # 提取性能指标
+        metrics = result.get("metrics", result.get("performance", {}))
+        if metrics:
+            analysis["metrics"] = metrics
+            analysis["performance"] = metrics
+
+            # 评估性能
+            nse = metrics.get("NSE", 0)
+            if nse > 0.75:
+                quality = "优秀 (Excellent)"
+            elif nse > 0.65:
+                quality = "良好 (Good)"
+            elif nse > 0.50:
+                quality = "可接受 (Acceptable)"
+            else:
+                quality = "不满意 (Unsatisfactory)"
+
+            analysis["quality"] = quality
+            analysis["summary"]["nse"] = nse
+            analysis["summary"]["quality_assessment"] = quality
+
+        logger.info(f"[DeveloperAgent] 评估质量: {quality}")
+        return analysis
+
+    def _analyze_simulation_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析模拟结果。
+        Analyze simulation result.
+
+        Args:
+            result: 模拟结果数据
+
+        Returns:
+            详细分析
+        """
+        logger.info("[DeveloperAgent] 分析模拟结果...")
+
+        analysis = {
+            "summary": {},
+            "status": result.get("status", "unknown")
+        }
+
+        # TODO: 添加更详细的模拟结果分析
+
+        return analysis
+
+    def _summarize_execution_log(self, exec_log: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        总结执行日志。
+        Summarize execution log.
+
+        Args:
+            exec_log: 执行日志
+
+        Returns:
+            日志摘要
+        """
+        stdout = exec_log.get("stdout", "")
+        stderr = exec_log.get("stderr", "")
+
+        summary = {
+            "stdout_lines": len(stdout.split('\n')) if stdout else 0,
+            "stderr_lines": len(stderr.split('\n')) if stderr else 0,
+            "has_errors": bool(stderr and len(stderr.strip()) > 0)
+        }
+
+        return summary
+
+    def _get_timestamp(self) -> str:
+        """获取当前时间戳"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _format_traceback(self) -> str:
+        """格式化异常回溯"""
+        import traceback
+        return traceback.format_exc()
 
     def _analyze_results(self, result_dir: Path) -> Dict[str, Any]:
         """

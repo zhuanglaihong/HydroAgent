@@ -25,10 +25,13 @@ dependencies = [
     "pyyaml",
     "requests",
     "muskingumcunge",
-    "hydroutils @ git+ssh://git@gitcode.com/dlut-water/hydroutils.git@dev",
-    "hydrodatasource @ git+ssh://git@gitcode.com/dlut-water/hydrodatasource.git@dev",
-    "hydrodataset @ git+ssh://git@gitcode.com/dlut-water/hydrodataset.git@dev",
-    "hydromodel @ git+ssh://git@gitcode.com/dlut-water/hydromodel.git@dev",
+    "hydroutils>=0.1.0",
+    "hydrodataset>=0.2.3",
+    "hydrodatasource>=0.2.0",
+    "hydromodel >= 0.3.2",
+    # "hydromodel @ git+ssh://git@gitcode.com/dlut-water/hydromodel.git@dev",
+    # "hydroutils @ git+ssh://git@gitcode.com/dlut-water/hydroutils.git@dev",
+    # "hydrodatasource @ git+ssh://git@gitcode.com/dlut-water/hydrodatasource.git@dev",
     "httpx",
     "modelcontextprotocol>=0.1.0",
     "chromadb>=0.4.0",
@@ -36,7 +39,6 @@ dependencies = [
     "pypdf>=3.0.0",
     "python-docx>=0.8.11",
     "langchain-huggingface>=0.1.0",
-    "faiss-cpu>=1.12.0",
 ]
 
 [project.scripts]
@@ -56,3 +58,11 @@ testpaths = ["test"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+# UV-specific configuration
+[tool.uv]
+# Override dependencies from aqua-fetch to resolve pandas version conflict
+# aqua-fetch requires pandas<=2.1.4, but hydromodel requires pandas>=2.3.1
+override-dependencies = [
+    "pandas>=2.3.1",  # Override aqua-fetch's pandas<=2.1.4 constraint
+]

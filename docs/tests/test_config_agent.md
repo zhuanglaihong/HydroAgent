@@ -18,9 +18,8 @@ HydroAgent/
 ├── test/
 │   └── test_config_agent.py              # ConfigAgent单元测试
 ├── scripts/
-│   ├── test_config_agent_interactive.py  # ConfigAgent交互测试
-│   ├── run_agent_interactive.py          # Intent→Config管道交互测试
-│   └── test_agent_pipeline.py            # Intent→Config管道快速测试
+│   ├── run_config_agent_interactive.py  # ConfigAgent交互测试
+│   └── run_intent_agent_interactive.py  # Intent→Config管道交互测试
 └── docs/
     └── tests/
         └── test_config_agent.md          # 本文档
@@ -165,7 +164,7 @@ else:                      # 复杂模型 (XAJ)
 
 ## 二、ConfigAgent 交互式测试
 
-### 文件：`scripts/test_config_agent_interactive.py`
+### 文件：`scripts/run_config_agent_interactive.py`
 
 #### 功能说明
 
@@ -181,7 +180,7 @@ else:                      # 复杂模型 (XAJ)
 #### 运行方式
 
 ```bash
-python scripts/test_config_agent_interactive.py
+python scripts/run_config_agent_interactive.py
 ```
 
 #### 使用流程

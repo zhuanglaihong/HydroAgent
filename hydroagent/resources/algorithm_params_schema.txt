@@ -1,0 +1,125 @@
+**Hydrological Model Calibration Algorithm Parameters Schema**
+
+This schema defines the parameter names and meanings for different calibration algorithms.
+When user mentions iteration/evolution/generation counts, map them to the correct parameter name.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## SCE-UA Algorithm (Shuffled Complex Evolution)
+
+Algorithm ID: "SCE_UA" or "SCEUA" or "SCE-UA"
+
+Parameters:
+- **ngs** (int): Number of complexes (default: 300)
+  - User keywords: "复合体数量", "complexes", "ngs"
+
+- **rep** (int): Number of evolution steps (default: 1000)
+  - User keywords: "迭代次数", "迭代轮数", "evolution steps", "iterations", "轮", "次"
+  - IMPORTANT: This is the PRIMARY iteration parameter for SCE-UA
+  - Example: "迭代500轮" → rep=500, "500 iterations" → rep=500
+
+- **kstop** (int): Number of shuffling loops before convergence check (default: 10)
+  - User keywords: "收敛检查", "convergence check"
+
+- **pcento** (float): Percentage change for convergence (default: 0.01)
+  - User keywords: "收敛阈值", "convergence threshold"
+
+Example mappings:
+- "算法迭代只需要500轮" → {"rep": 500}
+- "使用SCE-UA，迭代1000次" → {"rep": 1000}
+- "ngs=200, rep=800" → {"ngs": 200, "rep": 800}
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## DE Algorithm (Differential Evolution)
+
+Algorithm ID: "DE"
+
+Parameters:
+- **npop** (int): Population size (default: 50)
+  - User keywords: "种群大小", "population size", "npop"
+
+- **max_generations** (int): Maximum number of generations (default: 1000)
+  - User keywords: "最大代数", "迭代次数", "generations", "iterations"
+  - IMPORTANT: This is the PRIMARY iteration parameter for DE
+
+- **F** (float): Mutation factor (default: 0.5)
+  - User keywords: "变异因子", "mutation factor"
+
+- **CR** (float): Crossover probability (default: 0.9)
+  - User keywords: "交叉概率", "crossover probability"
+
+Example mappings:
+- "DE算法，迭代500轮" → {"max_generations": 500}
+- "种群50，迭代1000" → {"npop": 50, "max_generations": 1000}
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## PSO Algorithm (Particle Swarm Optimization)
+
+Algorithm ID: "PSO"
+
+Parameters:
+- **n_particles** (int): Number of particles (default: 30)
+  - User keywords: "粒子数量", "particles", "swarm size"
+
+- **max_iterations** (int): Maximum iterations (default: 1000)
+  - User keywords: "最大迭代次数", "迭代", "iterations"
+  - IMPORTANT: This is the PRIMARY iteration parameter for PSO
+
+- **w** (float): Inertia weight (default: 0.7)
+  - User keywords: "惯性权重", "inertia"
+
+- **c1** (float): Cognitive parameter (default: 1.5)
+  - User keywords: "认知参数", "cognitive"
+
+- **c2** (float): Social parameter (default: 1.5)
+  - User keywords: "社会参数", "social"
+
+Example mappings:
+- "PSO算法，迭代500次" → {"max_iterations": 500}
+- "30个粒子，迭代800" → {"n_particles": 30, "max_iterations": 800}
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## GA Algorithm (Genetic Algorithm)
+
+Algorithm ID: "GA"
+
+Parameters:
+- **population_size** (int): Population size (default: 100)
+  - User keywords: "种群大小", "population"
+
+- **generations** (int): Number of generations (default: 1000)
+  - User keywords: "代数", "迭代次数", "generations", "iterations"
+  - IMPORTANT: This is the PRIMARY iteration parameter for GA
+
+- **mutation_rate** (float): Mutation rate (default: 0.01)
+  - User keywords: "变异率", "mutation rate"
+
+- **crossover_rate** (float): Crossover rate (default: 0.8)
+  - User keywords: "交叉率", "crossover rate"
+
+Example mappings:
+- "GA算法，迭代500代" → {"generations": 500}
+- "种群100，迭代1000" → {"population_size": 100, "generations": 1000}
+
+═══════════════════════════════════════════════════════════════════════════════
+
+## General Rules for Parameter Extraction
+
+1. **Algorithm-specific mapping**: Always map iteration keywords to the correct algorithm parameter
+   - SCE-UA: "迭代500轮" → rep=500 (NOT max_iterations)
+   - DE: "迭代500轮" → max_generations=500
+   - PSO: "迭代500轮" → max_iterations=500
+   - GA: "迭代500轮" → generations=500
+
+2. **Priority**: User-specified values override defaults
+
+3. **Output format**: Use exact parameter names from this schema
+   - DO NOT use generic names like "max_iterations" for SCE-UA
+   - DO use algorithm-specific names: rep, ngs, max_generations, etc.
+
+4. **Validation**: If algorithm is specified, validate parameter names against this schema
+
+═══════════════════════════════════════════════════════════════════════════════

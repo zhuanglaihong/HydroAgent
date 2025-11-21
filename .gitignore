@@ -203,15 +203,10 @@ configs/definitions_private.py
 /workflows/generated/
 logs/
 test/results/
+results/
 
 # 重构相关临时文件
 refactor_script.py
 split_agent.py
 REFACTOR_PROGRESS.md
 
-# 旧目录（待删除）
-builder/
-executor/
-hydrorag/
-utils/
-script/

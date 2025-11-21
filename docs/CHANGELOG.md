@@ -214,12 +214,208 @@ hydroagent/agents/config_agent.py           - 中文注释完善
 
 ### 🎯 下一步计划
 
-#### Phase 3: RunnerAgent (执行监控)
-- [ ] 实现RunnerAgent核心逻辑
-- [ ] hydromodel API 调用封装
-- [ ] 执行监控和日志捕获
-- [ ] 超时和资源限制
-- [ ] RunnerAgent 测试套件
+#### Phase 4: DeveloperAgent & Orchestrator
+- [ ] 实现DeveloperAgent核心逻辑
+- [ ] 完整的Orchestrator编排
+- [ ] 多轮对话支持
+- [ ] 端到端集成测试
+
+---
+
+## [2025-11-20] Phase 3 完成 - RunnerAgent 执行与管道对接
+
+### ✅ 已完成
+
+#### 1. RunnerAgent 完善
+- **文件**: `hydroagent/agents/runner_agent.py`
+- **功能**:
+  - 直接接收ConfigAgent的config dict（不需要文件路径）
+  - 调用hydromodel API进行率定/评估/模拟
+  - 捕获stdout/stderr输出
+  - 解析执行结果和性能指标
+  - 完整的错误处理和traceback捕获
+  - 支持Mock测试模式
+  - 中文注释完善
+
+#### 2. RunnerAgent 单元测试
+- **文件**: `test/test_runner_agent.py`
+- **测试用例**:
+  - ✅ RunnerAgent初始化测试
+  - ✅ Mock率定测试（不需要真实hydromodel）
+  - ✅ Mock评估测试
+  - ✅ 错误处理测试
+  - ✅ 缺少配置的错误处理
+  - ✅ hydromodel可用性检查
+- **运行方式**: `python test/test_runner_agent.py`
+
+#### 3. 完整管道测试脚本
+- **文件**: `scripts/run_runner_agent_pipeline.py`
+- **功能**:
+  - 完整的Intent → Config → Runner 三段管道
+  - 支持Mock模式和Real模式
+  - 支持保存配置到文件
+  - 显示每一步的耗时和结果
+  - 完整的错误处理和日志
+- **运行方式**:
+  ```bash
+  # Mock模式（不需要hydromodel）
+  python scripts/run_runner_agent_pipeline.py --mock
+
+  # 真实模式（需要hydromodel）
+  python scripts/run_runner_agent_pipeline.py "率定GR4J模型，流域01013500"
+
+  # 使用API后端 + 保存配置
+  python scripts/run_runner_agent_pipeline.py --backend api --save-config
+  ```
+
+### 🔧 技术亮点
+
+#### 1. Config Dict 直接传递
+RunnerAgent直接接收Config dict，无需文件中转：
+```python
+# ConfigAgent输出
+{
+    "success": True,
+    "config": {
+        "data_cfgs": {...},
+        "model_cfgs": {...},
+        "training_cfgs": {...}
+    }
+}
+  ↓
+# RunnerAgent接收
+runner_agent.process(config_agent_output)
+  ↓
+# 调用hydromodel
+result = calibrate(config_dict)
+```
+
+#### 2. 执行结果解析
+自动解析hydromodel返回结果：
+- 提取性能指标 (NSE, RMSE, KGE, PBIAS)
+- 提取最优参数
+- 提取输出文件列表
+- 兼容不同的返回格式
+
+#### 3. 完整的三段管道
+```
+用户查询: "率定GR4J模型，流域01013500"
+  ↓
+IntentAgent.process()
+  ↓
+{
+  "intent": "calibration",
+  "model_name": "gr4j",
+  "basin_id": "01013500",
+  ...
+}
+  ↓
+ConfigAgent.process()
+  ↓
+{
+  "config": {
+    "data_cfgs": {...},
+    "model_cfgs": {...},
+    ...
+  }
+}
+  ↓
+RunnerAgent.process()
+  ↓
+{
+  "success": True,
+  "result": {
+    "metrics": {"NSE": 0.85, ...},
+    "best_params": {...}
+  }
+}
+```
+
+#### 4. Mock测试支持
+使用Python的`unittest.mock`进行测试：
+```python
+with patch('hydromodel.trainers.unified_calibrate.calibrate', return_value=mock_result):
+    result = runner_agent.process(config)
+```
+
+不需要真实的hydromodel和数据即可测试完整管道。
+
+### 📁 文件变更列表
+
+#### 新增文件
+```
+test/test_runner_agent.py                    - RunnerAgent单元测试
+scripts/run_runner_agent_pipeline.py         - 完整3-Agent管道测试
+docs/tests/test_runner_agent.md              - RunnerAgent测试文档
+```
+
+#### 修改文件
+```
+hydroagent/agents/runner_agent.py        - 完善功能，添加中文注释
+```
+
+### 🎯 管道测试示例
+
+#### 使用Mock模式（推荐用于测试）
+```bash
+python scripts/run_runner_agent_pipeline.py --mock
+```
+
+输出示例：
+```
+╔══════════════════════════════════════════════════════════════╗
+║            HydroAgent 完整管道测试                           ║
+║     Intent → Config → Runner (3-Agent Pipeline)             ║
+╚══════════════════════════════════════════════════════════════╝
+
+✅ LLM后端: Ollama (qwen3:8b)
+✅ Agents初始化完成
+
+🔍 [Step 1/3] IntentAgent - 分析用户意图...
+✅ Intent分析完成 (15.2s)
+
+意图摘要:
+  意图: CALIBRATION
+  模型: gr4j
+  流域: 01013500
+  算法: SCE_UA
+
+⚙️  [Step 2/3] ConfigAgent - 生成hydromodel配置...
+✅ Config生成完成 (0.3s)
+
+配置摘要:
+=== Configuration Summary ===
+Model: gr4j
+Basins: 01013500
+...
+============================
+
+🚀 [Step 3/3] RunnerAgent - 执行hydromodel...
+   使用Mock模式（模拟执行）
+
+✅ 执行完成 (0.1s)
+
+执行结果:
+  性能指标:
+    NSE: 0.85
+    RMSE: 2.5
+    KGE: 0.82
+  最优参数:
+    x1: 350.0
+    x2: 0.5
+    x3: 100.0
+    x4: 2.0
+
+══════════════════════════════════════════════════════════════
+✅ 完整管道执行成功!
+══════════════════════════════════════════════════════════════
+
+时间统计:
+  Intent分析: 15.2s
+  Config生成: 0.3s
+  Runner执行: 0.1s
+  总计时间:   15.6s
+```
 
 ---
 

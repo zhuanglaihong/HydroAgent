@@ -25,6 +25,9 @@ from .agents import (
     DeveloperAgent,
 )
 
+# System API - Main entry point
+from .system import HydroAgent, create_hydro_agent, run_query
+
 # Utilities
 from .utils import (
     SchemaValidator,
@@ -43,6 +46,11 @@ from .resources import (
 __all__ = [
     # Version
     '__version__',
+
+    # System API (Recommended)
+    'HydroAgent',
+    'create_hydro_agent',
+    'run_query',
 
     # Core
     'BaseAgent',

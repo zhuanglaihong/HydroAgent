@@ -1,11 +1,11 @@
 """
 Author: Claude & zhuanglaihong
 Date: 2025-01-20 19:55:00
-LastEditTime: 2025-01-20 19:55:00
+LastEditTime: 2025-11-21 19:11:00
 LastEditors: Claude
 Description: Intent and data validation agent (Exp 1 & 4)
              意图与数据智能体 - 负责意图分类和数据校验
-FilePath: \HydroAgent\hydroagent\agents\intent_agent.py
+FilePath: /HydroAgent/hydroagent/agents/intent_agent.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
 
@@ -15,6 +15,7 @@ import logging
 
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
+from ..utils.prompt_manager import PromptManager, AgentContext
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class IntentAgent(BaseAgent):
         self,
         llm_interface: LLMInterface,
         workspace_dir: Optional[Path] = None,
+        use_dynamic_prompt: bool = True,
         **kwargs
     ):
         """
@@ -45,6 +47,7 @@ class IntentAgent(BaseAgent):
         Args:
             llm_interface: LLM API interface
             workspace_dir: Working directory
+            use_dynamic_prompt: Whether to use dynamic prompt system (default: True)
             **kwargs: Additional configuration
         """
         super().__init__(
@@ -53,6 +56,19 @@ class IntentAgent(BaseAgent):
             workspace_dir=workspace_dir,
             **kwargs
         )
+
+        # Dynamic Prompt System
+        self.use_dynamic_prompt = use_dynamic_prompt
+        if self.use_dynamic_prompt:
+            self.prompt_manager = PromptManager()
+            # Register static prompt skeleton
+            self.prompt_manager.register_static_prompt("IntentAgent", self._get_default_system_prompt())
+            # Load algorithm parameters schema for accurate parameter extraction
+            self.prompt_manager.load_schema("algorithm_params")
+            logger.info("[IntentAgent] Dynamic prompt system enabled with algorithm schema")
+        else:
+            self.prompt_manager = None
+            logger.info("[IntentAgent] Using static prompt system")
 
         # Try to import hydrodataset for data validation
         try:
@@ -64,23 +80,80 @@ class IntentAgent(BaseAgent):
             logger.warning("hydrodataset not available, data validation disabled")
 
     def _get_default_system_prompt(self) -> str:
-        """Return default system prompt for IntentAgent (optimized for speed)."""
-        return """Extract intent from hydrological model queries (中文/English).
+        """Return default system prompt for IntentAgent (enhanced for accuracy)."""
+        return """你是一个水文模型意图分析助手。从用户查询中提取结构化信息。
 
-**Intents**: calibration(率定), evaluation(评估), simulation(模拟), extension(其他)
-**Models**: xaj, xaj_mz, gr4j, gr5j, gr6j, gr1y, gr2m
-**Entities**: model_name, basin_id, time_period, algorithm(default:SCE_UA)
+**任务**: 分析水文模型查询，提取意图、模型、流域、时间、算法等信息
 
-**JSON Output**:
-{"intent":"calibration","model_name":"gr4j","basin_id":"01013500","time_period":{"train":["2000-01-01","2010-12-31"],"test":["2011-01-01","2015-12-31"]},"algorithm":"SCE_UA","missing_info":[],"clarifications_needed":[],"confidence":0.9}
+**意图分类**:
+- calibration (中文: 率定/校准/参数率定)
+- evaluation (中文: 评估/验证/测试)
+- simulation (中文: 模拟/预测/计算)
+- extension (中文: 其他/绘图/可视化/分析)
 
-**Defaults**: No model→gr4j, No period→10yr+5yr, Missing→add to missing_info
+**支持的模型** (大小写不敏感):
+- xaj, xaj_mz (新安江模型)
+- gr4j, gr5j, gr6j (GR系列模型)
+- gr1y, gr2m (年度/月度模型)
 
-**Examples**:
-"率定GR4J，流域01013500" → {"intent":"calibration","model_name":"gr4j","basin_id":"01013500"...}
-"Calibrate XAJ" → {"intent":"calibration","model_name":"xaj","basin_id":null,"missing_info":["basin_id","time_period"]...}
+**关键信息提取**:
+1. **模型名称** (model_name): 从查询中识别模型类型
+   - 中文: "XAJ模型" → xaj, "GR4J模型" → gr4j
+   - 英文: "XAJ model" → xaj, "calibrate GR4J" → gr4j
 
-JSON only, no text."""
+2. **流域ID** (basin_id): 流域编号/站点编号
+   - 关键词: "流域", "basin", "站点", "site"
+   - 格式: 数字编号如"01013500", "camels_11532500", "11532500"
+
+3. **时间段** (time_period): 训练和测试时期
+   - 默认: 训练10年 + 测试5年
+   - 格式: {"train": ["2000-01-01", "2010-12-31"], "test": ["2011-01-01", "2015-12-31"]}
+
+4. **算法** (algorithm): 优化算法
+   - 默认: "SCE_UA"
+   - 其他: "DE", "PSO", "GA", "SCEUA", "SCE_UA"
+
+5. **额外参数** (extra_params): 其他配置参数
+   - 迭代次数: max_iterations, ngs, kstop等
+   - 人口数量: npop, ncomplex等
+
+**输出格式** (必须是有效JSON):
+{
+  "intent": "calibration",
+  "model_name": "gr4j",
+  "basin_id": "01013500",
+  "time_period": {
+    "train": ["2000-01-01", "2010-12-31"],
+    "test": ["2011-01-01", "2015-12-31"]
+  },
+  "algorithm": "SCE_UA",
+  "extra_params": {
+    "max_iterations": 500
+  },
+  "missing_info": [],
+  "clarifications_needed": [],
+  "confidence": 0.95
+}
+
+**示例**:
+
+输入: "率定GR4J模型，流域01013500, 使用SCE-UA算法，算法迭代只需要500轮就行"
+输出: {"intent":"calibration","model_name":"gr4j","basin_id":"01013500","algorithm":"SCE_UA","extra_params":{"max_iterations":500},"missing_info":[],"confidence":0.95}
+
+输入: "评估XAJ模型在流域11532500的表现"
+输出: {"intent":"evaluation","model_name":"xaj","basin_id":"11532500","algorithm":"SCE_UA","missing_info":[],"confidence":0.9}
+
+输入: "Calibrate GR5J for basin camels_01013500"
+输出: {"intent":"calibration","model_name":"gr5j","basin_id":"camels_01013500","algorithm":"SCE_UA","missing_info":[],"confidence":0.9}
+
+输入: "率定一个水文模型"
+输出: {"intent":"calibration","model_name":null,"basin_id":null,"missing_info":["model_name","basin_id","time_period"],"clarifications_needed":["请指定模型类型(如GR4J,XAJ)","请提供流域ID"],"confidence":0.6}
+
+**重要**:
+- 只输出JSON，不要其他文本
+- confidence范围: 0.0-1.0
+- 缺失信息加入missing_info列表
+- 额外参数放入extra_params字典"""
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -105,6 +178,15 @@ JSON only, no text."""
         try:
             # Call LLM to analyze intent
             intent_result = self._analyze_intent(query, context)
+
+            # Check if LLM call failed (indicated by "error" field in intent_result)
+            if "error" in intent_result and intent_result.get("confidence", 1.0) == 0.0:
+                logger.error(f"[IntentAgent] LLM analysis failed: {intent_result['error']}")
+                return {
+                    "success": False,
+                    "error": f"LLM analysis failed: {intent_result['error']}",
+                    "intent_result": intent_result  # Include partial result for debugging
+                }
 
             # Validate data availability
             if intent_result.get("basin_id"):
@@ -135,17 +217,55 @@ JSON only, no text."""
 
         Args:
             query: User query
-            context: Additional context
+            context: Additional context (may include feedback)
 
         Returns:
             Intent analysis result
         """
-        # Build user prompt
-        context_str = ""
-        if context:
-            context_str = f"\n\nAdditional context:\n{context}"
+        # =====================================================================
+        # Dynamic Prompt System
+        # =====================================================================
+        if self.use_dynamic_prompt and self.prompt_manager:
+            # Create agent context
+            agent_context = self.prompt_manager.create_context(
+                agent_name="IntentAgent",
+                user_query=query,
+                workspace_dir=self.workspace_dir
+            )
 
-        user_prompt = f"""Analyze this hydrological modeling query and extract structured information.
+            # Add feedback if present
+            if context and "feedback" in context:
+                for fb in context["feedback"]:
+                    agent_context.add_feedback(fb)
+
+            # Add iteration info if present
+            if context and "iteration" in context:
+                for _ in range(context["iteration"]):
+                    agent_context.increment_iteration()
+
+            # Build dynamic prompt with algorithm schema
+            final_prompt = self.prompt_manager.build_prompt(
+                "IntentAgent",
+                agent_context,
+                include_schema=True,  # Include algorithm parameters schema
+                include_feedback=True
+            )
+
+            # Add instruction
+            final_prompt += "\n\nRespond with ONLY valid JSON, no extra text."
+
+            logger.debug(f"[IntentAgent] Using dynamic prompt (length: {len(final_prompt)} chars)")
+
+        # =====================================================================
+        # Static Prompt System (Fallback)
+        # =====================================================================
+        else:
+            # Build user prompt (original method)
+            context_str = ""
+            if context:
+                context_str = f"\n\nAdditional context:\n{context}"
+
+            final_prompt = f"""Analyze this hydrological modeling query and extract structured information.
 
 User query: "{query}"{context_str}
 
@@ -157,12 +277,17 @@ Instructions:
 
 Respond with ONLY valid JSON, no extra text."""
 
+            logger.debug(f"[IntentAgent] Using static prompt")
+
+        # =====================================================================
+        # Call LLM
+        # =====================================================================
         try:
             # Try to use generate_json if available
             if hasattr(self.llm, 'generate_json'):
                 response = self.llm.generate_json(
-                    system_prompt=self.system_prompt,
-                    user_prompt=user_prompt,
+                    system_prompt=self.system_prompt if not self.use_dynamic_prompt else "",
+                    user_prompt=final_prompt,
                     temperature=0.2  # Low temperature for structured output
                 )
                 logger.debug(f"[IntentAgent] LLM response (JSON): {response}")
@@ -176,7 +301,7 @@ Respond with ONLY valid JSON, no extra text."""
         import re
 
         try:
-            response_text = self.call_llm(user_prompt, temperature=0.2)
+            response_text = self.call_llm(final_prompt, temperature=0.2)
             logger.debug(f"[IntentAgent] LLM raw response: {response_text[:200]}...")
 
             # Extract JSON from response text
@@ -249,6 +374,7 @@ Respond with ONLY valid JSON, no extra text."""
             "basin_id": response.get("basin_id"),
             "time_period": response.get("time_period"),
             "algorithm": response.get("algorithm", "SCE_UA"),
+            "extra_params": response.get("extra_params", {}),
             "missing_info": response.get("missing_info", []),
             "clarifications_needed": response.get("clarifications_needed", []),
             "confidence": response.get("confidence", 0.8)
@@ -271,6 +397,10 @@ Respond with ONLY valid JSON, no extra text."""
         if normalized["intent"] not in valid_intents:
             logger.warning(f"Unknown intent: {normalized['intent']}, setting to 'unknown'")
             normalized["intent"] = "unknown"
+
+        # Normalize algorithm
+        if normalized["algorithm"]:
+            normalized["algorithm"] = str(normalized["algorithm"]).upper().replace("-", "_")
 
         # Copy extension-specific fields if present
         if normalized["intent"] == "extension":

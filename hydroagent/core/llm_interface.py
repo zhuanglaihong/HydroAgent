@@ -1,11 +1,11 @@
 """
 Author: Claude & zhuanglaihong
 Date: 2025-01-20 19:55:00
-LastEditTime: 2025-01-20 19:55:00
+LastEditTime: 2025-11-21 19:45:00
 LastEditors: Claude
 Description: Unified LLM API interface supporting OpenAI, Claude, and local models (Ollama)
              LLM API 统一接口 - 支持 OpenAI、Claude 和本地模型 (Ollama)
-FilePath: \HydroAgent\hydroagent\core\llm_interface.py
+FilePath: /HydroAgent/hydroagent/core/llm_interface.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
 
@@ -110,6 +110,7 @@ class OpenAIInterface(LLMInterface):
     def __init__(self, model_name: str = "gpt-4", api_key: Optional[str] = None, **kwargs):
         super().__init__(model_name, api_key, **kwargs)
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.base_url = kwargs.get("base_url", None)  # Support custom base_url
 
         if not self.api_key:
             raise ValueError("OpenAI API key not provided")
@@ -117,7 +118,13 @@ class OpenAIInterface(LLMInterface):
         # Lazy import to avoid dependency if not used
         try:
             from openai import OpenAI
-            self.client = OpenAI(api_key=self.api_key)
+            # Support custom base_url (e.g., for Qwen, Azure OpenAI)
+            if self.base_url:
+                self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+                logger.info(f"OpenAI client initialized with custom base_url: {self.base_url}")
+            else:
+                self.client = OpenAI(api_key=self.api_key)
+                logger.info("OpenAI client initialized with default base_url")
         except ImportError:
             raise ImportError("openai package not installed. Run: pip install openai")
 
