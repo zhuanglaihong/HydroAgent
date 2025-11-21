@@ -1,105 +1,53 @@
-from openai import OpenAI
 import os
-from definitions import PROJECT_DIR, RESULT_DIR, DATASET_DIR, OPENAI_API_KEY
-import numpy as np
+from openai import OpenAI
 
-# 设置您的 API Key
-api_key = OPENAI_API_KEY
+# 1. 设置API Key（请先设置环境变量QWEN_API_KEY，或直接在此替换）
+api_key = "sk-50be7aaa64564360bb2a6dbd2e2db325"
 if not api_key:
-    raise ValueError("请设置 QWEN_API_KEY 环境变量")
+    # 如果未设置环境变量，可以在此直接替换（注意：不推荐在生产环境中硬编码密钥）
+    # api_key = "sk-你的实际API-KEY"
+    raise ValueError("请设置环境变量 QWEN_API_KEY")
 
-# 创建 OpenAI 客户端实例
+# 2. 初始化客户端
 client = OpenAI(
     api_key=api_key,
-    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"  # 阿里云Qwen服务的兼容端点
 )
 
-def get_qwen_response(prompt, model="qwen-turbo", temperature=0.8):
-    """调用推理模型获取文本响应"""
+def ask_qwen(question, model="qwen3-max", temperature=0.8):
+    """
+    向Qwen模型提问并获取回答
+    """
     try:
+        # 3. 调用API
         completion = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
+            model=model,           # 可选模型：qwen-turbo, qwen-plus, qwen-max等[1,7](@ref)
+            messages=[
+                {"role": "system", "content": "你是一个有用的AI助手。"},  # 系统提示词，定义助手角色
+                {"role": "user", "content": question}                   # 用户问题
+            ],
+            temperature=temperature,  # 控制回答随机性（0.0-1.0），值越高回答越具创造性
+            max_tokens=1500           # 限制生成回答的最大长度
         )
+        # 4. 提取并返回回答
         return completion.choices[0].message.content
     except Exception as e:
-        print(f"调用推理模型失败: {e}")
-        return None
+        return f"调用API时出错: {e}"
 
-def get_qwen_embedding(text, model="text-embedding-v1"):
-    """获取文本的嵌入向量"""
-    try:
-        response = client.embeddings.create(
-            input=text,
-            model=model
-        )
-        return response.data[0].embedding
-    except Exception as e:
-        print(f"调用嵌入模型失败: {e}")
-        return None
-
-def get_qwen_code(prompt, model="qwen3-coder-plus", temperature=0.2):
-    """调用代码生成模型获取代码"""
-    try:
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        print(f"调用代码生成模型失败: {e}")
-        return None
-
-# ========== 使用示例 ==========
-
-# 1. 使用推理模型（通用对话）
-print("===== 推理模型示例 =====")
-response = get_qwen_response("量子计算的基本原理是什么？", model="qwen-max")
-print(response[:200] + "...")  # 打印前200个字符
-
-# 2. 使用嵌入模型（文本向量化）
-print("\n===== 嵌入模型示例 =====")
-embedding = get_qwen_embedding("自然语言处理技术")
-if embedding:
-    print(f"嵌入向量维度: {len(embedding)}")
-    print(f"前5个值: {embedding[:5]}")
-
-# 3. 使用代码生成模型
-print("\n===== 代码生成模型示例 =====")
-code_prompt = """
-用Python实现一个函数，要求：
-1. 函数名为 calculate_circle_area
-2. 接收一个参数 radius（半径）
-3. 返回圆的面积
-4. 包含类型注解和文档字符串
-"""
-code = get_qwen_code(code_prompt, model="qwen3-coder-plus")
-print(code)
-
-# 4. 多模型协同工作示例
-print("\n===== 多模型协同示例 =====")
-# 使用推理模型生成问题
-question = "生成一个关于Python列表操作的问题"
-generated_question = get_qwen_response(question, model="qwen-turbo")
-
-# 使用代码模型生成解决方案
-if generated_question:
-    print(f"生成的问题: {generated_question}")
-    solution = get_qwen_code(f"解决以下Python问题:\n{generated_question}")
-    if solution:
-        print("\n生成的解决方案:")
-        print(solution)
-        
-        # 使用嵌入模型分析代码相似度
-        original_embedding = get_qwen_embedding("Python列表操作")
-        solution_embedding = get_qwen_embedding(solution)
-        
-        if original_embedding and solution_embedding:
-            # 计算余弦相似度
-            dot_product = np.dot(original_embedding, solution_embedding)
-            norm_orig = np.linalg.norm(original_embedding)
-            norm_sol = np.linalg.norm(solution_embedding)
-            similarity = dot_product / (norm_orig * norm_sol)
-            print(f"\n代码与主题相似度: {similarity:.4f}")
+# 5. 测试脚本
+if __name__ == "__main__":
+    # 测试问题
+    test_questions = [
+        "你好，请简单介绍一下你自己。",
+        "用Python写一个计算斐波那契数列的函数。",
+        "解释一下什么是机器学习。"
+    ]
+    
+    print("=== 通义千问API测试开始 ===\n")
+    
+    for i, question in enumerate(test_questions, 1):
+        print(f"问题 {i}: {question}")
+        print("--- Qwen回答 ---")
+        answer = ask_qwen(question)
+        print(answer)
+        print("\n" + "="*50 + "\n")

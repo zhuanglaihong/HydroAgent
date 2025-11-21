@@ -1,7 +1,7 @@
 [project]
-name = "HydroAgent"
-version = "0.1.0"
-description = "Add your description here"
+name = "hydroagent"
+version = "0.2.0"
+description = "Intelligent Hydrological Model Calibration System with RAG"
 authors = [
     {name = "zhuanglaihong", email = "zhuanglaihong@gmail.com"}
 ]
@@ -38,3 +38,21 @@ dependencies = [
     "langchain-huggingface>=0.1.0",
     "faiss-cpu>=1.12.0",
 ]
+
+[project.scripts]
+hydroagent = "scripts.run_agent:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hydroagent*", "configs*"]
+exclude = ["test*", "scripts*", "docs*", "builder*", "executor*", "hydrorag*", "utils*"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

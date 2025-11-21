@@ -37,23 +37,24 @@ ollama pull granite3-dense:8b
 ### Running the Agent
 ```bash
 # Interactive mode with RAG enabled (default)
-python Agent.py
+python scripts/run_agent.py
 
 # Disable RAG for basic mode
-python Agent.py --disable-rag
+python scripts/run_agent.py --no-rag
 
 # Debug mode with detailed logs
-python Agent.py --debug
+python scripts/run_agent.py --debug
 
 # Single query mode
-python Agent.py --query "率定并评估GR4J模型"
+python scripts/run_agent.py --query "率定并评估GR4J模型"
 
 # Specify model
-python Agent.py --model qwen3:8b
+python scripts/run_agent.py --model qwen-turbo
 
-# MCP service mode (requires server)
-python hydromcp/run_server.py  # In separate terminal
-python Agent.py --mcp-mode service
+# Or use the installed command (after installation)
+hydroagent
+hydroagent --no-rag
+hydroagent --query "率定GR4J模型"
 ```
 
 ### Testing
@@ -147,13 +148,13 @@ original_print(f"测试完成！详细日志: {log_file}")
 ### RAG System Testing
 ```bash
 # Test RAG system
-python workflow/rag_integration_example.py
+python workflows/rag_integration_example.py
 
 # Knowledge integration test
 python test/test_hydrorag_knowledge_integration.py
 
-# Demo knowledge integration
-python hydrorag/demo_knowledge_integration.py
+# Demo knowledge integration (if available)
+python -m hydroagent.knowledge.demo_knowledge_integration
 ```
 
 ## Architecture Overview
@@ -162,41 +163,53 @@ The system follows a modular architecture with clear separation of concerns:
 
 ### Core Components
 
-1. **Agent.py** - Main entry point and orchestrator
-   - Handles command-line arguments and user interaction
-   - Integrates workflow generation with RAG system
-   - Supports both interactive and single-query modes
+1. **hydroagent/** - Main package containing all core functionality
+   - **core/** - Core agent implementation
+     - `agent.py` - Main HydroAgent class orchestrating all systems
+     - `graceful_killer.py` - Signal handling for graceful shutdown
 
-2. **workflow/** - Workflow orchestration layer
+   - **planning/** - Workflow planning layer (formerly builder/)
+     - Workflow generation and planning logic
+     - Intent recognition and query expansion
+
+   - **execution/** - Workflow execution layer (formerly executor/)
+     - Tool execution and workflow orchestration
+     - LangChain tool integrations
+
+   - **knowledge/** - RAG knowledge system (formerly hydrorag/)
+     - `rag_system.py` - Main RAG interface
+     - `document_processor.py` - Document parsing and chunking
+     - `embeddings_manager.py` - Ollama embedding model management
+     - `vector_store.py` - ChromaDB vector database operations
+
+   - **utils/** - Utility functions and helpers
+
+2. **scripts/** - Entry points and executable scripts
+   - `run_agent.py` - Main CLI entry point (formerly Agent.py)
+   - Other utility and processing scripts
+
+3. **workflows/** - Workflow orchestration layer (formerly workflow/)
    - `cot_rag_engine.py` - Chain-of-Thought + RAG integration
    - `workflow_assembler.py` - Workflow assembly and validation
    - `instruction_parser.py` - Natural language instruction parsing
    - `workflow_generator_v2.py` - Enhanced workflow generation
-
-3. **hydrorag/** - RAG knowledge system
-   - `rag_system.py` - Main RAG interface
-   - `document_processor.py` - Document parsing and chunking
-   - `embeddings_manager.py` - Ollama embedding model management
-   - `vector_store.py` - ChromaDB vector database operations
 
 4. **hydromcp/** - MCP (Model Context Protocol) integration
    - `server.py` - MCP server implementation
    - `task_handlers.py` - Task execution handlers
    - `tools.py` - Tool definitions and implementations
 
-5. **hydromodel/** - Hydrological models
+5. **hydromodel** (External Dependency)
+   - Installed via pip from git repository
    - Supports GR1Y, GR2M, GR4J, GR5J, GR6J, and XAJ models
    - Model training and evaluation utilities
 
-6. **hydrotool/** - Tool execution layer
-   - `langchain_tool.py` - LangChain tool integrations
-   - `workflow_executor.py` - Workflow execution engine
-   - `ollama_config.py` - Ollama configuration management
-
 ### Configuration
 
-- **definitions.py** - Project-wide path and configuration definitions
-- **definitions_private.py** - Private configuration (create manually)
+- **configs/** - Configuration directory
+  - `definitions.py` - Project-wide path and configuration definitions
+  - `definitions_private.py` - Private configuration (create manually)
+  - `config.py` - Global parameter configuration
 - **pyproject.toml** - Project dependencies and metadata
 
 ### Data Flow
@@ -226,7 +239,7 @@ The system follows a modular architecture with clear separation of concerns:
 
 ### Path Management
 - All paths are normalized using `Path` objects
-- Configuration paths defined in `definitions.py`
+- Configuration paths defined in `configs/definitions.py`
 - Support for both absolute and relative path specifications
 
 ## Testing Strategy
@@ -262,12 +275,12 @@ Key external dependencies:
 
 **IMPORTANT**: Always follow this configuration hierarchy for maintainability and user-friendliness:
 
-1. **definitions.py** - Public configuration template and fallback values
+1. **configs/definitions.py** - Public configuration template and fallback values
    - Contains default project paths and configuration structure
    - Imports from definitions_private.py if available
    - Serves as template for users to understand what needs to be configured
 
-2. **definitions_private.py** - Private user-specific configuration
+2. **configs/definitions_private.py** - Private user-specific configuration
    - Contains actual API keys, local paths, and sensitive information
    - Should be created by users based on definitions.py template
    - Never committed to version control (.gitignore)
@@ -276,7 +289,7 @@ Key external dependencies:
      - Local file paths (PROJECT_DIR, DATASET_DIR, RESULT_DIR)
      - Database connections and other sensitive configs
 
-3. **config.py** (root level) - Global parameter configuration
+3. **configs/config.py** - Global parameter configuration
    - Centralized location for all adjustable parameters
    - Model parameters, thresholds, and algorithm settings
    - Easy for users to modify without touching code files
@@ -286,19 +299,27 @@ Key external dependencies:
 
 ```
 HydroAgent/
-├── definitions.py              # Public config template
-├── definitions_private.py      # Private user config (not in git)
-├── config.py                  # Global parameters (create if needed)
-├── test/                      # All test files
-│   ├── test_*.py             # Unit and integration tests
+├── hydroagent/                # Main package
+│   ├── core/                 # Core agent implementation
+│   ├── planning/            # Workflow planning (formerly builder/)
+│   ├── execution/           # Workflow execution (formerly executor/)
+│   ├── knowledge/           # RAG system (formerly hydrorag/)
+│   └── utils/               # Utility functions
+├── configs/                  # Configuration directory
+│   ├── definitions.py       # Public config template
+│   ├── definitions_private.py  # Private user config (not in git)
+│   └── config.py           # Global parameters
+├── scripts/                  # Entry points and executable scripts
+│   ├── run_agent.py        # Main CLI entry point
+│   └── *.py                # Other utility scripts
+├── test/                     # All test files
+│   ├── test_*.py            # Unit and integration tests
 │   └── __init__.py
-├── script/                   # All executable scripts
-│   ├── *.py                  # Utility and processing scripts
-│   └── README.md            # Script documentation
-├── hydrorag/                # RAG system package
-├── workflow/               # Workflow orchestration
-├── hydromcp/              # MCP integration
-└── [other packages]/      # Additional modules
+├── workflows/                # Workflow orchestration (formerly workflow/)
+├── hydromcp/                # MCP integration
+├── documents/               # Knowledge base documents
+├── pyproject.toml          # Project configuration
+└── .gitignore              # Git ignore rules
 ```
 
 ### File Header Requirements
@@ -327,7 +348,7 @@ Copyright (c) 2023-2024 [Project Name]. All rights reserved.
   - All test files should be executable with proper shebang if needed
   - Test files should import from parent directory using sys.path manipulation
 
-- **script/** - All executable scripts and utilities
+- **scripts/** - All executable scripts and utilities
   - Standalone scripts for specific tasks
   - Utility scripts for data processing, setup, etc.
   - **IMPORTANT**: All run_* scripts (interactive runners) belong here
@@ -340,14 +361,15 @@ Copyright (c) 2023-2024 [Project Name]. All rights reserved.
 
 ```python
 try:
-    import definitions_private
+    from configs import definitions_private
     # Load from private configuration
     API_KEY = definitions_private.API_KEY
     PROJECT_DIR = definitions_private.PROJECT_DIR
 except ImportError:
+    from configs import definitions
     # Fallback to defaults or environment variables
-    API_KEY = os.getenv('API_KEY', 'default_or_placeholder')
-    PROJECT_DIR = os.getcwd()
+    API_KEY = definitions.API_KEY or os.getenv('API_KEY', 'default_or_placeholder')
+    PROJECT_DIR = definitions.PROJECT_DIR or os.getcwd()
 ```
 
 ### Configuration Management Examples
@@ -360,17 +382,17 @@ Date: 2024-09-24 15:30:00
 LastEditTime: 2024-09-24 15:30:00
 LastEditors: zhuanglaihong
 Description: Enhanced RAG system for hydrological knowledge retrieval
-FilePath: \HydroAgent\hydrorag\rag_system.py
+FilePath: \HydroAgent\hydroagent\knowledge\rag_system.py
 Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 """
 
 # Correct Configuration Loading
 try:
-    import definitions_private as config
+    from configs import definitions_private as config
     API_KEY = config.OPENAI_API_KEY
     PROJECT_DIR = config.PROJECT_DIR
 except ImportError:
-    import definitions as config
+    from configs import definitions as config
     API_KEY = config.OPENAI_API_KEY  # Will be placeholder
     PROJECT_DIR = config.PROJECT_DIR
 ```
@@ -380,16 +402,17 @@ except ImportError:
 **MANDATORY**: When creating or moving files, always follow these rules:
 
 1. **Test files** → test/ directory
-2. **Scripts and utilities** → script/ directory
-3. **Configuration templates** → root directory (definitions.py)
-4. **Private configs** → root directory (definitions_private.py)
-5. **Global parameters** → root directory (config.py)
-6. **Include standard headers** in all new Python files
-7. **Use proper imports** and path management
+2. **Scripts and utilities** → scripts/ directory
+3. **Configuration templates** → configs/ directory (configs/definitions.py)
+4. **Private configs** → configs/ directory (configs/definitions_private.py)
+5. **Global parameters** → configs/ directory (configs/config.py)
+6. **Core package code** → hydroagent/ directory with appropriate subpackages
+7. **Include standard headers** in all new Python files
+8. **Use proper imports** and path management
 
 **Configuration Priority Order**:
-1. definitions_private.py (user-specific, not in git)
-2. definitions.py (project defaults and templates)
-3. config.py (adjustable parameters)
+1. configs/definitions_private.py (user-specific, not in git)
+2. configs/definitions.py (project defaults and templates)
+3. configs/config.py (adjustable parameters)
 4. Environment variables (fallback)
 5. Hard-coded defaults (last resort)

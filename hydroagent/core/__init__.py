@@ -1,0 +1,17 @@
+"""
+Author: Claude & zhuanglaihong
+Date: 2025-01-20 19:55:00
+LastEditTime: 2025-01-20 19:55:00
+LastEditors: Claude
+Description: Core module initialization - 核心基础类模块
+FilePath: \HydroAgent\hydroagent\core\__init__.py
+Copyright (c) 2023-2025 HydroAgent. All rights reserved.
+"""
+
+from .base_agent import BaseAgent
+from .llm_interface import LLMInterface
+
+__all__ = [
+    'BaseAgent',
+    'LLMInterface',
+]
