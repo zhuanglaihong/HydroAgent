@@ -16,6 +16,7 @@ import json
 
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
+from ..utils.prompt_manager import PromptManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class DeveloperAgent(BaseAgent):
         llm_interface: LLMInterface,
         workspace_dir: Optional[Path] = None,
         enable_code_gen: bool = True,
+        use_dynamic_prompt: bool = True,
         **kwargs
     ):
         """
@@ -50,6 +52,7 @@ class DeveloperAgent(BaseAgent):
             llm_interface: LLM API interface
             workspace_dir: Working directory
             enable_code_gen: Enable code generation capability
+            use_dynamic_prompt: Use dynamic prompt management system
             **kwargs: Additional configuration
         """
         super().__init__(
@@ -60,6 +63,19 @@ class DeveloperAgent(BaseAgent):
         )
 
         self.enable_code_gen = enable_code_gen
+        self.use_dynamic_prompt = use_dynamic_prompt
+
+        # Initialize PromptManager for dynamic prompts
+        if self.use_dynamic_prompt:
+            self.prompt_manager = PromptManager()
+            # Load static prompt from file
+            prompt_text = self._load_prompt_from_file("developer_agent_prompt.txt")
+            if prompt_text:
+                self.prompt_manager.register_static_prompt("DeveloperAgent", prompt_text)
+                logger.info("[DeveloperAgent] Dynamic prompt system enabled")
+            else:
+                logger.warning("[DeveloperAgent] Failed to load prompt file, using default")
+                self.prompt_manager.register_static_prompt("DeveloperAgent", self._get_default_system_prompt())
 
     def _get_default_system_prompt(self) -> str:
         """Return default system prompt for DeveloperAgent."""
@@ -109,6 +125,31 @@ Example analysis output:
 }
 
 Always explain your analysis and provide actionable recommendations."""
+
+    def _load_prompt_from_file(self, filename: str) -> Optional[str]:
+        """
+        Load prompt text from resources directory.
+
+        Args:
+            filename: Name of prompt file
+
+        Returns:
+            Prompt text or None if file not found
+        """
+        try:
+            from pathlib import Path
+            project_root = Path(__file__).parent.parent.parent
+            prompt_file = project_root / "hydroagent" / "resources" / filename
+
+            if prompt_file.exists():
+                with open(prompt_file, 'r', encoding='utf-8') as f:
+                    return f.read()
+            else:
+                logger.warning(f"[DeveloperAgent] Prompt file not found: {prompt_file}")
+                return None
+        except Exception as e:
+            logger.error(f"[DeveloperAgent] Error loading prompt file: {str(e)}")
+            return None
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """

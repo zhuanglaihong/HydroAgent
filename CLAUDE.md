@@ -1,14 +1,37 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
-## Project Overview
+---
 
-HydroAgent is an intelligent hydrological model calibration system built with LangChain. It uses workflow-based AI agents to automatically calibrate hydrological model parameters based on existing models and data. The system integrates RAG (Retrieval-Augmented Generation) for knowledge-enhanced workflow generation.
+## 🌊 Project Overview
 
-## Development Environment Setup
+**HydroAgent** is an intelligent multi-agent system for hydrological model calibration and evaluation. The system uses **4 specialized agents** working in pipeline to transform natural language queries into complete model calibration workflows.
 
-### Dependencies Management
+### Architecture: 4-Agent Pipeline
+
+```
+User Query (中文/English)
+      ↓
+IntentAgent (意图识别)
+      ↓
+ConfigAgent (配置生成)
+      ↓
+RunnerAgent (模型执行)
+      ↓
+DeveloperAgent (结果分析)
+      ↓
+Analysis Report + Results
+```
+
+**Current Status**: ✅ Core 4-Agent system fully functional
+
+---
+
+## 🚀 Quick Start
+
+### Environment Setup
+
 ```bash
 # Install uv package manager
 pip install uv
@@ -21,89 +44,345 @@ uv sync
 source .venv/bin/activate  # Linux/Mac
 ```
 
-### Model Setup
+### Running the System
+
 ```bash
-# Install Ollama from https://ollama.ai/
-# List available models
-ollama list
-
-# Download required models
-ollama pull qwen3:8b
-ollama pull granite3-dense:8b
-```
-
-## Common Commands
-
-### Running the Agent
-```bash
-# Interactive mode with RAG enabled (default)
-python scripts/run_agent.py
-
-# Disable RAG for basic mode
-python scripts/run_agent.py --no-rag
-
-# Debug mode with detailed logs
-python scripts/run_agent.py --debug
+# Interactive mode with API backend (recommended)
+python scripts/run_developer_agent_pipeline.py --backend api
 
 # Single query mode
-python scripts/run_agent.py --query "率定并评估GR4J模型"
+python scripts/run_developer_agent_pipeline.py --backend api "率定GR4J模型，流域01013500"
 
-# Specify model
-python scripts/run_agent.py --model qwen-turbo
-
-# Or use the installed command (after installation)
-hydroagent
-hydroagent --no-rag
-hydroagent --query "率定GR4J模型"
+# Using Ollama local model
+python scripts/run_developer_agent_pipeline.py --backend ollama
 ```
 
-### Testing
+---
 
-**重要**: 所有测试都应将日志保存到 `logs/` 目录，便于问题追踪和性能分析。
+## 📂 Project Structure
 
-```bash
-# Run basic tool tests
-python test/test_basic_tools.py
+### Core Package: `hydroagent/`
 
-# Test RAG system integration
-python test/test_rag_agent_integration.py
-
-# Test workflow generation
-python test/test_new_workflow_generator.py
-
-# Integration tests
-python test/run_integration_test.py
-
-# Test individual components
-python test/test_individual_tools.py
-
-# Ollama诊断测试
-python test/test_ollama_diagnosis.py
-
-# LLM性能对比测试
-python test/test_llm_performance.py
+```
+hydroagent/
+├── core/                      # Base classes and interfaces
+│   ├── base_agent.py         # BaseAgent abstract class
+│   └── llm_interface.py      # LLM API wrappers (OpenAI/Ollama)
+├── agents/                    # 4 Specialized Agents
+│   ├── intent_agent.py       # NLU and intent recognition
+│   ├── config_agent.py       # Configuration generation
+│   ├── runner_agent.py       # Model execution
+│   └── developer_agent.py    # Result analysis
+├── utils/                     # Utility modules
+│   └── prompt_manager.py     # Dynamic prompt management
+└── resources/                 # Static resources
+    ├── algorithm_params_schema.txt
+    ├── intent_agent_prompt.txt (planned)
+    ├── config_agent_prompt.txt
+    ├── runner_agent_prompt.txt
+    └── developer_agent_prompt.txt
 ```
 
-#### 测试日志规范
+### Configuration: `configs/`
 
-**所有测试脚本必须遵循以下日志规范**：
+```
+configs/
+├── definitions.py             # Public config template (paths, API)
+├── definitions_private.py     # Private config (API keys, local paths)
+├── example_definitions_private.py  # Template for new users
+└── config.py                  # Global parameters (LLM, algorithms, thresholds)
+```
+
+### Scripts: `scripts/`
+
+```
+scripts/
+├── run_developer_agent_pipeline.py  # Main entry point (4-Agent pipeline)
+├── run_agent.py                     # Alternative entry (expandable)
+└── *.py                             # Utility scripts
+```
+
+### Tests: `test/`
+
+```
+test/
+├── test_intent_agent.py
+├── test_config_agent.py
+├── test_developer_agent_pipeline.py
+└── test_unified_tools.py
+```
+
+---
+
+## 🧠 Agent Responsibilities
+
+### 1. IntentAgent (意图智能体)
+
+**Purpose**: Natural language understanding and intent extraction
+
+**Input**: User query in Chinese/English
+```
+"率定GR4J模型，流域01013500, 使用SCE-UA算法，算法迭代只需要500轮就行"
+```
+
+**Output**: Structured intent
+```python
+{
+    "intent": "calibration",
+    "model": "gr4j",
+    "basin": "01013500",
+    "algorithm": "SCE_UA",
+    "extra_params": {"rep": 500},
+    "confidence": 0.95
+}
+```
+
+**Features**:
+- ✅ Dynamic prompt system with algorithm parameter schema
+- ✅ Context-aware prompt generation
+- ✅ Supports Chinese keywords (迭代500轮 → rep=500)
+
+---
+
+### 2. ConfigAgent (配置智能体)
+
+**Purpose**: Generate hydromodel-compatible configuration dictionaries
+
+**Input**: Intent result from IntentAgent
+
+**Output**: Complete config dictionary
+```python
+{
+    "data_cfgs": {
+        "basin_ids": ["01013500"],
+        "train_period": ["1985-10-01", "1995-09-30"],
+        "test_period": ["2005-10-01", "2014-09-30"],
+        ...
+    },
+    "model_cfgs": {...},
+    "training_cfgs": {...}
+}
+```
+
+**Features**:
+- ✅ Uses defaults from `configs/config.py`
+- ✅ Applies user-specified parameters
+- ✅ Adjusts algorithm complexity based on model type
+- ❌ Currently rule-based (no LLM)
+
+---
+
+### 3. RunnerAgent (执行智能体)
+
+**Purpose**: Execute hydromodel calibration, evaluation, and simulation
+
+**Modes**:
+1. **Calibrate**: Run parameter optimization
+2. **Evaluate**: Calculate metrics on test period
+3. **Simulate**: Generate predictions
+
+**Key Features**:
+- ✅ Auto-evaluation after calibration
+- ✅ Intelligent output filtering (progress bars only, hide emojis/tables)
+- ✅ Structured result parsing from files
+- ✅ Complete logging to `logs/` directory
+- ❌ Currently deterministic (no LLM)
+
+**Output Management**:
+```
+Terminal: SCE-UA Progress: 100%|███████| 500/500 [02:15<00:00]
+Logs:     All hydromodel output (complete record)
+Results:  calibration_results.json, basins_metrics.csv, *.nc
+```
+
+---
+
+### 4. DeveloperAgent (分析智能体)
+
+**Purpose**: Analyze results and provide expert recommendations
+
+**Input**: Execution results from RunnerAgent
+
+**Output**: Analysis report
+```
+📊 质量评估: 良好 (Good)
+   NSE=0.68, RMSE=1.45
+
+🔧 最优参数: 4 个
+   x1=0.77, x2=0.0002, x3=0.30, x4=0.70
+
+💡 改进建议:
+  1. 模型性能合理，接近良好水平
+  2. 可考虑延长训练期或增加迭代轮数进一步优化
+  3. 建议在更多流域验证参数迁移性
+```
+
+**Features**:
+- ✅ Dynamic prompt system
+- ✅ NSE quality thresholds (from `config.py`)
+- ✅ Actionable recommendations
+- ✅ Supports brief/normal/detailed analysis levels
+
+---
+
+## ⚙️ Configuration Management
+
+### Configuration File Hierarchy
+
+**Priority Order** (highest to lowest):
+1. `configs/definitions_private.py` - User-specific (API keys, paths)
+2. `configs/definitions.py` - Project defaults
+3. `configs/config.py` - Adjustable parameters
+4. Environment variables
+5. Hard-coded defaults
+
+### Configuration Files
+
+#### `definitions_private.py` (User-Specific, Not in Git)
 
 ```python
-# 标准测试日志设置模板
+# Paths
+PROJECT_DIR = r"D:\your\path\to\HydroAgent"
+RESULT_DIR = r"D:\your\path\to\results"
+DATASET_DIR = r"D:\your\path\to\data"
+
+# LLM API
+OPENAI_API_KEY = "sk-your-qwen-api-key"
+OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+# Ollama (optional)
+OLLAMA_BASE_URL = "http://localhost:11434"
+```
+
+#### `config.py` (Global Parameters)
+
+```python
+# LLM Settings
+DEFAULT_MODEL = "qwen-turbo"
+TEMPERATURE = 0.1
+
+# Data Configuration
+DEFAULT_TRAIN_PERIOD = ["1985-10-01", "1995-09-30"]
+DEFAULT_TEST_PERIOD = ["2005-10-01", "2014-09-30"]
+DEFAULT_WARMUP_DAYS = 365
+
+# Algorithm Defaults
+DEFAULT_SCE_UA_PARAMS = {
+    "rep": 500,
+    "ngs": 200,
+    "kstop": 500,
+    ...
+}
+
+# Performance Thresholds
+NSE_EXCELLENT = 0.75
+NSE_GOOD = 0.65
+NSE_FAIR = 0.50
+NSE_POOR = 0.35
+```
+
+### Standard Configuration Loading Pattern
+
+```python
+try:
+    from configs import definitions_private
+    API_KEY = definitions_private.OPENAI_API_KEY
+    PROJECT_DIR = definitions_private.PROJECT_DIR
+except ImportError:
+    from configs import definitions
+    API_KEY = definitions.OPENAI_API_KEY
+    PROJECT_DIR = definitions.PROJECT_DIR
+```
+
+---
+
+## 🎨 Dynamic Prompt System
+
+### Architecture
+
+All agents now support dynamic prompt management:
+
+```
+Final Prompt = Static Template + Schema/Context + Dynamic Feedback
+```
+
+### Prompt Files Location
+
+```
+hydroagent/resources/
+├── algorithm_params_schema.txt    # IntentAgent: Algorithm parameter mappings
+├── config_agent_prompt.txt        # ConfigAgent: Configuration generation guide
+├── runner_agent_prompt.txt        # RunnerAgent: Execution workflow documentation
+└── developer_agent_prompt.txt     # DeveloperAgent: Analysis guidelines
+```
+
+### Usage in Agents
+
+```python
+# IntentAgent
+self.prompt_manager = PromptManager()
+self.prompt_manager.register_static_prompt("IntentAgent", prompt_text)
+self.prompt_manager.load_schema("algorithm_params")
+
+# DeveloperAgent
+self.prompt_manager = PromptManager()
+prompt_text = self._load_prompt_from_file("developer_agent_prompt.txt")
+self.prompt_manager.register_static_prompt("DeveloperAgent", prompt_text)
+```
+
+**Benefits**:
+- ✅ Centralized prompt management
+- ✅ Version control for prompts
+- ✅ Easy A/B testing
+- ✅ Multi-language support ready
+
+---
+
+## 📝 Development Standards
+
+### File Header (MANDATORY)
+
+Every new Python file must include:
+
+```python
+"""
+Author: [Your Name]
+Date: [Creation Date YYYY-MM-DD HH:MM:SS]
+LastEditTime: [Last Edit YYYY-MM-DD HH:MM:SS]
+LastEditors: [Editor Name]
+Description: [Brief description of file purpose]
+FilePath: /HydroAgent/path/to/file.py
+Copyright (c) 2023-2025 HydroAgent. All rights reserved.
+"""
+```
+
+### Directory Structure Rules
+
+**CRITICAL**: Place files in correct directories:
+
+| File Type | Directory | Example |
+|-----------|-----------|---------|
+| Agent implementations | `hydroagent/agents/` | `intent_agent.py` |
+| Core base classes | `hydroagent/core/` | `base_agent.py` |
+| Utility functions | `hydroagent/utils/` | `prompt_manager.py` |
+| Static resources | `hydroagent/resources/` | `*.txt`, `*.yaml` |
+| Configuration files | `configs/` | `config.py` |
+| Entry point scripts | `scripts/` | `run_*.py` |
+| Test files | `test/` | `test_*.py` |
+| Examples | `examples/` | `simple_workflow_example.py` |
+
+### Logging Standards
+
+**Test Files**: All tests must save logs to `logs/` directory
+
+```python
 import logging
-import time
 from datetime import datetime
 from pathlib import Path
 
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# 确保logs目录存在
-logs_dir = project_root / "logs"
+logs_dir = Path(__file__).parent.parent / "logs"
 logs_dir.mkdir(exist_ok=True)
 
-# 设置详细日志
 log_file = logs_dir / f"test_{test_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.INFO,
@@ -113,306 +392,234 @@ logging.basicConfig(
         logging.FileHandler(log_file, encoding='utf-8')
     ]
 )
-
-print(f"日志将保存到: {log_file}")
 ```
 
-**日志文件命名规范**：
-- 格式: `test_{测试名称}_{YYYYMMDD_HHMMSS}.log`
-- 示例: `test_ollama_diagnosis_20241001_143052.log`
-- 位置: `logs/` 目录
-- **重要**: 必须使用年月日时分秒格式，不允许使用时间戳
+**Log File Naming**:
+- Format: `test_{name}_{YYYYMMDD_HHMMSS}.log`
+- Location: `logs/` directory
+- **No timestamps**, use datetime format
 
-**纯日志输出模式**（用于长时间运行的诊断测试）：
+---
 
-```python
-# 将所有输出重定向到日志文件
-import builtins
-original_print = builtins.print
+## 🧪 Testing
 
-def log_print(*args, **kwargs):
-    """重定向print到logger"""
-    message = ' '.join(str(arg) for arg in args)
-    logger.info(message)
+### Running Tests
 
-builtins.print = log_print
-
-# 只在终端显示关键信息
-original_print(f"测试开始，详细输出保存到: {log_file}")
-
-# 测试结束时恢复并显示摘要
-builtins.print = original_print
-original_print(f"测试完成！详细日志: {log_file}")
-```
-
-### RAG System Testing
 ```bash
-# Test RAG system
-python workflows/rag_integration_example.py
+# Test IntentAgent
+python test/test_intent_agent.py --backend api
 
-# Knowledge integration test
-python test/test_hydrorag_knowledge_integration.py
+# Test ConfigAgent
+python test/test_config_agent.py
 
-# Demo knowledge integration (if available)
-python -m hydroagent.knowledge.demo_knowledge_integration
+# Test complete pipeline
+python test/test_developer_agent_pipeline.py
+
+# Test unified tools
+python test/test_unified_tools.py
 ```
 
-## Architecture Overview
+### Test Coverage
 
-The system follows a modular architecture with clear separation of concerns:
+- ✅ IntentAgent: Intent recognition, parameter extraction
+- ✅ ConfigAgent: Configuration generation, validation
+- ✅ RunnerAgent: Model execution, result parsing
+- ✅ DeveloperAgent: Result analysis, recommendations
+- ✅ Integration: Full 4-agent pipeline
 
-### Core Components
+---
 
-1. **hydroagent/** - Main package containing all core functionality
-   - **core/** - Core agent implementation
-     - `agent.py` - Main HydroAgent class orchestrating all systems
-     - `graceful_killer.py` - Signal handling for graceful shutdown
+## 🔧 Common Tasks
 
-   - **planning/** - Workflow planning layer (formerly builder/)
-     - Workflow generation and planning logic
-     - Intent recognition and query expansion
+### Adding a New Agent
 
-   - **execution/** - Workflow execution layer (formerly executor/)
-     - Tool execution and workflow orchestration
-     - LangChain tool integrations
-
-   - **knowledge/** - RAG knowledge system (formerly hydrorag/)
-     - `rag_system.py` - Main RAG interface
-     - `document_processor.py` - Document parsing and chunking
-     - `embeddings_manager.py` - Ollama embedding model management
-     - `vector_store.py` - ChromaDB vector database operations
-
-   - **utils/** - Utility functions and helpers
-
-2. **scripts/** - Entry points and executable scripts
-   - `run_agent.py` - Main CLI entry point (formerly Agent.py)
-   - Other utility and processing scripts
-
-3. **workflows/** - Workflow orchestration layer (formerly workflow/)
-   - `cot_rag_engine.py` - Chain-of-Thought + RAG integration
-   - `workflow_assembler.py` - Workflow assembly and validation
-   - `instruction_parser.py` - Natural language instruction parsing
-   - `workflow_generator_v2.py` - Enhanced workflow generation
-
-4. **hydromcp/** - MCP (Model Context Protocol) integration
-   - `server.py` - MCP server implementation
-   - `task_handlers.py` - Task execution handlers
-   - `tools.py` - Tool definitions and implementations
-
-5. **hydromodel** (External Dependency)
-   - Installed via pip from git repository
-   - Supports GR1Y, GR2M, GR4J, GR5J, GR6J, and XAJ models
-   - Model training and evaluation utilities
-
-### Configuration
-
-- **configs/** - Configuration directory
-  - `definitions.py` - Project-wide path and configuration definitions
-  - `definitions_private.py` - Private configuration (create manually)
-  - `config.py` - Global parameter configuration
-- **pyproject.toml** - Project dependencies and metadata
-
-### Data Flow
-
-1. User input → Intent processing → Query expansion
-2. RAG system retrieves relevant knowledge from vector database
-3. Workflow generator creates execution plan using CoT + RAG
-4. Workflow executor runs tools in sequence
-5. Results are collected and presented to user
-
-## Key Development Patterns
-
-### Tool Integration
-- All tools are LangChain-compatible with standardized interfaces
-- Tools support both local execution and MCP server modes
-- Error handling and validation at tool level
-
-### RAG Integration
-- Documents are processed into chunks and stored in ChromaDB
-- Ollama embeddings provide semantic search capabilities
-- Knowledge retrieval enhances workflow generation accuracy
-
-### Workflow Generation
-- Uses Chain-of-Thought reasoning combined with RAG
-- Supports multi-step complex hydrological modeling tasks
-- Validates workflow feasibility before execution
-
-### Path Management
-- All paths are normalized using `Path` objects
-- Configuration paths defined in `configs/definitions.py`
-- Support for both absolute and relative path specifications
-
-## Testing Strategy
-
-The project uses a comprehensive testing approach:
-
-- **Unit tests** for individual components
-- **Integration tests** for workflow execution
-- **RAG system tests** for knowledge retrieval
-- **Tool validation tests** for individual tools
-- **End-to-end tests** for complete workflows
-
-## Dependencies
-
-Key external dependencies:
-- **LangChain** (0.3.26) - AI agent framework
-- **Ollama** - Local LLM inference
-- **ChromaDB** - Vector database for RAG
-- **FastMCP** - Model Context Protocol implementation
-- **hydroutils/hydrodatasource/hydromodel** - Custom hydrological libraries
-
-## Supported Tasks
-
-- Hydrological model calibration (GR4J, XAJ, etc.)
-- Model performance evaluation
-- Data preparation and preprocessing
-- Parameter querying and analysis
-- Workflow planning and execution
-
-## Global Development Standards and Configuration Management
-
-### Configuration File Structure
-
-**IMPORTANT**: Always follow this configuration hierarchy for maintainability and user-friendliness:
-
-1. **configs/definitions.py** - Public configuration template and fallback values
-   - Contains default project paths and configuration structure
-   - Imports from definitions_private.py if available
-   - Serves as template for users to understand what needs to be configured
-
-2. **configs/definitions_private.py** - Private user-specific configuration
-   - Contains actual API keys, local paths, and sensitive information
-   - Should be created by users based on definitions.py template
-   - Never committed to version control (.gitignore)
-   - Used for:
-     - API keys (OPENAI_API_KEY, etc.)
-     - Local file paths (PROJECT_DIR, DATASET_DIR, RESULT_DIR)
-     - Database connections and other sensitive configs
-
-3. **configs/config.py** - Global parameter configuration
-   - Centralized location for all adjustable parameters
-   - Model parameters, thresholds, and algorithm settings
-   - Easy for users to modify without touching code files
-   - Examples: chunk_size, top_k, temperature settings, etc.
-
-### File Organization Overview
-
-```
-HydroAgent/
-├── hydroagent/                # Main package
-│   ├── core/                 # Core agent implementation
-│   ├── planning/            # Workflow planning (formerly builder/)
-│   ├── execution/           # Workflow execution (formerly executor/)
-│   ├── knowledge/           # RAG system (formerly hydrorag/)
-│   └── utils/               # Utility functions
-├── configs/                  # Configuration directory
-│   ├── definitions.py       # Public config template
-│   ├── definitions_private.py  # Private user config (not in git)
-│   └── config.py           # Global parameters
-├── scripts/                  # Entry points and executable scripts
-│   ├── run_agent.py        # Main CLI entry point
-│   └── *.py                # Other utility scripts
-├── test/                     # All test files
-│   ├── test_*.py            # Unit and integration tests
-│   └── __init__.py
-├── workflows/                # Workflow orchestration (formerly workflow/)
-├── hydromcp/                # MCP integration
-├── documents/               # Knowledge base documents
-├── pyproject.toml          # Project configuration
-└── .gitignore              # Git ignore rules
-```
-
-### File Header Requirements
-
-**MANDATORY**: Every new Python file must include a standardized header following the project convention:
+1. Create agent file in `hydroagent/agents/`
+2. Inherit from `BaseAgent`
+3. Implement `process()` method
+4. Create prompt file in `resources/` (optional)
+5. Integrate into pipeline script
 
 ```python
-"""
-Author: [Your Name]
-Date: [Creation Date YYYY-MM-DD HH:MM:SS]
-LastEditTime: [Last Edit YYYY-MM-DD HH:MM:SS]
-LastEditors: [Editor Name]
-Description: [Brief description of file purpose]
-FilePath: [Relative path from project root]
-Copyright (c) 2023-2024 [Project Name]. All rights reserved.
-"""
+from hydroagent.core.base_agent import BaseAgent
+
+class MyAgent(BaseAgent):
+    def process(self, input_data):
+        # Implementation
+        return result
 ```
 
-### Directory Structure Standards
+### Adding Algorithm Parameter Recognition
 
-**CRITICAL**: Always place files in the correct directories:
+1. Edit `hydroagent/resources/algorithm_params_schema.txt`
+2. Add algorithm section with parameter mappings
+3. Include Chinese keywords
 
-- **test/** - All test files go here
-  - Unit tests: test_[component_name].py
-  - Integration tests: test_[system]_integration.py
-  - All test files should be executable with proper shebang if needed
-  - Test files should import from parent directory using sys.path manipulation
+```
+## My_Algorithm
+Parameters:
+- **my_param** (int): Description
+  - User keywords: "关键词1", "关键词2", "keyword"
+  - Example: "迭代100次" → my_param=100
+```
 
-- **scripts/** - All executable scripts and utilities
-  - Standalone scripts for specific tasks
-  - Utility scripts for data processing, setup, etc.
-  - **IMPORTANT**: All run_* scripts (interactive runners) belong here
-  - Should be executable and include proper argument parsing
-  - Include comprehensive README.md for script descriptions
+### Modifying Global Defaults
 
-### Configuration Loading Pattern
-
-**STANDARD PATTERN**: Always use this pattern for configuration loading:
+Edit `configs/config.py`:
 
 ```python
-try:
-    from configs import definitions_private
-    # Load from private configuration
-    API_KEY = definitions_private.API_KEY
-    PROJECT_DIR = definitions_private.PROJECT_DIR
-except ImportError:
-    from configs import definitions
-    # Fallback to defaults or environment variables
-    API_KEY = definitions.API_KEY or os.getenv('API_KEY', 'default_or_placeholder')
-    PROJECT_DIR = definitions.PROJECT_DIR or os.getcwd()
+# Change default training period
+DEFAULT_TRAIN_PERIOD = ["1990-01-01", "2000-12-31"]
+
+# Change SCE-UA defaults
+DEFAULT_SCE_UA_PARAMS = {
+    "rep": 2000,  # Increase iterations
+    "ngs": 500,   # Increase complexes
+    ...
+}
+
+# Change quality thresholds
+NSE_EXCELLENT = 0.80  # Stricter threshold
 ```
 
-### Configuration Management Examples
+### Customizing Output Filtering
+
+Edit `hydroagent/agents/runner_agent.py`:
 
 ```python
-# Standard File Header Example
-"""
-Author: zhuanglaihong
-Date: 2024-09-24 15:30:00
-LastEditTime: 2024-09-24 15:30:00
-LastEditors: zhuanglaihong
-Description: Enhanced RAG system for hydrological knowledge retrieval
-FilePath: \HydroAgent\hydroagent\knowledge\rag_system.py
-Copyright (c) 2023-2024 HydroAgent. All rights reserved.
-"""
-
-# Correct Configuration Loading
-try:
-    from configs import definitions_private as config
-    API_KEY = config.OPENAI_API_KEY
-    PROJECT_DIR = config.PROJECT_DIR
-except ImportError:
-    from configs import definitions as config
-    API_KEY = config.OPENAI_API_KEY  # Will be placeholder
-    PROJECT_DIR = config.PROJECT_DIR
+filter_patterns = [
+    "🚀 =====",       # Filter decorative lines
+    "📋 Parameters",  # Filter parameter details
+    # Add more patterns...
+]
 ```
 
-## File Organization Rules for Claude Code
+**Note**: Progress bars (`SCE-UA Progress:`) always display (uses `\r`)
 
-**MANDATORY**: When creating or moving files, always follow these rules:
+---
 
-1. **Test files** → test/ directory
-2. **Scripts and utilities** → scripts/ directory
-3. **Configuration templates** → configs/ directory (configs/definitions.py)
-4. **Private configs** → configs/ directory (configs/definitions_private.py)
-5. **Global parameters** → configs/ directory (configs/config.py)
-6. **Core package code** → hydroagent/ directory with appropriate subpackages
-7. **Include standard headers** in all new Python files
-8. **Use proper imports** and path management
+## 📊 Supported Features
 
-**Configuration Priority Order**:
-1. configs/definitions_private.py (user-specific, not in git)
-2. configs/definitions.py (project defaults and templates)
-3. configs/config.py (adjustable parameters)
-4. Environment variables (fallback)
-5. Hard-coded defaults (last resort)
+### Hydrological Models
+
+- **GR Series**: GR1Y, GR2M, GR4J, GR5J, GR6J
+- **XAJ**: Xinanjiang model
+- **More**: Extensible through hydromodel
+
+### Calibration Algorithms
+
+| Algorithm | Parameters | Chinese Keywords |
+|-----------|------------|------------------|
+| **SCE-UA** | rep, ngs | 迭代轮数, 复合体数量 |
+| **DE** | max_generations, pop_size | 代数, 种群大小 |
+| **PSO** | max_iterations, swarm_size | 迭代次数, 粒子数 |
+| **GA** | generations, population_size | 代数, 种群大小 |
+
+### Performance Metrics
+
+- **NSE**: Nash-Sutcliffe Efficiency
+- **RMSE**: Root Mean Square Error
+- **KGE**: Kling-Gupta Efficiency
+- **PBIAS**: Percentage Bias
+- **R²**: Coefficient of Determination
+
+---
+
+## 🚧 Future Development
+
+### Planned Features
+
+- [ ] **RAG Integration**: Knowledge-enhanced workflow generation
+- [ ] **Web Interface**: Gradio/Streamlit UI
+- [ ] **Visualization**: Interactive result plots
+- [ ] **Multi-Basin Parallel**: Process multiple basins simultaneously
+- [ ] **Model Comparison**: Compare performance across models
+- [ ] **Parameter Sensitivity**: Analyze parameter importance
+- [ ] **Docker Deployment**: Containerized distribution
+
+### Experimental Features (in `config.py`)
+
+```python
+ENABLE_RAG = False              # RAG knowledge system
+ENABLE_VISUALIZATION = False    # Result visualization
+ENABLE_PARALLEL_BASINS = False  # Multi-basin processing
+```
+
+---
+
+## 📚 Dependencies
+
+### Core Dependencies
+
+- **Python**: 3.11+
+- **hydromodel**: Hydrological model library
+- **hydrodataset**: CAMELS data management
+- **hydroutils**: Utility functions
+- **openai**: API client (for Qwen/OpenAI)
+
+### Optional Dependencies
+
+- **ollama**: Local model inference
+- **gradio/streamlit**: Web UI (future)
+
+### Installation
+
+```bash
+uv sync  # Install all dependencies
+```
+
+---
+
+## ❓ Troubleshooting
+
+### IntentAgent Returns UNKNOWN
+
+**Check**:
+1. LLM backend connected? (check logs for `HTTP Request`)
+2. API key correct in `definitions_private.py`?
+3. Query includes model name, basin ID?
+
+### Calibration Very Slow
+
+**Solution**: Reduce iterations
+```
+率定GR4J模型，流域01013500，算法迭代100轮即可
+```
+
+### How to View Complete hydromodel Output?
+
+**Answer**: Check log file `logs/run_developer_agent_pipeline_*.log`
+
+### Evaluation Metrics Not Showing
+
+**Check**:
+1. `_parse_evaluation_result()` correctly extracts metrics
+2. Calibration completed successfully
+3. `calibration_results.json` exists
+
+---
+
+## 📖 Additional Resources
+
+- **README.md**: User-facing documentation
+- **hydromodel docs**: https://github.com/OuyangWenyu/hydromodel
+- **Issue tracker**: GitHub Issues
+
+---
+
+## ✅ Development Checklist
+
+When contributing code:
+
+- [ ] Follow file header standard
+- [ ] Place file in correct directory
+- [ ] Update `config.py` if adding parameters
+- [ ] Create/update prompt files for new agents
+- [ ] Test with both API and Ollama backends
+- [ ] Update CLAUDE.md if architecture changes
+- [ ] Commit logs to understand changes
+
+---
+
+**Last Updated**: 2024-11-22
+
+**Architecture Version**: 4-Agent Pipeline v1.0

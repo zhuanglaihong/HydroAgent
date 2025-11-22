@@ -16,6 +16,7 @@ import logging
 
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
+from configs import config
 
 logger = logging.getLogger(__name__)
 
@@ -182,15 +183,15 @@ Always provide clear, actionable suggestions."""
                 "data_source_type": "camels_us",
                 "data_source_path": None,
                 "basin_ids": ["01013500"],
-                "warmup_length": 365,
+                "warmup_length": config.DEFAULT_WARMUP_DAYS,
                 "variables": [
                     "precipitation",
                     "potential_evapotranspiration",
                     "streamflow",
                 ],
-                "train_period": ["2000-07-01", "2005-09-30"],
-                "valid_period": ["2006-07-01", "2007-09-30"],
-                "test_period": ["2008-07-01", "2010-09-30"],
+                "train_period": config.DEFAULT_TRAIN_PERIOD,
+                "valid_period": ["2006-07-01", "2007-09-30"],  # Optional, not used in current workflow
+                "test_period": config.DEFAULT_TEST_PERIOD,
             },
             "model_cfgs": {
                 "model_name": "xaj",
@@ -202,18 +203,15 @@ Always provide clear, actionable suggestions."""
             },
             "training_cfgs": {
                 "algorithm_name": "SCE_UA",
-                "algorithm_params": {
-                    "rep": 500,
-                    "ngs": 1000,
-                },
+                "algorithm_params": config.DEFAULT_SCE_UA_PARAMS.copy(),  # Use defaults from config.py
                 "loss_config": {
                     "type": "time_series",
-                    "obj_func": "RMSE",
+                    "obj_func": config.DEFAULT_OBJECTIVE,
                 },
                 "param_range_file": None,
                 "output_dir": "results",
                 "experiment_name": None,
-                "random_seed": 1234,
+                "random_seed": config.DEFAULT_SCE_UA_PARAMS["random_seed"],
                 "save_config": True,
             },
             "evaluation_cfgs": {
@@ -334,19 +332,20 @@ Always provide clear, actionable suggestions."""
             # Adjust SCE-UA parameters based on model complexity
             # ngs: number of complexes (2-20, more for complex models)
             # rep: number of evolution steps (1000-10000)
+            # Use defaults from config.py as baseline
 
             if num_params <= 5:
-                # Simple models: fewer iterations needed
-                config["training_cfgs"]["algorithm_params"]["ngs"] = 300
-                config["training_cfgs"]["algorithm_params"]["rep"] = 1000
+                # Simple models: use default values
+                config["training_cfgs"]["algorithm_params"]["ngs"] = config.DEFAULT_SCE_UA_PARAMS["ngs"]
+                config["training_cfgs"]["algorithm_params"]["rep"] = config.DEFAULT_SCE_UA_PARAMS["rep"]
             elif num_params <= 10:
-                # Medium models
-                config["training_cfgs"]["algorithm_params"]["ngs"] = 500
-                config["training_cfgs"]["algorithm_params"]["rep"] = 2000
+                # Medium models: increase complexity
+                config["training_cfgs"]["algorithm_params"]["ngs"] = config.DEFAULT_SCE_UA_PARAMS["ngs"] + 200
+                config["training_cfgs"]["algorithm_params"]["rep"] = config.DEFAULT_SCE_UA_PARAMS["rep"] * 2
             else:
-                # Complex models: more iterations
+                # Complex models: reduce complexes but more iterations
                 config["training_cfgs"]["algorithm_params"]["ngs"] = 100
-                config["training_cfgs"]["algorithm_params"]["rep"] = 3000
+                config["training_cfgs"]["algorithm_params"]["rep"] = config.DEFAULT_SCE_UA_PARAMS["rep"] * 3
 
             logger.debug(
                 f"[ConfigAgent] Adjusted SCE_UA params for {model_name} "
