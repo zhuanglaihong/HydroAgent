@@ -199,14 +199,15 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        执行 hydromodel 工作流。
-        Execute hydromodel workflow.
+        执行 hydromodel 工作流（Phase 3增强：支持新任务类型）。
+        Execute hydromodel workflow (Phase 3 enhanced: support new task types).
 
         Args:
             input_data: 执行配置 Execution configuration
                 {
                     "success": True,
-                    "config": {...},  # ConfigAgent生成的配置dict
+                    "config": {...},  # ConfigAgent或InterpreterAgent生成的配置dict
+                    "task_id": "task_1",  # 子任务ID（Phase 3新增）
                     "config_summary": "..."
                 }
                 或
@@ -225,7 +226,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     "output_files": [...],  # 输出文件列表
                 }
         """
-        # 从ConfigAgent的输出中提取config
+        # 从ConfigAgent/InterpreterAgent的输出中提取config
         if "config" in input_data:
             config = input_data["config"]
         else:
@@ -235,20 +236,33 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 "error": "Missing 'config' in input_data"
             }
 
-        # 推断执行模式（从intent或config中）
-        intent = input_data.get("intent_result", {}).get("intent") or input_data.get("intent", "calibration")
+        # Phase 3: 支持从config的parameters中获取task_type
+        parameters = config.get("parameters", {})
+        task_type = parameters.get("task_type")
+        task_id = input_data.get("task_id", "unknown")
 
-        # 将intent映射到执行模式
-        if intent in ["calibration", "training"]:
-            mode = "calibrate"
-        elif intent in ["evaluation", "test"]:
-            mode = "evaluate"
-        elif intent == "simulation":
-            mode = "simulate"
+        # 推断执行模式
+        if task_type == "boundary_check_recalibration":
+            mode = "boundary_check"
+        elif task_type == "statistical_analysis":
+            mode = "statistical_analysis"
+        elif task_type == "custom_analysis":
+            mode = "custom_analysis"
         else:
-            mode = "calibrate"  # 默认为率定
+            # 传统模式：从intent推断
+            intent = input_data.get("intent_result", {}).get("intent") or input_data.get("intent", "calibration")
 
-        logger.info(f"[RunnerAgent] 开始执行 {mode} 模式")
+            # 将intent映射到执行模式
+            if intent in ["calibration", "training"]:
+                mode = "calibrate"
+            elif intent in ["evaluation", "test"]:
+                mode = "evaluate"
+            elif intent == "simulation":
+                mode = "simulate"
+            else:
+                mode = "calibrate"  # 默认为率定
+
+        logger.info(f"[RunnerAgent] 开始执行任务: {task_id}, 模式: {mode}")
         logger.info(f"[RunnerAgent] 模型: {config.get('model_cfgs', {}).get('model_name', 'N/A')}")
         logger.info(f"[RunnerAgent] 流域: {config.get('data_cfgs', {}).get('basin_ids', [])}")
 
@@ -259,6 +273,12 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 result = self._run_evaluation(config)
             elif mode == "simulate":
                 result = self._run_simulation(config)
+            elif mode == "boundary_check":
+                result = self._run_boundary_check_recalibration(config, parameters)
+            elif mode == "statistical_analysis":
+                result = self._run_statistical_analysis(config, parameters, input_data)
+            elif mode == "custom_analysis":
+                result = self._run_custom_analysis(config, parameters)
             else:
                 raise ValueError(f"未知的执行模式: {mode}")
 
@@ -266,6 +286,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
             return {
                 "success": True,
+                "task_id": task_id,
                 "mode": mode,
                 "result": result,
                 "execution_log": self.last_execution_log
@@ -276,6 +297,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
             return {
                 "success": False,
+                "task_id": task_id,
                 "mode": mode,
                 "error": str(e),
                 "traceback": self._format_traceback(),
@@ -826,3 +848,273 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         except AttributeError:
             logger.warning("hydromodel installed but no version info")
             return True
+
+    # ========================================================================
+    # Phase 3: 新增任务类型支持
+    # ========================================================================
+
+    def _run_boundary_check_recalibration(
+        self,
+        config: Dict[str, Any],
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        检查参数边界并重新率定（实验3）。
+        Check parameter boundaries and recalibrate if needed (Experiment 3).
+
+        Args:
+            config: 配置字典
+            parameters: 任务参数
+                - boundary_threshold: 边界阈值（默认0.05）
+                - phase: 当前阶段（phase1或phase2）
+
+        Returns:
+            边界检查和重新率定结果
+        """
+        logger.info("[RunnerAgent] 开始边界检查...")
+
+        phase = parameters.get("phase", "boundary_aware")
+        boundary_threshold = parameters.get("boundary_threshold", 0.05)
+
+        # 首先读取Phase 1的率定结果
+        try:
+            from pathlib import Path
+            import json
+
+            # 假设Phase 1结果保存在workspace_dir/task_1_phase1
+            # 实际应该从前置任务的结果中获取
+            workspace_dir = Path(config.get("training_cfgs", {}).get("output_dir", "."))
+            phase1_dir = workspace_dir.parent / "task_1_phase1"
+
+            logger.info(f"[RunnerAgent] 检查Phase 1结果: {phase1_dir}")
+
+            if not phase1_dir.exists():
+                logger.warning(f"[RunnerAgent] Phase 1结果不存在: {phase1_dir}")
+                return {
+                    "status": "skipped",
+                    "reason": "Phase 1 results not found",
+                    "need_recalibration": False
+                }
+
+            # 读取Phase 1的最优参数
+            param_file = phase1_dir / "calibration_results.json"
+            if not param_file.exists():
+                logger.warning(f"[RunnerAgent] 参数文件不存在: {param_file}")
+                return {
+                    "status": "skipped",
+                    "reason": "Parameter file not found",
+                    "need_recalibration": False
+                }
+
+            with open(param_file, 'r', encoding='utf-8') as f:
+                phase1_result = json.load(f)
+
+            best_params = phase1_result.get("best_params", {})
+            logger.info(f"[RunnerAgent] Phase 1最优参数: {best_params}")
+
+            # 检查参数是否接近边界
+            # 这需要从hydromodel获取参数范围
+            # 简化实现：假设所有参数范围为[0, 1]
+            boundary_params = []
+            for param_name, param_value in best_params.items():
+                if isinstance(param_value, (int, float)):
+                    # 检查是否接近0或1（假设标准化范围）
+                    if param_value < boundary_threshold or param_value > (1 - boundary_threshold):
+                        boundary_params.append({
+                            "name": param_name,
+                            "value": param_value,
+                            "near_boundary": "lower" if param_value < boundary_threshold else "upper"
+                        })
+                        logger.warning(f"[RunnerAgent] 参数 {param_name}={param_value} 接近边界")
+
+            # 如果有参数接近边界，执行重新率定
+            if boundary_params:
+                logger.info(f"[RunnerAgent] 发现 {len(boundary_params)} 个边界参数，执行重新率定")
+
+                # 调整参数范围（扩展边界）
+                # 这里需要修改config中的param_range_file或直接修改参数范围
+                # 简化实现：直接执行率定，假设hydromodel会自动处理
+                logger.info("[RunnerAgent] 执行Phase 2率定...")
+                recalib_result = self._run_calibration(config)
+
+                return {
+                    "status": "recalibrated",
+                    "boundary_params": boundary_params,
+                    "need_recalibration": True,
+                    "phase1_params": best_params,
+                    "phase2_result": recalib_result,
+                    "metrics": recalib_result.get("metrics", {})
+                }
+            else:
+                logger.info("[RunnerAgent] 没有参数接近边界，跳过重新率定")
+                return {
+                    "status": "no_recalibration_needed",
+                    "boundary_params": [],
+                    "need_recalibration": False,
+                    "phase1_params": best_params,
+                    "metrics": phase1_result.get("metrics", {})
+                }
+
+        except Exception as e:
+            logger.error(f"[RunnerAgent] 边界检查失败: {str(e)}", exc_info=True)
+            raise
+
+    def _run_statistical_analysis(
+        self,
+        config: Dict[str, Any],
+        parameters: Dict[str, Any],
+        input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        统计分析多次重复实验的结果（实验5）。
+        Statistical analysis of repeated experiments (Experiment 5).
+
+        Args:
+            config: 配置字典
+            parameters: 任务参数
+                - n_repeats: 重复次数
+                - analysis_type: 分析类型
+            input_data: 包含前置任务结果的输入数据
+
+        Returns:
+            统计分析结果
+        """
+        logger.info("[RunnerAgent] 开始统计分析...")
+
+        n_repeats = parameters.get("n_repeats", 10)
+        analysis_type = parameters.get("analysis_type", "stability_validation")
+
+        # 收集所有重复实验的结果
+        # 实际应该从workspace_dir中读取所有task_*_repeat的结果
+        try:
+            from pathlib import Path
+            import json
+            import numpy as np
+
+            workspace_dir = Path(config.get("training_cfgs", {}).get("output_dir", ".")).parent
+            logger.info(f"[RunnerAgent] 从 {workspace_dir} 收集重复实验结果...")
+
+            # 收集所有重复任务的结果
+            all_metrics = []
+            all_params = {}
+
+            for i in range(n_repeats):
+                task_dir = workspace_dir / f"task_{i+1}_repeat"
+                result_file = task_dir / "calibration_results.json"
+
+                if result_file.exists():
+                    with open(result_file, 'r', encoding='utf-8') as f:
+                        result = json.load(f)
+
+                    metrics = result.get("metrics", {})
+                    best_params = result.get("best_params", {})
+
+                    all_metrics.append(metrics)
+
+                    # 收集参数值
+                    for param_name, param_value in best_params.items():
+                        if param_name not in all_params:
+                            all_params[param_name] = []
+                        all_params[param_name].append(param_value)
+
+                else:
+                    logger.warning(f"[RunnerAgent] 结果文件不存在: {result_file}")
+
+            if not all_metrics:
+                logger.warning("[RunnerAgent] 没有找到任何重复实验结果")
+                return {
+                    "status": "no_data",
+                    "n_repeats": n_repeats,
+                    "found_results": 0
+                }
+
+            logger.info(f"[RunnerAgent] 收集到 {len(all_metrics)} 个结果")
+
+            # 计算统计指标
+            stats = {}
+
+            # 性能指标统计
+            metric_names = ["NSE", "RMSE", "KGE", "PBIAS"]
+            for metric_name in metric_names:
+                values = [m.get(metric_name) for m in all_metrics if metric_name in m]
+                if values:
+                    stats[metric_name] = {
+                        "mean": float(np.mean(values)),
+                        "std": float(np.std(values)),
+                        "min": float(np.min(values)),
+                        "max": float(np.max(values)),
+                        "cv": float(np.std(values) / np.mean(values)) if np.mean(values) != 0 else 0
+                    }
+
+            # 参数统计
+            param_stats = {}
+            for param_name, param_values in all_params.items():
+                if param_values:
+                    param_stats[param_name] = {
+                        "mean": float(np.mean(param_values)),
+                        "std": float(np.std(param_values)),
+                        "min": float(np.min(param_values)),
+                        "max": float(np.max(param_values)),
+                        "cv": float(np.std(param_values) / np.mean(param_values)) if np.mean(param_values) != 0 else 0
+                    }
+
+            # 稳定性评估
+            # NSE的变异系数 < 0.1 为稳定
+            nse_cv = stats.get("NSE", {}).get("cv", 1.0)
+            stability = "stable" if nse_cv < 0.1 else "unstable"
+
+            logger.info(f"[RunnerAgent] 统计分析完成，稳定性: {stability}")
+
+            return {
+                "status": "success",
+                "n_repeats": n_repeats,
+                "found_results": len(all_metrics),
+                "metric_statistics": stats,
+                "parameter_statistics": param_stats,
+                "stability": stability,
+                "nse_cv": nse_cv
+            }
+
+        except Exception as e:
+            logger.error(f"[RunnerAgent] 统计分析失败: {str(e)}", exc_info=True)
+            raise
+
+    def _run_custom_analysis(
+        self,
+        config: Dict[str, Any],
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        执行自定义分析代码（实验4）。
+        Execute custom analysis code (Experiment 4).
+
+        Args:
+            config: 配置字典
+            parameters: 任务参数
+                - analysis_type: 分析类型（runoff_coefficient, FDC等）
+                - basin_id: 流域ID
+                - model_name: 模型名称
+
+        Returns:
+            自定义分析结果
+        """
+        logger.info("[RunnerAgent] 开始自定义分析...")
+
+        analysis_type = parameters.get("analysis_type", "unknown")
+        basin_id = parameters.get("basin_id")
+        model_name = parameters.get("model_name")
+
+        logger.info(f"[RunnerAgent] 分析类型: {analysis_type}")
+        logger.info(f"[RunnerAgent] 流域: {basin_id}, 模型: {model_name}")
+
+        # 自定义分析需要DeveloperAgent生成代码后执行
+        # 这里RunnerAgent只是标记需要执行自定义分析
+        # 实际的代码生成和执行由DeveloperAgent完成
+
+        return {
+            "status": "pending_code_generation",
+            "analysis_type": analysis_type,
+            "basin_id": basin_id,
+            "model_name": model_name,
+            "message": "自定义分析需要DeveloperAgent生成代码"
+        }

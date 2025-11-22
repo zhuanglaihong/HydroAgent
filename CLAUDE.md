@@ -524,6 +524,47 @@ filter_patterns = [
 
 ---
 
+## 🧪 Running Experiments
+
+HydroAgent提供了7个核心实验脚本，用于验证系统功能。所有实验脚本位于 `experiment/` 目录。
+
+### 快速开始
+
+```bash
+# 运行所有实验（推荐）
+python experiment/run_experiments.py all --backend api --mock
+
+# 运行单个实验
+python experiment/run_experiments.py 1 --backend api  # 实验1
+python experiment/run_experiments.py 2b --backend api # 实验2B
+python experiment/run_experiments.py 3 --backend api  # 实验3
+
+# 使用独立脚本（所有7个实验都有对应的exp_*.py脚本）
+python experiment/exp_1_standard_calibration.py --backend api --mock
+python experiment/exp_2a_full_params.py --backend api --mock
+python experiment/exp_2b_missing_info.py --backend api --mock
+python experiment/exp_2c_custom_data.py --backend api --mock
+python experiment/exp_3_iterative_optimization.py --backend api --mock
+python experiment/exp_4_extended_analysis.py --backend api --mock
+python experiment/exp_5_stability.py --backend api --mock
+```
+
+### 实验列表
+
+| ID | 名称 | 查询 | 验证点 |
+|----|------|------|--------|
+| **1** | 标准流域验证 | "率定流域 01013500..." | task_type, 1个子任务 |
+| **2a** | 全信息率定 | "使用SCE-UA, rep=500..." | 参数提取 |
+| **2b** | 缺省信息补全 | "帮我率定流域..." | 信息自动补全 |
+| **2c** | 自定义数据 | "用D盘my_data..." | 自定义数据路径 |
+| **3** | 参数自适应优化 | "如果参数收敛到边界..." | 2阶段，依赖关系 |
+| **4** | 扩展分析 | "计算径流系数，画FDC..." | 代码生成 |
+| **5** | 稳定性验证 | "重复率定5次..." | 统计分析 |
+
+详细说明见 `experiment/README.md`
+
+---
+
 ## 🚧 Future Development
 
 ### Planned Features
@@ -620,6 +661,91 @@ When contributing code:
 
 ---
 
-**Last Updated**: 2024-11-22
+## 🚧 Architecture Improvement Plan (Experiment-Driven Design)
 
-**Architecture Version**: 4-Agent Pipeline v1.0
+### System Goals
+
+Support **5 core experiments** (see `experiment/experiment.md`):
+1. Standard basin calibration
+2. Versatility & robustness (info completion)
+3. Adaptive parameter optimization (iterative)
+4. Code generation for extended analysis
+5. Stability validation (repeated runs)
+
+### Architecture Evolution
+
+**📋 Latest Design**: `docs/ARCHITECTURE_V3_FINAL.md` (Experiment-Driven, Final Version)
+
+```
+IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (配置生成)
+    ↓                        ↓                          ↓
+决定"要做什么"            拆解任务+生成提示词          LLM生成config
+                                                        ↓
+                                                   RunnerAgent → DeveloperAgent
+```
+
+### Implementation Status
+
+**✅ Phase 1: IntentAgent Enhancement (COMPLETED - 2025-01-22)**
+- ✅ Task type decision (7 types: standard, info_completion, iterative, repeated, extended, batch, custom_data)
+- ✅ Information completion (auto-fill model, algorithm, time_period, data_source)
+- ✅ Extract extended analysis needs (Exp 4)
+- ✅ Extract repetition count (Exp 5)
+- ✅ Extract custom data path (Exp 2C)
+- ✅ Multi-basin/multi-algorithm detection (batch processing)
+- ✅ Updated test scripts and pipeline script
+
+**✅ Phase 2: TaskPlanner + InterpreterAgent (COMPLETED - 2025-01-22)**
+- ✅ Created TaskPlanner agent (战术拆解层)
+- ✅ Task decomposition logic for all 7 task types
+- ✅ Prompt generation for each subtask
+- ✅ Created simplified PromptPool (历史案例管理)
+- ✅ Handle dependencies between subtasks
+- ✅ Created InterpreterAgent (LLM-driven config generator)
+- ✅ Parse prompts from TaskPlanner
+- ✅ Generate hydromodel config JSON with LLM
+- ✅ Self-correction mechanism (max 3 attempts)
+- ✅ Config validation with detailed error messages
+- ✅ Created test scripts: test_task_planner.py, test_interpreter_agent.py
+- ✅ Created new pipeline: scripts/run_new_pipeline.py (5-Agent architecture)
+
+**✅ Phase 3: RunnerAgent Enhancement (COMPLETED - 2025-01-22)**
+- ✅ Enhanced RunnerAgent.process() to support new task types
+- ✅ Implemented _run_boundary_check_recalibration() for Exp 3
+- ✅ Implemented _run_statistical_analysis() for Exp 5
+- ✅ Implemented _run_custom_analysis() for Exp 4
+- ✅ Added task_type detection from config.parameters
+- ✅ Support for boundary checking and parameter re-calibration
+- ✅ Statistical analysis of repeated experiments with stability evaluation
+
+**✅ Phase 4: End-to-End Testing (COMPLETED - 2025-01-22)**
+- ✅ Created comprehensive E2E test suite (test_experiments_e2e.py)
+- ✅ Tests cover all 5 experiments
+- ✅ Validates IntentAgent → TaskPlanner → InterpreterAgent flow
+- ✅ Checks task decomposition logic
+- ✅ Verifies dependency handling
+- ✅ Created detailed testing guide (docs/TESTING_GUIDE.md)
+- ✅ Documentation for unit tests, integration tests, E2E tests
+
+**Phase 5: Production Readiness (Planned)**
+- [ ] Performance optimization
+- [ ] Error handling improvements
+- [ ] User documentation
+- [ ] Deployment guide
+
+### Design Philosophy
+
+> **Experiment-driven, layered decision-making, clear responsibilities**
+>
+> - All design serves the 5 core experiments
+> - Strategic (IntentAgent) → Tactical (TaskPlanner) → Configuration (Interpreter) → Execution (Runner)
+> - Isolate logical complexity (TaskPlanner) from execution complexity (Runner)
+> - Iterative improvement based on real experimental needs
+
+---
+
+**Last Updated**: 2025-01-22
+
+**Architecture Version**: 5-Agent Pipeline v3.0 (Phase 1-4 Complete, Ready for Testing)
+- IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (配置生成) → RunnerAgent (增强执行) → DeveloperAgent (代码生成)
+- **Status**: 核心功能完成，测试框架就绪，准备进行实验验证

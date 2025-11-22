@@ -1,10 +1,10 @@
 """
 Author: Claude & zhuanglaihong
 Date: 2025-01-20 19:55:00
-LastEditTime: 2025-11-21 19:11:00
+LastEditTime: 2025-01-22 14:00:00
 LastEditors: Claude
-Description: Intent and data validation agent (Exp 1 & 4)
-             意图与数据智能体 - 负责意图分类和数据校验
+Description: Intent and data validation agent (Exp 1-5) - Enhanced with task decision
+             意图与数据智能体 - 负责意图分类、任务决策和数据校验
 FilePath: /HydroAgent/hydroagent/agents/intent_agent.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
@@ -20,18 +20,57 @@ from ..utils.prompt_manager import PromptManager, AgentContext
 logger = logging.getLogger(__name__)
 
 
+# 任务类型定义（支持实验1-5）
+TASK_TYPES = {
+    "standard_calibration": "标准单任务率定（实验1）",
+    "info_completion": "缺省信息补全型率定（实验2B）",
+    "iterative_optimization": "两阶段迭代优化（实验3）",
+    "repeated_experiment": "重复实验-多随机种子（实验5）",
+    "extended_analysis": "扩展分析-超出hydromodel功能（实验4）",
+    "batch_processing": "批量处理-多流域/多算法",
+    "custom_data": "自定义数据路径（实验2C）"
+}
+
+
 class IntentAgent(BaseAgent):
     """
-    Intent and data validation agent.
-    意图与数据智能体。
+    Intent and data validation agent (Enhanced for Experiments 1-5).
+    意图与数据智能体（增强版，支持实验1-5）。
 
-    Responsibilities:
-    - Intent classification (calibration / evaluation / simulation / extension)
-    - Data availability validation using hydrodataset
-    - Information completion (fill defaults if missing)
-    - Query expansion and clarification
+    Responsibilities (Enhanced):
+    1. **Intent classification** (calibration / evaluation / simulation / extension)
+    2. **Task type decision** (🆕) - Decide "what to do" based on query complexity
+       - standard_calibration: Simple single-basin calibration
+       - info_completion: Query with missing information
+       - iterative_optimization: Two-phase adaptive calibration
+       - repeated_experiment: Multiple runs with different seeds
+       - extended_analysis: Tasks beyond hydromodel (e.g., FDC plotting)
+       - batch_processing: Multi-basin or multi-algorithm tasks
+       - custom_data: Custom data path handling
+    3. **Information completion** (🆕) - Fill missing fields with intelligent defaults
+       - Model name (default: xaj)
+       - Algorithm (default: SCE_UA)
+       - Time period (infer from data or use defaults)
+       - Data source (infer from basin ID format)
+    4. **Data availability validation** using hydrodataset
+    5. **Query expansion and clarification**
 
-    Interacts with hydromodel only through hydrodataset module for data queries.
+    Output Format (Enhanced):
+    {
+        "success": True,
+        "intent_result": {
+            "task_type": "...",  # 🆕 Task type classification
+            "intent": "calibration",
+            "model_name": "gr4j",
+            "basin_id": "01013500",
+            "algorithm": "SCE_UA",
+            "extra_params": {...},
+            "strategy": {...},  # 🆕 Strategy information (if iterative)
+            "needs": [...],     # 🆕 Extended analysis needs (if extended_analysis)
+            "n_repeats": 10,    # 🆕 Number of repetitions (if repeated_experiment)
+            ...
+        }
+    }
     """
 
     def __init__(
@@ -157,8 +196,8 @@ class IntentAgent(BaseAgent):
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process user query to extract intent and validate data.
-        处理用户查询以提取意图并验证数据。
+        Process user query to extract intent and validate data (Enhanced).
+        处理用户查询以提取意图并验证数据（增强版）。
 
         Args:
             input_data: User query and context
@@ -168,7 +207,17 @@ class IntentAgent(BaseAgent):
                 }
 
         Returns:
-            Dict containing intent analysis result
+            Dict containing intent analysis result with task_type decision
+                {
+                    "success": True,
+                    "intent_result": {
+                        "task_type": "...",  # 🆕
+                        "intent": "...",
+                        "model_name": "...",
+                        "basin_id": "...",
+                        ...
+                    }
+                }
         """
         query = input_data.get("query", "")
         context = input_data.get("context", {})
@@ -176,7 +225,7 @@ class IntentAgent(BaseAgent):
         logger.info(f"[IntentAgent] Processing query: {query}")
 
         try:
-            # Call LLM to analyze intent
+            # Step 1: Call LLM to analyze intent (基础信息提取)
             intent_result = self._analyze_intent(query, context)
 
             # Check if LLM call failed (indicated by "error" field in intent_result)
@@ -188,7 +237,30 @@ class IntentAgent(BaseAgent):
                     "intent_result": intent_result  # Include partial result for debugging
                 }
 
-            # Validate data availability
+            # Step 2: 🆕 Decide task type (战略决策)
+            task_type = self._decide_task_type(query, intent_result)
+            intent_result["task_type"] = task_type
+            logger.info(f"[IntentAgent] Task type: {task_type}")
+
+            # Step 3: 🆕 Complete missing information (信息补全)
+            intent_result = self._complete_missing_info(intent_result, query)
+
+            # Step 4: 🆕 Add strategy information (if needed)
+            if task_type == "iterative_optimization":
+                intent_result["strategy"] = {
+                    "phases": ["coarse_calibration", "fine_calibration"],
+                    "trigger": "boundary_effect"
+                }
+
+            # Step 5: 🆕 Extract extended analysis needs (if needed)
+            if task_type == "extended_analysis":
+                intent_result["needs"] = self._extract_analysis_needs(query)
+
+            # Step 6: 🆕 Extract repetition count (if needed)
+            if task_type == "repeated_experiment":
+                intent_result["n_repeats"] = self._extract_n_repeats(query)
+
+            # Step 7: Validate data availability (existing logic)
             if intent_result.get("basin_id"):
                 data_valid = self._validate_data(intent_result)
                 intent_result["data_available"] = data_valid
@@ -196,7 +268,7 @@ class IntentAgent(BaseAgent):
             # Store result in context
             self.update_context("intent_result", intent_result)
 
-            logger.info(f"[IntentAgent] Intent: {intent_result.get('intent')}")
+            logger.info(f"[IntentAgent] Intent: {intent_result.get('intent')}, Task: {task_type}")
 
             return {
                 "success": True,
@@ -204,7 +276,7 @@ class IntentAgent(BaseAgent):
             }
 
         except Exception as e:
-            logger.error(f"[IntentAgent] Processing failed: {str(e)}")
+            logger.error(f"[IntentAgent] Processing failed: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e)
@@ -459,3 +531,302 @@ Respond with ONLY valid JSON, no extra text."""
         if result.get("success"):
             return result["intent_result"].get("intent", "unknown")
         return "unknown"
+
+    # ===== 🆕 Phase 1 Enhancement Methods =====
+
+    def _decide_task_type(self, query: str, intent_result: Dict[str, Any]) -> str:
+        """
+        决策任务类型（战略决策）。
+
+        根据用户查询和提取的意图，决定后续处理方式。
+
+        Args:
+            query: 用户原始查询
+            intent_result: LLM提取的意图信息
+
+        Returns:
+            Task type string
+        """
+        query_lower = query.lower()
+
+        # 检测关键词 → 任务类型映射
+        # 优先级从高到低
+
+        # 1. 重复实验（实验5）
+        if any(kw in query_lower for kw in ["重复", "多次", "repeat", "multiple times", "不同种子", "different seed"]):
+            logger.debug("[IntentAgent] Detected: repeated_experiment")
+            return "repeated_experiment"
+
+        # 2. 迭代优化（实验3）
+        if any(kw in query_lower for kw in ["迭代", "边界", "调整范围", "adaptive", "boundary", "iterative", "两阶段", "two-phase"]):
+            logger.debug("[IntentAgent] Detected: iterative_optimization")
+            return "iterative_optimization"
+
+        # 3. 扩展分析（实验4）
+        extended_keywords = ["径流系数", "runoff coefficient", "fdc", "flow duration", "历时曲线", "绘制", "画", "plot", "可视化", "visualization"]
+        if any(kw in query_lower for kw in extended_keywords):
+            logger.debug("[IntentAgent] Detected: extended_analysis")
+            return "extended_analysis"
+
+        # 4. 自定义数据路径（实验2C）
+        if any(kw in query_lower for kw in ["d盘", "d:", "文件夹", "folder", "my_data", "自定义数据", "custom data"]):
+            logger.debug("[IntentAgent] Detected: custom_data")
+            return "custom_data"
+
+        # 5. 批量处理（多流域/多算法）
+        # 检测是否有多个流域或多个算法
+        basins = self._extract_multiple_basins(query, intent_result)
+        algorithms = self._extract_multiple_algorithms(query, intent_result)
+
+        if len(basins) > 1 or len(algorithms) > 1:
+            logger.debug(f"[IntentAgent] Detected: batch_processing (basins={len(basins)}, algorithms={len(algorithms)})")
+            return "batch_processing"
+
+        # 6. 信息补全（实验2B）
+        # 检测缺失的关键信息
+        missing = intent_result.get("missing_info", [])
+        required_fields = ["model_name", "basin_id"]
+        has_missing_required = any(field in missing for field in required_fields)
+
+        if has_missing_required:
+            logger.debug(f"[IntentAgent] Detected: info_completion (missing={missing})")
+            return "info_completion"
+
+        # 7. 标准率定（实验1，默认）
+        logger.debug("[IntentAgent] Detected: standard_calibration (default)")
+        return "standard_calibration"
+
+    def _complete_missing_info(self, intent_result: Dict[str, Any], query: str) -> Dict[str, Any]:
+        """
+        补全缺失信息（智能填充默认值）。
+
+        Args:
+            intent_result: 当前意图结果
+            query: 用户原始查询
+
+        Returns:
+            补全后的intent_result
+        """
+        # 1. 补全模型名称
+        if not intent_result.get("model_name"):
+            # 默认使用XAJ模型
+            intent_result["model_name"] = "xaj"
+            logger.info("[IntentAgent] Filled missing model_name: xaj (default)")
+
+        # 2. 补全算法
+        if not intent_result.get("algorithm"):
+            intent_result["algorithm"] = "SCE_UA"
+            logger.info("[IntentAgent] Filled missing algorithm: SCE_UA (default)")
+
+        # 3. 补全时间范围
+        if not intent_result.get("time_period"):
+            # 使用默认的训练和测试时段
+            intent_result["time_period"] = {
+                "train": ["1990-01-01", "2000-12-31"],  # 默认10年训练
+                "test": ["2001-01-01", "2005-12-31"]     # 默认5年测试
+            }
+            logger.info("[IntentAgent] Filled missing time_period: default 10y train + 5y test")
+
+        # 4. 推断数据源（基于流域ID格式）
+        basin_id = intent_result.get("basin_id", "")
+        if basin_id and "data_source" not in intent_result:
+            # 判断流域ID格式
+            if basin_id.startswith("0") and len(basin_id) == 8 and basin_id.isdigit():
+                # CAMELS_US格式：8位数字，以0开头
+                intent_result["data_source"] = "camels_us"
+                logger.info(f"[IntentAgent] Inferred data_source: camels_us (basin_id={basin_id})")
+            elif "camels_" in basin_id.lower():
+                intent_result["data_source"] = "camels_us"
+                logger.info(f"[IntentAgent] Inferred data_source: camels_us (contains 'camels_')")
+            else:
+                intent_result["data_source"] = "unknown"
+                logger.warning(f"[IntentAgent] Could not infer data_source for basin_id={basin_id}")
+
+        # 5. 补全data_source_type（用于自定义数据）
+        if intent_result.get("task_type") == "custom_data":
+            # 从查询中提取数据路径
+            data_path = self._extract_data_path(query)
+            if data_path:
+                intent_result["data_source_type"] = "selfmadehydrodataset"
+                intent_result["data_source_path"] = data_path
+                logger.info(f"[IntentAgent] Set data_source_type: selfmadehydrodataset, path={data_path}")
+
+        # 6. 更新missing_info列表（移除已补全的）
+        original_missing = set(intent_result.get("missing_info", []))
+        completed_fields = set()
+
+        if intent_result.get("model_name"):
+            completed_fields.add("model_name")
+        if intent_result.get("basin_id"):
+            completed_fields.add("basin_id")
+        if intent_result.get("time_period"):
+            completed_fields.add("time_period")
+        if intent_result.get("algorithm"):
+            completed_fields.add("algorithm")
+
+        still_missing = original_missing - completed_fields
+        intent_result["missing_info"] = list(still_missing)
+
+        if completed_fields:
+            logger.info(f"[IntentAgent] Completed fields: {completed_fields}")
+
+        return intent_result
+
+    def _extract_analysis_needs(self, query: str) -> List[str]:
+        """
+        提取扩展分析需求（实验4）。
+
+        Args:
+            query: 用户查询
+
+        Returns:
+            需求列表，如 ["runoff_coefficient", "FDC"]
+        """
+        needs = []
+        query_lower = query.lower()
+
+        # 检测径流系数
+        if any(kw in query_lower for kw in ["径流系数", "runoff coefficient"]):
+            needs.append("runoff_coefficient")
+
+        # 检测流路历时曲线
+        if any(kw in query_lower for kw in ["fdc", "flow duration", "历时曲线"]):
+            needs.append("FDC")
+
+        # 其他可扩展的分析
+        if any(kw in query_lower for kw in ["参数敏感性", "sensitivity"]):
+            needs.append("parameter_sensitivity")
+
+        logger.info(f"[IntentAgent] Extracted analysis needs: {needs}")
+        return needs
+
+    def _extract_n_repeats(self, query: str) -> int:
+        """
+        提取重复次数（实验5）。
+
+        Args:
+            query: 用户查询
+
+        Returns:
+            重复次数（默认10）
+        """
+        import re
+
+        # 查找数字 + "次"/"times"
+        patterns = [
+            r'(\d+)\s*次',  # "10次"
+            r'重复\s*(\d+)',  # "重复10"
+            r'(\d+)\s*times',  # "10 times"
+            r'repeat\s*(\d+)',  # "repeat 10"
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, query.lower())
+            if match:
+                n = int(match.group(1))
+                logger.info(f"[IntentAgent] Extracted n_repeats: {n}")
+                return n
+
+        # 默认10次
+        logger.info("[IntentAgent] Using default n_repeats: 10")
+        return 10
+
+    def _extract_data_path(self, query: str) -> Optional[str]:
+        """
+        提取自定义数据路径（实验2C）。
+
+        Args:
+            query: 用户查询
+
+        Returns:
+            数据路径或None
+        """
+        import re
+
+        # 查找路径模式
+        patterns = [
+            r'([A-Za-z]:\\[^\s]+)',  # Windows路径：D:\path\to\data
+            r'(/[^\s]+)',  # Unix路径：/path/to/data
+            r'([A-Za-z]盘[^\s]+)',  # 中文路径：D盘\my_data
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, query)
+            if match:
+                path = match.group(1)
+                logger.info(f"[IntentAgent] Extracted data_path: {path}")
+                return path
+
+        # 查找文件夹名称
+        if "文件夹" in query or "folder" in query.lower():
+            # 简单提取："my_data 文件夹" → "my_data"
+            match = re.search(r'(\w+)\s*(?:文件夹|folder)', query, re.IGNORECASE)
+            if match:
+                folder_name = match.group(1)
+                logger.info(f"[IntentAgent] Extracted folder name: {folder_name}")
+                return folder_name
+
+        return None
+
+    def _extract_multiple_basins(self, query: str, intent_result: Dict[str, Any]) -> List[str]:
+        """
+        提取多个流域ID。
+
+        Args:
+            query: 用户查询
+            intent_result: 意图结果
+
+        Returns:
+            流域ID列表
+        """
+        import re
+
+        basins = []
+
+        # 先从intent_result获取单一basin_id
+        if intent_result.get("basin_id"):
+            basins.append(intent_result["basin_id"])
+
+        # 在查询中查找额外的流域ID（8位数字格式）
+        pattern = r'\b(0\d{7})\b'  # CAMELS_US格式：0XXXXXXX
+        matches = re.findall(pattern, query)
+        for match in matches:
+            if match not in basins:
+                basins.append(match)
+
+        return basins
+
+    def _extract_multiple_algorithms(self, query: str, intent_result: Dict[str, Any]) -> List[str]:
+        """
+        提取多个算法。
+
+        Args:
+            query: 用户查询
+            intent_result: 意图结果
+
+        Returns:
+            算法列表
+        """
+        algorithms = []
+
+        # 先从intent_result获取单一algorithm
+        if intent_result.get("algorithm"):
+            algorithms.append(intent_result["algorithm"])
+
+        query_lower = query.lower()
+
+        # 检测查询中的多个算法
+        algorithm_keywords = {
+            "SCE_UA": ["sce-ua", "sce_ua", "sceua"],
+            "GA": ["ga", "genetic", "遗传"],
+            "DE": ["de", "differential evolution"],
+            "PSO": ["pso", "particle swarm"]
+        }
+
+        for algo, keywords in algorithm_keywords.items():
+            for kw in keywords:
+                if kw in query_lower and algo not in algorithms:
+                    algorithms.append(algo)
+                    break
+
+        return algorithms

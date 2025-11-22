@@ -1,11 +1,11 @@
 """
-Author: zhuanglaihong & Claude
-Date: 2025-01-22 14:45:00
-LastEditTime: 2025-01-22 14:45:00
+Author: Claude
+Date: 2025-01-22 17:30:00
+LastEditTime: 2025-01-22 17:30:00
 LastEditors: Claude
-Description: Full 4-Agent pipeline test (Phase 1 Enhanced): Intent → Config → Runner → Developer
-             完整4-Agent管道测试（Phase 1增强版）：意图 → 配置 → 执行 → 分析
-FilePath: \\HydroAgent\\scripts\\run_developer_agent_pipeline.py
+Description: New 5-Agent pipeline (Phase 2): Intent → TaskPlanner → Interpreter → Runner → Developer
+             新的5-Agent管道（Phase 2）：意图 → 任务规划 → 解释器 → 执行 → 分析
+FilePath: \\HydroAgent\\scripts\\run_new_pipeline.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
 
@@ -13,7 +13,6 @@ import sys
 import logging
 import json
 import argparse
-import os
 import time
 from pathlib import Path
 from datetime import datetime
@@ -34,7 +33,7 @@ logs_dir = project_root / "logs"
 logs_dir.mkdir(exist_ok=True)
 
 # 设置详细日志
-log_file = logs_dir / f"run_developer_agent_pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_file = logs_dir / f"run_new_pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -51,8 +50,8 @@ def print_banner():
     """打印横幅"""
     banner = """
 ╔══════════════════════════════════════════════════════════════╗
-║            HydroAgent 完整4-Agent管道测试                    ║
-║     Intent → Config → Runner → Developer                    ║
+║            HydroAgent 新5-Agent管道测试 (Phase 2)           ║
+║  Intent → TaskPlanner → Interpreter → Runner → Developer    ║
 ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)
@@ -62,19 +61,19 @@ def print_banner():
 def parse_args():
     """解析命令行参数"""
     parser = argparse.ArgumentParser(
-        description='完整4-Agent管道测试: Intent → Config → Runner → Developer'
+        description='新5-Agent管道测试 (Phase 2): Intent → TaskPlanner → Interpreter → Runner → Developer'
     )
     parser.add_argument(
         'query',
         type=str,
         nargs='?',
-        default="率定GR4J模型，流域01013500, 使用SCE-UA算法，算法迭代只需要500轮就行",
+        default="率定GR4J模型，流域01013500",
         help='用户查询（默认：率定GR4J模型）'
     )
     parser.add_argument(
         '--backend',
         type=str,
-        default='ollama',
+        default='api',
         choices=['ollama', 'openai', 'api'],
         help='LLM后端 (default: api)'
     )
@@ -90,19 +89,9 @@ def parse_args():
         help='使用Mock模式（不调用真实hydromodel）'
     )
     parser.add_argument(
-        '--save-config',
+        '--save-all',
         action='store_true',
-        help='保存配置到文件'
-    )
-    parser.add_argument(
-        '--no-progress',
-        action='store_true',
-        help='不显示hydromodel执行进度（后台模式）'
-    )
-    parser.add_argument(
-        '--save-analysis',
-        action='store_true',
-        help='保存分析结果到文件'
+        help='保存所有中间结果'
     )
     return parser.parse_args()
 
@@ -151,53 +140,66 @@ def create_llm(backend: str, model: str = None):
     return llm, desc
 
 
-def run_full_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
-                      save_config: bool = False, show_progress: bool = True,
-                      save_analysis: bool = False):
+def run_new_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
+                     save_all: bool = False):
     """
-    运行完整的4-Agent管道
+    运行新的5-Agent管道 (Phase 2)
 
     Args:
         query: 用户查询
         llm: LLM接口
         llm_desc: LLM描述
         use_mock: 是否使用Mock模式
-        save_config: 是否保存配置
-        show_progress: 是否显示进度
-        save_analysis: 是否保存分析结果
+        save_all: 是否保存所有中间结果
 
     Returns:
         是否成功
     """
     from hydroagent.agents.intent_agent import IntentAgent
-    from hydroagent.agents.config_agent import ConfigAgent
+    from hydroagent.agents.task_planner import TaskPlanner
+    from hydroagent.agents.interpreter_agent import InterpreterAgent
     from hydroagent.agents.runner_agent import RunnerAgent
     from hydroagent.agents.developer_agent import DeveloperAgent
+    from hydroagent.core.prompt_pool import PromptPool
 
     workspace_dir = project_root / "results" / datetime.now().strftime("%Y%m%d_%H%M%S")
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
+    # 初始化5个Agents
     intent_agent = IntentAgent(llm_interface=llm)
-    config_agent = ConfigAgent(llm_interface=llm, workspace_dir=workspace_dir)
+
+    prompt_pool = PromptPool(pool_dir=workspace_dir / "prompt_pool")
+    task_planner = TaskPlanner(
+        llm_interface=llm,
+        prompt_pool=prompt_pool,
+        workspace_dir=workspace_dir
+    )
+
+    interpreter_agent = InterpreterAgent(
+        llm_interface=llm,
+        workspace_dir=workspace_dir
+    )
+
     runner_agent = RunnerAgent(
         llm_interface=llm,
         workspace_dir=workspace_dir,
-        show_progress=show_progress
+        show_progress=True
     )
+
     developer_agent = DeveloperAgent(
         llm_interface=llm,
         workspace_dir=workspace_dir,
         enable_code_gen=True
     )
 
-    print("✅ 4个Agents初始化完成\n")
+    print("✅ 5个Agents初始化完成 (IntentAgent, TaskPlanner, InterpreterAgent, RunnerAgent, DeveloperAgent)\n")
 
     total_start = time.time()
 
     # ========================================================================
-    # Step 1: IntentAgent - 意图分析
+    # Step 1: IntentAgent - 意图分析 & 任务决策
     # ========================================================================
-    print("🔍 [Step 1/4] IntentAgent - 分析用户意图...")
+    print("🔍 [Step 1/5] IntentAgent - 分析用户意图 & 决策任务类型...")
     intent_start = time.time()
 
     try:
@@ -210,20 +212,18 @@ def run_full_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
 
         print(f"✅ Intent分析完成 ({intent_elapsed:.1f}s)\n")
 
-        # 显示意图摘要（Phase 1增强版 - 包含task_type等新字段）
+        # 显示意图摘要
         intent_data = intent_result.get("intent_result", {})
         print("意图摘要:")
 
-        # 🆕 Task Type (Phase 1 enhancement)
         task_type = intent_data.get('task_type', 'N/A')
         print(f"  🎯 任务类型: {task_type}")
-
         print(f"  意图:      {intent_data.get('intent', 'N/A').upper()}")
         print(f"  模型:      {intent_data.get('model_name', 'N/A')}")
         print(f"  流域:      {intent_data.get('basin_id', 'N/A')}")
         print(f"  算法:      {intent_data.get('algorithm', 'SCE_UA')}")
 
-        # 🆕 显示额外信息（根据task_type）
+        # 任务类型特定信息
         if task_type == "iterative_optimization":
             strategy = intent_data.get('strategy', {})
             if strategy:
@@ -238,21 +238,14 @@ def run_full_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
             n_repeats = intent_data.get('n_repeats', 10)
             print(f"  🔁 重复次数: {n_repeats}")
 
-        elif task_type == "custom_data":
-            data_path = intent_data.get('data_source_path', 'N/A')
-            print(f"  📁 数据路径: {data_path}")
-
-        # 显示数据源（如果推断出来）
-        data_source = intent_data.get('data_source')
-        if data_source:
-            print(f"  📊 数据源:   {data_source}")
-
-        # 显示缺失信息（如果有）
-        missing = intent_data.get('missing_info', [])
-        if missing:
-            print(f"  ⚠️  缺失信息: {', '.join(missing)}")
-
         print()
+
+        # 保存
+        if save_all:
+            intent_file = workspace_dir / "intent_result.json"
+            with open(intent_file, 'w', encoding='utf-8') as f:
+                json.dump(intent_result, f, indent=2, ensure_ascii=False)
+            print(f"💾 Intent结果已保存: {intent_file}\n")
 
     except Exception as e:
         print(f"❌ Intent分析异常: {str(e)}")
@@ -260,92 +253,145 @@ def run_full_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
         return False
 
     # ========================================================================
-    # Step 2: ConfigAgent - 生成配置
+    # Step 2: TaskPlanner - 任务拆解 & 提示词生成
     # ========================================================================
-    print("⚙️  [Step 2/4] ConfigAgent - 生成hydromodel配置...")
-    config_start = time.time()
+    print("📋 [Step 2/5] TaskPlanner - 任务拆解 & 生成提示词...")
+    planner_start = time.time()
 
     try:
-        config_result = config_agent.process(intent_result)
-        config_elapsed = time.time() - config_start
+        planner_result = task_planner.process({"intent_result": intent_data})
+        planner_elapsed = time.time() - planner_start
 
-        if not config_result.get("success"):
-            print(f"❌ Config生成失败: {config_result.get('error')}")
+        if not planner_result.get("success"):
+            print(f"❌ 任务规划失败: {planner_result.get('error')}")
             return False
 
-        print(f"✅ Config生成完成 ({config_elapsed:.1f}s)\n")
+        print(f"✅ 任务规划完成 ({planner_elapsed:.1f}s)\n")
 
-        # 显示配置摘要
-        config_summary = config_result.get("config_summary", "")
-        print("配置摘要:")
-        print(config_summary)
+        # 显示任务计划
+        task_plan = planner_result.get("task_plan", {})
+        subtasks = task_plan.get("subtasks", [])
+        total_subtasks = task_plan.get("total_subtasks", 0)
+
+        print(f"任务计划: {total_subtasks} 个子任务")
+        for i, subtask in enumerate(subtasks, 1):
+            task_id = subtask["task_id"]
+            task_type = subtask["task_type"]
+            description = subtask["description"]
+            dependencies = subtask.get("dependencies", [])
+
+            print(f"  [{i}] {task_id}")
+            print(f"      类型: {task_type}")
+            print(f"      描述: {description}")
+            if dependencies:
+                print(f"      依赖: {', '.join(dependencies)}")
+
         print()
 
-        # 保存配置
-        if save_config:
-            config_file = workspace_dir / "generated_config.json"
-            with open(config_file, 'w', encoding='utf-8') as f:
-                json.dump(config_result.get("config", {}), f, indent=2, ensure_ascii=False)
-            print(f"💾 配置已保存: {config_file}\n")
+        # 保存
+        if save_all:
+            plan_file = workspace_dir / "task_plan.json"
+            with open(plan_file, 'w', encoding='utf-8') as f:
+                json.dump(planner_result, f, indent=2, ensure_ascii=False)
+            print(f"💾 任务计划已保存: {plan_file}\n")
 
     except Exception as e:
-        print(f"❌ Config生成异常: {str(e)}")
-        logger.error(f"Config生成异常: {str(e)}", exc_info=True)
+        print(f"❌ 任务规划异常: {str(e)}")
+        logger.error(f"任务规划异常: {str(e)}", exc_info=True)
         return False
 
     # ========================================================================
-    # Step 3: RunnerAgent - 执行hydromodel
+    # Step 3: InterpreterAgent - 为每个子任务生成配置
     # ========================================================================
-    print("🚀 [Step 3/4] RunnerAgent - 执行hydromodel...")
-    runner_start = time.time()
+    print("🔧 [Step 3/5] InterpreterAgent - 生成hydromodel配置...")
+    interpreter_start = time.time()
+
+    configs = []
 
     try:
-        if use_mock:
-            # Mock模式
-            print("   使用Mock模式（模拟执行）\n")
+        for i, subtask in enumerate(subtasks, 1):
+            task_id = subtask["task_id"]
+            print(f"  [{i}/{total_subtasks}] 生成配置: {task_id}...")
 
-            mock_result = {
-                "best_params": {"x1": 350.0, "x2": 0.5, "x3": 100.0, "x4": 2.0},
-                "metrics": {"NSE": 0.85, "RMSE": 2.5, "KGE": 0.82, "PBIAS": 5.2},
-                "output_files": ["results/calibrated_params.json"]
-            }
+            interpreter_result = interpreter_agent.process({
+                "subtask": subtask,
+                "intent_result": intent_data
+            })
 
-            # 创建模拟的hydromodel模块
-            mock_hydromodel = MagicMock()
-            mock_hydromodel.calibrate = Mock(return_value=mock_result)
-            mock_hydromodel.evaluate = Mock(return_value=mock_result)
+            if not interpreter_result.get("success"):
+                print(f"❌ 配置生成失败 ({task_id}): {interpreter_result.get('error')}")
+                return False
 
-            with patch.dict('sys.modules', {'hydromodel': mock_hydromodel}):
+            configs.append(interpreter_result)
+            print(f"      ✅ 配置已生成")
+
+        interpreter_elapsed = time.time() - interpreter_start
+        print(f"\n✅ 所有配置生成完成 ({interpreter_elapsed:.1f}s)\n")
+
+        # 保存
+        if save_all:
+            for i, config_result in enumerate(configs, 1):
+                config_file = workspace_dir / f"config_{i}.json"
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(config_result.get("config", {}), f, indent=2, ensure_ascii=False)
+            print(f"💾 配置已保存到 {workspace_dir}\n")
+
+    except Exception as e:
+        print(f"❌ 配置生成异常: {str(e)}")
+        logger.error(f"配置生成异常: {str(e)}", exc_info=True)
+        return False
+
+    # ========================================================================
+    # Step 4: RunnerAgent - 执行子任务
+    # ========================================================================
+    print("🚀 [Step 4/5] RunnerAgent - 执行hydromodel...")
+    runner_start = time.time()
+
+    execution_results = []
+
+    try:
+        for i, config_result in enumerate(configs, 1):
+            task_id = config_result.get("task_id", f"task_{i}")
+            print(f"  [{i}/{total_subtasks}] 执行任务: {task_id}...")
+
+            if use_mock:
+                # Mock模式
+                print(f"      使用Mock模式")
+
+                mock_result = {
+                    "best_params": {"x1": 350.0, "x2": 0.5, "x3": 100.0, "x4": 2.0},
+                    "metrics": {"NSE": 0.85, "RMSE": 2.5, "KGE": 0.82, "PBIAS": 5.2},
+                    "output_files": ["results/calibrated_params.json"]
+                }
+
+                # 创建模拟的hydromodel模块
+                mock_hydromodel = MagicMock()
+                mock_hydromodel.calibrate = Mock(return_value=mock_result)
+                mock_hydromodel.evaluate = Mock(return_value=mock_result)
+
+                with patch.dict('sys.modules', {'hydromodel': mock_hydromodel}):
+                    runner_result = runner_agent.process(config_result)
+
+            else:
+                # 真实模式
                 runner_result = runner_agent.process(config_result)
 
-        else:
-            # 真实模式
-            print("   调用真实hydromodel API\n")
-            runner_result = runner_agent.process(config_result)
+            if not runner_result.get("success"):
+                print(f"❌ 执行失败 ({task_id}): {runner_result.get('error')}")
+                return False
+
+            execution_results.append(runner_result)
+            print(f"      ✅ 执行完成")
+
+            # 显示关键指标
+            result_data = runner_result.get("result", {})
+            metrics = result_data.get("metrics", {})
+            if metrics and "NSE" in metrics:
+                nse = metrics["NSE"]
+                print(f"      NSE: {nse:.4f}")
 
         runner_elapsed = time.time() - runner_start
-
-        if not runner_result.get("success"):
-            print(f"❌ 执行失败: {runner_result.get('error')}")
-            if traceback := runner_result.get('traceback'):
-                print(f"\n错误详情:\n{traceback}")
-            return False
-
-        print(f"✅ 执行完成 ({runner_elapsed:.1f}s)\n")
-
-        # 显示执行结果
-        result_data = runner_result.get("result", {})
-        metrics = result_data.get("metrics", {})
-        if metrics:
-            print("执行结果:")
-            print("  性能指标:")
-            for key, value in metrics.items():
-                print(f"    {key}: {value}")
-        if best_params := result_data.get("best_params"):
-            print("  最优参数:")
-            for key, value in best_params.items():
-                print(f"    {key}: {value}")
-        print()
+        print(f"\n✅ 所有任务执行完成 ({runner_elapsed:.1f}s)\n")
 
     except Exception as e:
         print(f"❌ Runner执行异常: {str(e)}")
@@ -353,14 +399,16 @@ def run_full_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
         return False
 
     # ========================================================================
-    # Step 4: DeveloperAgent - 结果分析
+    # Step 5: DeveloperAgent - 结果分析
     # ========================================================================
-    print("📊 [Step 4/4] DeveloperAgent - 分析结果...")
+    print("📊 [Step 5/5] DeveloperAgent - 分析结果...")
     developer_start = time.time()
 
     try:
-        # DeveloperAgent自动接收RunnerAgent输出
-        developer_result = developer_agent.process(runner_result)
+        # 合并所有执行结果（简化版，实际可能需要更复杂的合并逻辑）
+        combined_result = execution_results[0] if execution_results else {}
+
+        developer_result = developer_agent.process(combined_result)
         developer_elapsed = time.time() - developer_start
 
         if not developer_result.get("success"):
@@ -395,17 +443,10 @@ def run_full_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
             for i, rec in enumerate(analysis["recommendations"], 1):
                 print(f"  {i}. {rec}")
 
-        # 执行日志摘要
-        if "execution_summary" in analysis:
-            exec_sum = analysis["execution_summary"]
-            print(f"\n📝 执行日志:")
-            print(f"  输出行数: {exec_sum.get('stdout_lines', 0)}")
-            print(f"  错误行数: {exec_sum.get('stderr_lines', 0)}")
-
         print("\n" + "=" * 70)
 
-        # 保存分析结果
-        if save_analysis:
+        # 保存
+        if save_all:
             analysis_file = workspace_dir / "analysis_report.json"
             with open(analysis_file, 'w', encoding='utf-8') as f:
                 json.dump(developer_result, f, indent=2, ensure_ascii=False)
@@ -422,18 +463,26 @@ def run_full_pipeline(query: str, llm, llm_desc: str, use_mock: bool = False,
     total_elapsed = time.time() - total_start
 
     print("\n" + "=" * 70)
-    print("✅ 完整4-Agent管道执行成功!")
+    print("✅ 新5-Agent管道执行成功! (Phase 2)")
     print("=" * 70)
     print()
     print("时间统计:")
-    print(f"  Intent分析: {intent_elapsed:.1f}s")
-    print(f"  Config生成: {config_elapsed:.1f}s")
-    print(f"  Runner执行: {runner_elapsed:.1f}s")
-    print(f"  Developer分析: {developer_elapsed:.1f}s")
-    print(f"  总计时间:   {total_elapsed:.1f}s")
+    print(f"  Intent分析:        {intent_elapsed:.1f}s")
+    print(f"  TaskPlanner:       {planner_elapsed:.1f}s")
+    print(f"  InterpreterAgent:  {interpreter_elapsed:.1f}s")
+    print(f"  Runner执行:        {runner_elapsed:.1f}s")
+    print(f"  Developer分析:     {developer_elapsed:.1f}s")
+    print(f"  总计时间:          {total_elapsed:.1f}s")
     print()
     print(f"工作目录: {workspace_dir}")
     print(f"日志文件: {log_file}")
+    print()
+    print("🎉 Phase 2 架构验证成功!")
+    print("   - IntentAgent: 战略决策 (task_type)")
+    print("   - TaskPlanner: 战术拆解 (subtasks + prompts)")
+    print("   - InterpreterAgent: 配置生成 (LLM-driven)")
+    print("   - RunnerAgent: 执行")
+    print("   - DeveloperAgent: 分析")
     print("=" * 70)
 
     return True
@@ -453,15 +502,13 @@ def main():
         print(f"❌ LLM初始化失败: {str(e)}")
         return 1
 
-    # 运行完整管道
-    success = run_full_pipeline(
+    # 运行新管道
+    success = run_new_pipeline(
         query=args.query,
         llm=llm,
         llm_desc=llm_desc,
         use_mock=args.mock,
-        save_config=args.save_config,
-        show_progress=not args.no_progress,
-        save_analysis=args.save_analysis
+        save_all=args.save_all
     )
 
     return 0 if success else 1
