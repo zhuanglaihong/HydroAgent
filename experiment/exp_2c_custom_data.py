@@ -18,6 +18,7 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 
 import sys
 from pathlib import Path
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -26,11 +27,12 @@ import argparse
 
 QUERY = "用我 D 盘 my_data 文件夹里的数据跑一下模型"
 
+
 def main():
-    parser = argparse.ArgumentParser(description='实验2C：自定义数据路径')
-    parser.add_argument('--backend', type=str, default='api', choices=['ollama', 'api'])
-    parser.add_argument('--model', type=str, default=None)
-    parser.add_argument('--mock', action='store_true')
+    parser = argparse.ArgumentParser(description="实验2C：自定义数据路径")
+    parser.add_argument("--backend", type=str, default="api", choices=["ollama", "api"])
+    parser.add_argument("--model", type=str, default=None)
+    parser.add_argument("--mock", action="store_true")
     args = parser.parse_args()
 
     log_file = setup_logging("exp_2c_custom_data")
@@ -43,11 +45,13 @@ def main():
 
     # 临时修改查询
     import exp_1_standard_calibration
+
     original_run = exp_1_standard_calibration.run_experiment
 
     def modified_run(llm, use_mock):
         # 修改查询
         import hydroagent.agents.intent_agent
+
         original_process = hydroagent.agents.intent_agent.IntentAgent.process
 
         def custom_process(self, input_data):
@@ -63,6 +67,7 @@ def main():
 
     exp_1_standard_calibration.run_experiment = modified_run
     return base_main()
+
 
 if __name__ == "__main__":
     sys.exit(main())

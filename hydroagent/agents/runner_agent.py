@@ -859,104 +859,233 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         parameters: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        检查参数边界并重新率定（实验3）。
-        Check parameter boundaries and recalibrate if needed (Experiment 3).
+        检查参数边界并重新率定（实验3 - 迭代优化版本）。
+        Check parameter boundaries and recalibrate iteratively (Experiment 3).
 
         Args:
             config: 配置字典
             parameters: 任务参数
                 - boundary_threshold: 边界阈值（默认0.05）
-                - phase: 当前阶段（phase1或phase2）
+                - nse_threshold: NSE达标阈值（默认0.5）
+                - max_iterations: 最大迭代次数（默认5）
+                - min_nse_improvement: 最小NSE改善幅度（默认0.01）
+                - initial_range_scale: 初始缩放比例（默认0.6）
 
         Returns:
-            边界检查和重新率定结果
+            迭代优化结果
         """
-        logger.info("[RunnerAgent] 开始边界检查...")
+        logger.info("[RunnerAgent] 开始自适应迭代率定...")
 
-        phase = parameters.get("phase", "boundary_aware")
-        boundary_threshold = parameters.get("boundary_threshold", 0.05)
+        # 迭代控制参数
+        max_iterations = parameters.get("max_iterations", 5)
+        nse_threshold = parameters.get("nse_threshold", 0.5)
+        min_nse_improvement = parameters.get("min_nse_improvement", 0.01)
+        initial_range_scale = parameters.get("initial_range_scale", 0.6)
 
-        # 首先读取Phase 1的率定结果
+        logger.info(f"[RunnerAgent] 迭代配置:")
+        logger.info(f"  - 最大迭代次数: {max_iterations}")
+        logger.info(f"  - NSE达标阈值: {nse_threshold}")
+        logger.info(f"  - 最小改善幅度: {min_nse_improvement}")
+        logger.info(f"  - 初始缩放比例: {initial_range_scale}")
+
         try:
             from pathlib import Path
             import json
 
-            # 假设Phase 1结果保存在workspace_dir/task_1_phase1
-            # 实际应该从前置任务的结果中获取
-            workspace_dir = Path(config.get("training_cfgs", {}).get("output_dir", "."))
-            phase1_dir = workspace_dir.parent / "task_1_phase1"
+            # 执行初始率定（Iteration 0）
+            logger.info("\n" + "=" * 70)
+            logger.info("🚀 Iteration 0: 初始率定（使用默认参数范围）")
+            logger.info("=" * 70)
 
-            logger.info(f"[RunnerAgent] 检查Phase 1结果: {phase1_dir}")
+            initial_result = self._run_calibration(config)
 
-            if not phase1_dir.exists():
-                logger.warning(f"[RunnerAgent] Phase 1结果不存在: {phase1_dir}")
+            if not initial_result.get("status") == "success":
+                logger.error("[RunnerAgent] 初始率定失败")
                 return {
-                    "status": "skipped",
-                    "reason": "Phase 1 results not found",
-                    "need_recalibration": False
+                    "status": "initial_calibration_failed",
+                    "error": "Initial calibration failed",
+                    "iterations": []
                 }
 
-            # 读取Phase 1的最优参数
-            param_file = phase1_dir / "calibration_results.json"
-            if not param_file.exists():
-                logger.warning(f"[RunnerAgent] 参数文件不存在: {param_file}")
+            # 获取初始NSE
+            initial_nse = initial_result.get("metrics", {}).get("NSE", 0.0)
+            initial_calib_dir = initial_result.get("calibration_dir")
+
+            logger.info(f"✅ 初始率定完成: NSE={initial_nse:.4f}")
+            logger.info(f"   率定目录: {initial_calib_dir}")
+
+            # 迭代历史
+            iteration_history = [{
+                "iteration": 0,
+                "nse": initial_nse,
+                "calibration_dir": initial_calib_dir,
+                "range_scale": None,
+                "metrics": initial_result.get("metrics", {}),
+                "status": "completed"
+            }]
+
+            # 检查是否已经达标
+            if initial_nse >= nse_threshold:
+                logger.info(f"🎉 初始NSE={initial_nse:.4f} 已达标（>= {nse_threshold}），无需迭代优化")
                 return {
-                    "status": "skipped",
-                    "reason": "Parameter file not found",
-                    "need_recalibration": False
+                    "status": "already_optimal",
+                    "iterations": iteration_history,
+                    "total_iterations": 0,
+                    "final_nse": initial_nse,
+                    "final_metrics": initial_result.get("metrics", {}),
+                    "message": f"Initial NSE {initial_nse:.4f} already meets threshold {nse_threshold}"
                 }
 
-            with open(param_file, 'r', encoding='utf-8') as f:
-                phase1_result = json.load(f)
+            # 开始迭代优化
+            best_nse = initial_nse
+            best_iteration = 0
+            prev_calib_dir = initial_calib_dir
+            consecutive_no_improvement = 0
 
-            best_params = phase1_result.get("best_params", {})
-            logger.info(f"[RunnerAgent] Phase 1最优参数: {best_params}")
+            for iteration in range(1, max_iterations + 1):
+                logger.info("\n" + "=" * 70)
+                logger.info(f"🔄 Iteration {iteration}/{max_iterations}: 自适应范围调整")
+                logger.info("=" * 70)
 
-            # 检查参数是否接近边界
-            # 这需要从hydromodel获取参数范围
-            # 简化实现：假设所有参数范围为[0, 1]
-            boundary_params = []
-            for param_name, param_value in best_params.items():
-                if isinstance(param_value, (int, float)):
-                    # 检查是否接近0或1（假设标准化范围）
-                    if param_value < boundary_threshold or param_value > (1 - boundary_threshold):
-                        boundary_params.append({
-                            "name": param_name,
-                            "value": param_value,
-                            "near_boundary": "lower" if param_value < boundary_threshold else "upper"
-                        })
-                        logger.warning(f"[RunnerAgent] 参数 {param_name}={param_value} 接近边界")
+                # 动态计算 range_scale（逐渐缩小）
+                # 策略: 0.6 -> 0.4 -> 0.3 -> 0.2 -> 0.15
+                range_scale = initial_range_scale * (0.7 ** iteration)
+                range_scale = max(range_scale, 0.1)  # 最小不低于10%
 
-            # 如果有参数接近边界，执行重新率定
-            if boundary_params:
-                logger.info(f"[RunnerAgent] 发现 {len(boundary_params)} 个边界参数，执行重新率定")
+                logger.info(f"📏 当前缩放比例: {range_scale:.2%} (第{iteration}次迭代)")
 
-                # 调整参数范围（扩展边界）
-                # 这里需要修改config中的param_range_file或直接修改参数范围
-                # 简化实现：直接执行率定，假设hydromodel会自动处理
-                logger.info("[RunnerAgent] 执行Phase 2率定...")
-                recalib_result = self._run_calibration(config)
+                # 调整参数范围
+                logger.info(f"📂 基于上次结果调整范围: {prev_calib_dir}")
 
+                adjust_result = self.adjust_param_range_from_previous_calibration(
+                    prev_calibration_dir=prev_calib_dir,
+                    range_scale=range_scale,
+                    output_yaml_path=str(Path(self.workspace_dir) / f"param_range_iter{iteration}.yaml") if self.workspace_dir else None
+                )
+
+                if not adjust_result["success"]:
+                    logger.error(f"❌ 参数范围调整失败: {adjust_result.get('error')}")
+                    iteration_history.append({
+                        "iteration": iteration,
+                        "nse": None,
+                        "range_scale": range_scale,
+                        "status": "adjustment_failed",
+                        "error": adjust_result.get("error")
+                    })
+                    break
+
+                logger.info(f"✅ 参数范围调整完成: {adjust_result['output_file']}")
+
+                # 更新config，使用新的参数范围文件
+                new_config = config.copy()
+                new_config["model_cfgs"] = config["model_cfgs"].copy()
+                new_config["model_cfgs"]["param_range_file"] = adjust_result["output_file"]
+
+                # 执行率定
+                logger.info(f"🚀 执行第 {iteration} 次率定...")
+                iter_result = self._run_calibration(new_config)
+
+                if not iter_result.get("status") == "success":
+                    logger.error(f"❌ 第 {iteration} 次率定失败")
+                    iteration_history.append({
+                        "iteration": iteration,
+                        "nse": None,
+                        "range_scale": range_scale,
+                        "status": "calibration_failed",
+                        "error": "Calibration execution failed"
+                    })
+                    break
+
+                # 获取本次NSE
+                current_nse = iter_result.get("metrics", {}).get("NSE", 0.0)
+                current_calib_dir = iter_result.get("calibration_dir")
+
+                logger.info(f"📊 第 {iteration} 次率定完成: NSE={current_nse:.4f}")
+                logger.info(f"   率定目录: {current_calib_dir}")
+
+                # 记录历史
+                iteration_history.append({
+                    "iteration": iteration,
+                    "nse": current_nse,
+                    "nse_improvement": current_nse - best_nse,
+                    "calibration_dir": current_calib_dir,
+                    "range_scale": range_scale,
+                    "metrics": iter_result.get("metrics", {}),
+                    "param_range_adjustment": adjust_result,
+                    "status": "completed"
+                })
+
+                # 判断是否改善
+                nse_improvement = current_nse - best_nse
+
+                if nse_improvement > min_nse_improvement:
+                    logger.info(f"✅ NSE改善: {best_nse:.4f} -> {current_nse:.4f} (+{nse_improvement:.4f})")
+                    best_nse = current_nse
+                    best_iteration = iteration
+                    prev_calib_dir = current_calib_dir
+                    consecutive_no_improvement = 0
+
+                    # 检查是否达标
+                    if current_nse >= nse_threshold:
+                        logger.info(f"🎉 NSE={current_nse:.4f} 已达标（>= {nse_threshold}），停止迭代")
+                        return {
+                            "status": "converged",
+                            "iterations": iteration_history,
+                            "total_iterations": iteration,
+                            "best_iteration": best_iteration,
+                            "final_nse": current_nse,
+                            "final_metrics": iter_result.get("metrics", {}),
+                            "message": f"Converged at iteration {iteration} with NSE {current_nse:.4f}"
+                        }
+                else:
+                    consecutive_no_improvement += 1
+                    logger.warning(f"⚠️  NSE无改善或下降: {best_nse:.4f} -> {current_nse:.4f} ({nse_improvement:+.4f})")
+                    logger.warning(f"   连续无改善次数: {consecutive_no_improvement}")
+
+                    # 连续2次无改善，提前停止
+                    if consecutive_no_improvement >= 2:
+                        logger.warning(f"⛔ 连续 {consecutive_no_improvement} 次无改善，提前停止迭代")
+                        logger.warning(f"   建议人工检查参数范围或模型设置")
+                        return {
+                            "status": "no_improvement",
+                            "iterations": iteration_history,
+                            "total_iterations": iteration,
+                            "best_iteration": best_iteration,
+                            "final_nse": best_nse,
+                            "final_metrics": iteration_history[best_iteration]["metrics"],
+                            "message": f"No improvement after {consecutive_no_improvement} iterations. Best NSE: {best_nse:.4f} at iteration {best_iteration}",
+                            "recommendation": "建议人工设置更合理的参数范围或检查模型配置"
+                        }
+
+            # 达到最大迭代次数
+            logger.warning(f"⚠️  达到最大迭代次数 {max_iterations}，停止")
+            logger.info(f"   最佳NSE: {best_nse:.4f} (第{best_iteration}次迭代)")
+
+            if best_nse < nse_threshold:
+                logger.warning(f"   未达标（< {nse_threshold}），建议人工介入")
                 return {
-                    "status": "recalibrated",
-                    "boundary_params": boundary_params,
-                    "need_recalibration": True,
-                    "phase1_params": best_params,
-                    "phase2_result": recalib_result,
-                    "metrics": recalib_result.get("metrics", {})
+                    "status": "max_iterations_reached",
+                    "iterations": iteration_history,
+                    "total_iterations": max_iterations,
+                    "best_iteration": best_iteration,
+                    "final_nse": best_nse,
+                    "final_metrics": iteration_history[best_iteration]["metrics"],
+                    "message": f"Reached max iterations. Best NSE: {best_nse:.4f} at iteration {best_iteration}",
+                    "recommendation": "建议人工设置更合理的参数范围或检查模型配置"
                 }
             else:
-                logger.info("[RunnerAgent] 没有参数接近边界，跳过重新率定")
                 return {
-                    "status": "no_recalibration_needed",
-                    "boundary_params": [],
-                    "need_recalibration": False,
-                    "phase1_params": best_params,
-                    "metrics": phase1_result.get("metrics", {})
+                    "status": "converged_at_max",
+                    "iterations": iteration_history,
+                    "total_iterations": max_iterations,
+                    "best_iteration": best_iteration,
+                    "final_nse": best_nse,
+                    "final_metrics": iteration_history[best_iteration]["metrics"],
+                    "message": f"Converged at max iterations. Best NSE: {best_nse:.4f}"
                 }
 
         except Exception as e:
-            logger.error(f"[RunnerAgent] 边界检查失败: {str(e)}", exc_info=True)
+            logger.error(f"[RunnerAgent] 迭代优化失败: {str(e)}", exc_info=True)
             raise
 
     def _run_statistical_analysis(
@@ -1118,3 +1247,165 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             "model_name": model_name,
             "message": "自定义分析需要DeveloperAgent生成代码"
         }
+
+    # ========================================================================
+    # 智能参数范围调整工具
+    # ========================================================================
+
+    def adjust_param_range_from_previous_calibration(
+        self,
+        prev_calibration_dir: str,
+        range_scale: float = 0.6,
+        output_yaml_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        从上一次率定结果中智能调整参数范围。
+
+        核心思路:
+        1. 读取上一次的参数范围 (param_range.yaml)
+        2. 读取上一次的最佳参数 (basins_denorm_params.csv，注意是反归一化的)
+        3. 以最佳参数为中心点，缩小搜索范围（例如原范围长度 * 60%）
+        4. 保持物理意义，确保新范围在合理区间内
+        5. 生成新的 param_range.yaml
+
+        Args:
+            prev_calibration_dir: 上一次率定结果目录
+                例如: "results/20251121_211408/gr4j_SCE_UA_20251121_211414"
+            range_scale: 新范围长度占原范围长度的比例（默认0.6，即60%）
+            output_yaml_path: 输出的新参数范围YAML文件路径（可选）
+
+        Returns:
+            调整后的参数范围信息
+            {
+                "success": True/False,
+                "prev_param_range": {...},  # 上一次的参数范围
+                "best_params": {...},       # 最佳参数（反归一化）
+                "new_param_range": {...},   # 新的参数范围
+                "output_file": "path/to/new_param_range.yaml"
+            }
+        """
+        logger.info(f"[RunnerAgent] 开始智能参数范围调整")
+        logger.info(f"[RunnerAgent] 读取上一次率定结果: {prev_calibration_dir}")
+        logger.info(f"[RunnerAgent] 范围缩放比例: {range_scale}")
+
+        try:
+            from pathlib import Path
+            import yaml
+            import pandas as pd
+
+            prev_dir = Path(prev_calibration_dir)
+
+            # 1. 读取上一次的参数范围
+            param_range_file = prev_dir / "param_range.yaml"
+            if not param_range_file.exists():
+                logger.error(f"[RunnerAgent] 参数范围文件不存在: {param_range_file}")
+                return {
+                    "success": False,
+                    "error": f"param_range.yaml not found in {prev_dir}"
+                }
+
+            with open(param_range_file, 'r', encoding='utf-8') as f:
+                prev_param_range = yaml.safe_load(f)
+
+            logger.info(f"[RunnerAgent] 上一次参数范围: {prev_param_range}")
+
+            # 2. 读取最佳参数（反归一化）
+            best_params_file = prev_dir / "basins_denorm_params.csv"
+            if not best_params_file.exists():
+                logger.error(f"[RunnerAgent] 最佳参数文件不存在: {best_params_file}")
+                return {
+                    "success": False,
+                    "error": f"basins_denorm_params.csv not found in {prev_dir}"
+                }
+
+            # 读取CSV（通常第一列是basin_id，其余是参数）
+            df = pd.read_csv(best_params_file)
+            logger.info(f"[RunnerAgent] basins_denorm_params.csv columns: {df.columns.tolist()}")
+
+            # 提取第一个流域的参数
+            # 假设格式: basin_id, x1, x2, x3, x4, ...
+            if len(df) == 0:
+                logger.error("[RunnerAgent] basins_denorm_params.csv 是空的")
+                return {"success": False, "error": "Empty parameter file"}
+
+            # 获取第一行（第一个流域）
+            param_row = df.iloc[0]
+            # 假设第一列是 basin_id 或类似的标识符，其余是参数
+            param_columns = [col for col in df.columns if col not in ['basin_id', 'basin', 'id']]
+            best_params = {col: param_row[col] for col in param_columns}
+
+            logger.info(f"[RunnerAgent] 最佳参数（反归一化）: {best_params}")
+
+            # 3. 计算新的参数范围
+            # 格式: {param_name: [min, max]}
+            new_param_range = {}
+
+            for param_name, best_value in best_params.items():
+                if param_name not in prev_param_range:
+                    logger.warning(f"[RunnerAgent] 参数 {param_name} 不在 param_range.yaml 中，跳过")
+                    continue
+
+                prev_range = prev_param_range[param_name]
+                if not isinstance(prev_range, (list, tuple)) or len(prev_range) != 2:
+                    logger.warning(f"[RunnerAgent] 参数 {param_name} 的范围格式不正确: {prev_range}")
+                    continue
+
+                prev_min, prev_max = prev_range
+                prev_length = prev_max - prev_min
+
+                # 新范围长度 = 原范围长度 * range_scale
+                new_length = prev_length * range_scale
+
+                # 以最佳参数为中心点
+                new_min = best_value - new_length / 2
+                new_max = best_value + new_length / 2
+
+                # 确保不超出原始范围（保持物理意义）
+                # 同时确保不超出合理的物理范围（例如参数不能为负）
+                new_min = max(new_min, prev_min)
+                new_max = min(new_max, prev_max)
+
+                # 如果最佳值接近边界，调整范围
+                if new_min == prev_min:
+                    # 最佳值在下边界附近，向上扩展
+                    new_max = min(new_min + new_length, prev_max)
+                if new_max == prev_max:
+                    # 最佳值在上边界附近，向下扩展
+                    new_min = max(new_max - new_length, prev_min)
+
+                new_param_range[param_name] = [float(new_min), float(new_max)]
+
+                logger.info(f"[RunnerAgent] 参数 {param_name}:")
+                logger.info(f"  原范围: [{prev_min}, {prev_max}] (长度: {prev_length})")
+                logger.info(f"  最佳值: {best_value}")
+                logger.info(f"  新范围: [{new_min:.4f}, {new_max:.4f}] (长度: {new_max - new_min:.4f})")
+
+            # 4. 保存新的参数范围
+            if output_yaml_path is None:
+                # 默认保存在当前工作目录
+                output_yaml_path = self.workspace_dir / "adjusted_param_range.yaml" if self.workspace_dir else Path("adjusted_param_range.yaml")
+            else:
+                output_yaml_path = Path(output_yaml_path)
+
+            output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(output_yaml_path, 'w', encoding='utf-8') as f:
+                yaml.dump(new_param_range, f, default_flow_style=False, allow_unicode=True)
+
+            logger.info(f"[RunnerAgent] 新参数范围已保存: {output_yaml_path}")
+
+            return {
+                "success": True,
+                "prev_param_range": prev_param_range,
+                "best_params": best_params,
+                "new_param_range": new_param_range,
+                "output_file": str(output_yaml_path),
+                "scale": range_scale
+            }
+
+        except Exception as e:
+            logger.error(f"[RunnerAgent] 参数范围调整失败: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }

@@ -35,6 +35,8 @@ HydroAgent 采用四层智能体架构，每个智能体专注于特定任务：
    - 📊 自动分析率定和评估结果
    - 💡 提供模型性能诊断和改进建议
    - 📝 生成可读的分析报告
+   - 🆕 **代码生成能力**（实验4）
+   - 🆕 **双LLM模式**（通用模型+代码专用模型）
 
 ### ✨ 智能化功能
 
@@ -44,6 +46,8 @@ HydroAgent 采用四层智能体架构，每个智能体专注于特定任务：
 - **📉 智能输出过滤**：终端只显示关键信息，完整日志保存到文件
 - **🔌 多后端支持**：Ollama本地模型 / 通义千问API / OpenAI API
 - **📦 模块化设计**：清晰的代码结构，易于扩展
+- **🆕 自适应迭代优化**：自动调整参数范围，逐步提升精度（实验3）
+- **🆕 智能代码生成**：超出hydromodel功能时自动生成Python脚本（实验4）
 
 ---
 
@@ -163,6 +167,81 @@ SCE-UA Progress: 100%|███████████| 500/500 [02:15<00:00, 3
 ```bash
 python scripts/run_developer_agent_pipeline.py --backend api "率定并评估XAJ模型，流域01013500"
 ```
+
+---
+
+## 🧪 实验功能
+
+### 实验3：自适应迭代优化
+
+**功能**：自动调整参数范围，逐步提升率定精度
+
+```bash
+# 运行实验3
+python experiment/exp_3_iterative_optimization.py --backend api --mock
+```
+
+**查询示例**：
+```
+"率定流域 01013500，如果参数收敛到边界，自动调整范围重新率定"
+```
+
+**执行流程**：
+```
+Iteration 0: 初始率定（默认参数范围）→ NSE=0.42
+Iteration 1: 调整范围至60% → NSE=0.48 ✅ 改善
+Iteration 2: 调整范围至42% → NSE=0.51 ✅ 达标，停止
+```
+
+**特性**：
+- ✅ 动态缩放（60% → 42% → 29% → ...）
+- ✅ 智能停止（NSE达标 / 连续无改善 / 达到上限）
+- ✅ 以最佳参数为中心缩小搜索
+- ✅ 保持物理意义
+
+---
+
+### 实验4：智能代码生成
+
+**功能**：自动生成Python脚本处理hydromodel不支持的分析需求
+
+```bash
+# API模式（使用代码专用模型）
+python experiment/exp_4_extended_analysis.py --backend api --model qwen-turbo --code-model qwen-coder-turbo --mock
+
+# Ollama模式（使用本地代码模型）
+python experiment/exp_4_extended_analysis.py --backend ollama --model qwen3:8b --code-model deepseek-coder:6.7b --mock
+```
+
+**查询示例**：
+```
+"率定完成后，请帮我计算流域的径流系数，并画一张流路历时曲线 FDC"
+```
+
+**双LLM架构**：
+```
+通用LLM (qwen-turbo / qwen3:8b)
+  ↓ 思考：需要生成代码计算径流系数和FDC
+代码专用LLM (qwen-coder-turbo / deepseek-coder:6.7b)
+  ↓ 生成：完整的Python脚本
+输出：
+  - runoff_coefficient_analysis.py
+  - plot_fdc.py
+  - runoff_coefficient.csv
+  - fdc_curve.png
+```
+
+**支持的分析**：
+- ✅ 径流系数 (Runoff Coefficient)
+- ✅ 流量历时曲线 (Flow Duration Curve)
+- ✅ 自定义水文指标
+- ✅ 数据可视化
+
+**代码质量**：
+- Type hints 和详细注释
+- 错误处理机制
+- 进度提示
+- 结果自动保存
 
 ---
 

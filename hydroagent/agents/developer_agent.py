@@ -43,16 +43,20 @@ class DeveloperAgent(BaseAgent):
         workspace_dir: Optional[Path] = None,
         enable_code_gen: bool = True,
         use_dynamic_prompt: bool = True,
+        code_llm_interface: Optional[LLMInterface] = None,
         **kwargs
     ):
         """
         Initialize DeveloperAgent.
 
         Args:
-            llm_interface: LLM API interface
+            llm_interface: LLM API interface for general tasks (思考、分析)
             workspace_dir: Working directory
             enable_code_gen: Enable code generation capability
             use_dynamic_prompt: Use dynamic prompt management system
+            code_llm_interface: Optional LLM interface for code generation (代码生成专用)
+                If provided, will use this for code generation tasks
+                Examples: qwen-coder-turbo, deepseek-coder:6.7b
             **kwargs: Additional configuration
         """
         super().__init__(
@@ -64,6 +68,13 @@ class DeveloperAgent(BaseAgent):
 
         self.enable_code_gen = enable_code_gen
         self.use_dynamic_prompt = use_dynamic_prompt
+
+        # 🆕 代码专用LLM（如果提供）
+        self.code_llm = code_llm_interface if code_llm_interface else llm_interface
+        if code_llm_interface:
+            logger.info(f"[DeveloperAgent] 使用专用代码模型: {code_llm_interface.model_name}")
+        else:
+            logger.info(f"[DeveloperAgent] 使用通用模型进行代码生成: {llm_interface.model_name}")
 
         # Initialize PromptManager for dynamic prompts
         if self.use_dynamic_prompt:
@@ -601,8 +612,8 @@ Format: Return a JSON array of recommendation strings."""
 
     def _generate_code(self, task_description: str, workspace_dir: Path) -> Dict[str, Any]:
         """
-        Generate Python code for custom tasks (Experiment 3).
-        为自定义任务生成 Python 代码（实验3）。
+        Generate Python code for custom tasks (Experiment 4).
+        为自定义任务生成 Python 代码（实验4）。
 
         Args:
             task_description: Description of what code should do
@@ -611,23 +622,53 @@ Format: Return a JSON array of recommendation strings."""
         Returns:
             Code generation result
         """
-        logger.info(f"[DeveloperAgent] Generating code for: {task_description}")
+        logger.info(f"[DeveloperAgent] 生成代码任务: {task_description}")
+        logger.info(f"[DeveloperAgent] 使用代码模型: {self.code_llm.model_name}")
 
-        user_prompt = f"""Generate a complete Python script for this task:
+        system_prompt = """你是一个专业的Python代码生成助手，擅长编写水文数据分析和可视化代码。
 
-Task: {task_description}
+你的任务：
+1. 生成完整可运行的Python脚本
+2. 使用hydromodel、hydrodataset、pandas、numpy、matplotlib等常用库
+3. 包含详细的注释和错误处理
+4. 生成的图表要清晰美观
+5. 将结果保存到文件
 
-Requirements:
-1. Use hydromodel API if applicable
-2. Include proper error handling
-3. Add comments explaining the code
-4. Save results to files
-5. Print progress messages
+代码风格：
+- 使用type hints
+- 遵循PEP 8规范
+- 添加docstring
+- 包含进度提示
 
-Return the complete Python code as a string."""
+输出格式：
+只返回Python代码，不要包含任何解释文字。代码应该直接可以执行。"""
+
+        user_prompt = f"""请为以下任务生成Python代码：
+
+任务描述：{task_description}
+
+常见任务参考：
+- 计算径流系数：Runoff Coefficient = Total Runoff / Total Precipitation
+- 绘制流量历时曲线（FDC）：对流量数据排序，计算累积频率，绘制图表
+- 分析水文指标：使用hydromodel或pandas计算各种统计指标
+
+生成的代码应该：
+1. 从calibration_results.json或NetCDF文件读取数据
+2. 进行必要的计算和分析
+3. 生成可视化图表（如果需要）
+4. 将结果保存为CSV或图片文件
+5. 打印清晰的进度和结果信息
+
+请生成完整的Python代码："""
 
         try:
-            code = self.call_llm(user_prompt, temperature=0.3)
+            # 🆕 使用代码专用LLM
+            code = self.code_llm.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.1,  # 代码生成使用低温度以确保准确性
+                max_tokens=2000
+            )
 
             # Extract code from response (remove markdown formatting if present)
             if "```python" in code:

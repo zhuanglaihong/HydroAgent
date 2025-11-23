@@ -21,9 +21,10 @@ sys.path.insert(0, str(project_root))
 
 # Set console encoding (Windows compatible)
 import io
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 import logging
 import argparse
@@ -39,8 +40,8 @@ EXPERIMENTS = {
         "success_criteria": {
             "task_type_match": True,
             "subtask_count": 1,
-            "config_generated": True
-        }
+            "config_generated": True,
+        },
     },
     "2a": {
         "name": "全信息率定",
@@ -49,8 +50,8 @@ EXPERIMENTS = {
         "expected_subtasks": 1,
         "success_criteria": {
             "task_type_match": True,
-            "param_extraction": ["rep", "ngs"]
-        }
+            "param_extraction": ["rep", "ngs"],
+        },
     },
     "2b": {
         "name": "缺省信息补全",
@@ -59,18 +60,15 @@ EXPERIMENTS = {
         "expected_subtasks": 1,
         "success_criteria": {
             "task_type_match": True,
-            "info_completed": ["model_name", "algorithm"]
-        }
+            "info_completed": ["model_name", "algorithm"],
+        },
     },
     "2c": {
         "name": "自定义数据路径",
         "query": "用我 D 盘 my_data 文件夹里的数据跑一下模型",
         "expected_task_type": "custom_data",
         "expected_subtasks": 1,
-        "success_criteria": {
-            "task_type_match": True,
-            "data_path_extracted": True
-        }
+        "success_criteria": {"task_type_match": True, "data_path_extracted": True},
     },
     "3": {
         "name": "参数自适应优化",
@@ -80,8 +78,8 @@ EXPERIMENTS = {
         "success_criteria": {
             "task_type_match": True,
             "subtask_count": 2,
-            "has_dependencies": True
-        }
+            "has_dependencies": True,
+        },
     },
     "4": {
         "name": "扩展分析",
@@ -91,8 +89,8 @@ EXPERIMENTS = {
         "success_criteria": {
             "task_type_match": True,
             "needs_extracted": ["runoff_coefficient", "FDC"],
-            "subtask_count": 3
-        }
+            "subtask_count": 3,
+        },
     },
     "5": {
         "name": "稳定性验证",
@@ -102,9 +100,9 @@ EXPERIMENTS = {
         "success_criteria": {
             "task_type_match": True,
             "n_repeats": 5,
-            "subtask_count": 6
-        }
-    }
+            "subtask_count": 6,
+        },
+    },
 }
 
 
@@ -117,11 +115,11 @@ def setup_logging(exp_id):
 
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(log_file, encoding='utf-8')
-        ]
+            logging.FileHandler(log_file, encoding="utf-8"),
+        ],
     )
 
     return log_file
@@ -150,16 +148,21 @@ def run_experiment(exp_id, llm, use_mock=True):
     exp_config = EXPERIMENTS[exp_id]
     query = exp_config["query"]
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print(f"【实验{exp_id.upper()}：{exp_config['name']}】")
-    print("="*70)
+    print("=" * 70)
     print(f"查询: {query}")
     print(f"预期任务类型: {exp_config['expected_task_type']}")
     print(f"预期子任务数: {exp_config['expected_subtasks']}")
     print()
 
     # 创建工作目录
-    workspace_dir = project_root / "experiment_results" / f"exp{exp_id}" / datetime.now().strftime("%Y%m%d_%H%M%S")
+    workspace_dir = (
+        project_root
+        / "experiment_results"
+        / f"exp{exp_id}"
+        / datetime.now().strftime("%Y%m%d_%H%M%S")
+    )
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
     total_start = time.time()
@@ -169,7 +172,7 @@ def run_experiment(exp_id, llm, use_mock=True):
         "query": query,
         "workspace": str(workspace_dir),
         "start_time": datetime.now().isoformat(),
-        "validation": {}
+        "validation": {},
     }
 
     # ========================================================================
@@ -201,7 +204,7 @@ def run_experiment(exp_id, llm, use_mock=True):
         results["validation"]["task_type"] = False
 
     # 保存Intent结果
-    with open(workspace_dir / "intent_result.json", 'w', encoding='utf-8') as f:
+    with open(workspace_dir / "intent_result.json", "w", encoding="utf-8") as f:
         json.dump(intent_result, f, indent=2, ensure_ascii=False)
 
     # ========================================================================
@@ -212,9 +215,7 @@ def run_experiment(exp_id, llm, use_mock=True):
 
     prompt_pool = PromptPool(pool_dir=workspace_dir / "prompt_pool")
     task_planner = TaskPlanner(
-        llm_interface=llm,
-        prompt_pool=prompt_pool,
-        workspace_dir=workspace_dir
+        llm_interface=llm, prompt_pool=prompt_pool, workspace_dir=workspace_dir
     )
 
     planner_result = task_planner.process({"intent_result": intent_data})
@@ -239,7 +240,7 @@ def run_experiment(exp_id, llm, use_mock=True):
         results["validation"]["subtask_count"] = False
 
     # 保存任务计划
-    with open(workspace_dir / "task_plan.json", 'w', encoding='utf-8') as f:
+    with open(workspace_dir / "task_plan.json", "w", encoding="utf-8") as f:
         json.dump(planner_result, f, indent=2, ensure_ascii=False)
 
     # ========================================================================
@@ -254,10 +255,9 @@ def run_experiment(exp_id, llm, use_mock=True):
     for i, subtask in enumerate(subtasks, 1):
         print(f"   [{i}/{len(subtasks)}] {subtask['task_id']}...")
 
-        config_result = interpreter.process({
-            "subtask": subtask,
-            "intent_result": intent_data
-        })
+        config_result = interpreter.process(
+            {"subtask": subtask, "intent_result": intent_data}
+        )
 
         if not config_result.get("success"):
             print(f"❌ 配置生成失败")
@@ -273,7 +273,7 @@ def run_experiment(exp_id, llm, use_mock=True):
 
     # 保存配置
     for i, config_result in enumerate(configs, 1):
-        with open(workspace_dir / f"config_{i}.json", 'w', encoding='utf-8') as f:
+        with open(workspace_dir / f"config_{i}.json", "w", encoding="utf-8") as f:
             json.dump(config_result["config"], f, indent=2, ensure_ascii=False)
 
     # ========================================================================
@@ -286,13 +286,13 @@ def run_experiment(exp_id, llm, use_mock=True):
     results["end_time"] = datetime.now().isoformat()
     results["elapsed_time"] = total_elapsed
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     if all_validations_passed:
         print(f"✅ 实验{exp_id.upper()}通过!")
     else:
         print(f"⚠️  实验{exp_id.upper()}部分验证失败")
 
-    print("="*70)
+    print("=" * 70)
     print(f"\n验证结果:")
     for key, value in results["validation"].items():
         status = "✅" if value else "❌"
@@ -300,10 +300,10 @@ def run_experiment(exp_id, llm, use_mock=True):
 
     print(f"\n总耗时: {total_elapsed:.1f}s")
     print(f"工作目录: {workspace_dir}")
-    print("="*70)
+    print("=" * 70)
 
     # 保存结果
-    with open(workspace_dir / "experiment_result.json", 'w', encoding='utf-8') as f:
+    with open(workspace_dir / "experiment_result.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
     return results
@@ -311,16 +311,23 @@ def run_experiment(exp_id, llm, use_mock=True):
 
 def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description='运行HydroAgent实验')
-    parser.add_argument('experiment', type=str, nargs='?', default='all',
-                       help='实验ID: 1, 2a, 2b, 2c, 3, 4, 5, all (default: all)')
-    parser.add_argument('--backend', type=str, default='api',
-                       choices=['ollama', 'api'],
-                       help='LLM backend (default: api)')
-    parser.add_argument('--model', type=str, default=None,
-                       help='Model name')
-    parser.add_argument('--mock', action='store_true',
-                       help='Use mock mode')
+    parser = argparse.ArgumentParser(description="运行HydroAgent实验")
+    parser.add_argument(
+        "experiment",
+        type=str,
+        nargs="?",
+        default="all",
+        help="实验ID: 1, 2a, 2b, 2c, 3, 4, 5, all (default: all)",
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="api",
+        choices=["ollama", "api"],
+        help="LLM backend (default: api)",
+    )
+    parser.add_argument("--model", type=str, default=None, help="Model name")
+    parser.add_argument("--mock", action="store_true", help="Use mock mode")
     args = parser.parse_args()
 
     print("╔══════════════════════════════════════════════════════════════╗")
@@ -338,26 +345,24 @@ def main():
 
     print(f"正在初始化LLM接口 (backend: {args.backend})...")
 
-    if args.backend == 'ollama':
-        model = args.model or 'qwen3:8b'
-        llm = create_llm_interface('ollama', model)
+    if args.backend == "ollama":
+        model = args.model or "qwen3:8b"
+        llm = create_llm_interface("ollama", model)
         print(f"✅ LLM接口初始化完成 (Ollama: {model})\n")
     else:
-        api_key = getattr(config, 'OPENAI_API_KEY', None)
-        base_url = getattr(config, 'OPENAI_BASE_URL', None)
+        api_key = getattr(config, "OPENAI_API_KEY", None)
+        base_url = getattr(config, "OPENAI_BASE_URL", None)
 
         if not api_key:
             print("❌ API key未配置，请设置configs/definitions_private.py")
             return 1
 
-        model = args.model or 'qwen-turbo'
-        llm = create_llm_interface('openai', model,
-                                  api_key=api_key,
-                                  base_url=base_url)
+        model = args.model or "qwen-turbo"
+        llm = create_llm_interface("openai", model, api_key=api_key, base_url=base_url)
         print(f"✅ LLM接口初始化完成 (API: {model})\n")
 
     # Determine which experiments to run
-    if args.experiment == 'all':
+    if args.experiment == "all":
         exp_ids = list(EXPERIMENTS.keys())
     else:
         if args.experiment not in EXPERIMENTS:
@@ -376,9 +381,9 @@ def main():
         results[exp_id] = result
 
     # Summary
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("总结:")
-    print("="*70)
+    print("=" * 70)
 
     for exp_id, result in results.items():
         status = "✅ 通过" if result.get("success") else "❌ 失败"

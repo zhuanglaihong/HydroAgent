@@ -222,6 +222,68 @@ Results:  calibration_results.json, basins_metrics.csv, *.nc
 - ✅ NSE quality thresholds (from `config.py`)
 - ✅ Actionable recommendations
 - ✅ Supports brief/normal/detailed analysis levels
+- ✅ **Code generation capability** (实验4)
+- ✅ **Dual-LLM mode** (通用模型+代码专用模型)
+
+#### 🆕 Code Generation (实验4)
+
+**Purpose**: Generate Python scripts for custom analysis tasks beyond hydromodel's native features
+
+**Dual-LLM Architecture**:
+```
+IntentAgent (通用LLM) → 识别需要代码生成
+    ↓
+DeveloperAgent:
+  - 思考分析: 使用通用LLM (qwen-turbo, qwen3:8b)
+  - 代码生成: 使用代码专用LLM (qwen-coder-turbo, deepseek-coder:6.7b)
+```
+
+**Supported Tasks**:
+- ✅ 径流系数计算 (Runoff Coefficient)
+- ✅ 流量历时曲线 (Flow Duration Curve, FDC)
+- ✅ 自定义水文指标分析
+- ✅ 数据可视化脚本
+
+**Usage Example**:
+```python
+# API模式（通用模型 + 代码专用模型）
+llm = create_llm_interface("openai", "qwen-turbo", api_key=API_KEY, base_url=BASE_URL)
+code_llm = create_llm_interface("openai", "qwen-coder-turbo", api_key=API_KEY, base_url=BASE_URL)
+
+developer_agent = DeveloperAgent(
+    llm_interface=llm,
+    code_llm_interface=code_llm,  # 🆕 代码专用LLM
+    enable_code_gen=True
+)
+
+# Ollama模式（本地模型）
+llm = create_llm_interface("ollama", "qwen3:8b")
+code_llm = create_llm_interface("ollama", "deepseek-coder:6.7b")
+
+developer_agent = DeveloperAgent(
+    llm_interface=llm,
+    code_llm_interface=code_llm,
+    enable_code_gen=True
+)
+```
+
+**Generated Code Features**:
+- 完整可运行的Python脚本
+- Type hints和详细注释
+- 错误处理机制
+- 进度提示
+- 结果自动保存（CSV、PNG）
+
+**Example Query** (实验4):
+```
+"率定完成后，请帮我计算流域的径流系数，并画一张流路历时曲线 FDC"
+```
+
+**Generated Output**:
+- `runoff_coefficient_analysis.py` - 径流系数计算脚本
+- `plot_fdc.py` - FDC绘图脚本
+- `runoff_coefficient.csv` - 计算结果
+- `fdc_curve.png` - FDC曲线图
 
 ---
 
@@ -744,8 +806,33 @@ IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (
 
 ---
 
-**Last Updated**: 2025-01-22
+**Last Updated**: 2025-01-23
 
-**Architecture Version**: 5-Agent Pipeline v3.0 (Phase 1-4 Complete, Ready for Testing)
-- IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (配置生成) → RunnerAgent (增强执行) → DeveloperAgent (代码生成)
-- **Status**: 核心功能完成，测试框架就绪，准备进行实验验证
+**Architecture Version**: 5-Agent Pipeline v3.5 (All Experiments Ready)
+
+### 🆕 Latest Updates (v3.5):
+1. **实验脚本重构** (`experiment/base_experiment.py`)
+   - 所有实验使用统一的BaseExperiment类
+   - 自动使用实验名称作为输出目录（不再硬编码"exp1"）
+   - 终端显示正确的实验名称
+
+2. **自适应迭代优化** (实验3)
+   - 动态range_scale调整（60% → 15%）
+   - 智能停止条件（NSE达标、连续无改善、迭代上限）
+   - 以最佳参数为中心缩小搜索范围
+   - 自动生成参数范围YAML文件
+
+3. **双LLM代码生成** (实验4)
+   - 通用LLM（思考分析）+ 代码专用LLM（代码生成）
+   - API模式：qwen-turbo + qwen-coder-turbo
+   - Ollama模式：qwen3:8b + deepseek-coder:6.7b
+   - 支持径流系数、FDC曲线等自定义分析
+
+**Architecture**:
+- IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (配置生成) → RunnerAgent (迭代执行) → DeveloperAgent (双LLM代码生成)
+
+**Status**:
+- ✅ 实验1-5核心功能完成
+- ✅ 参数范围调整算法验证通过
+- ✅ 代码生成框架就绪
+- 📝 待验证：实验4的实际代码生成效果

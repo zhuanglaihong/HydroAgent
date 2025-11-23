@@ -1,7 +1,7 @@
 """
 Author: Claude
 Date: 2025-01-22 21:30:00
-LastEditTime: 2025-01-22 21:30:00
+LastEditTime: 2025-01-23 00:00:00
 LastEditors: Claude
 Description: 实验2A - 全信息率定
              Experiment 2A - Full Parameter Specification
@@ -18,51 +18,68 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 
 import sys
 from pathlib import Path
+import io
+import argparse
+
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from exp_1_standard_calibration import run_experiment, setup_logging, main as base_main
-import argparse
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
+from base_experiment import BaseExperiment
 
 QUERY = "使用 SCE-UA 算法，设置 rep=500, ngs=100，率定 CAMELS_US 的 01013500 流域，时间 1990-2000"
 
+
 def main():
-    parser = argparse.ArgumentParser(description='实验2A：全信息率定')
-    parser.add_argument('--backend', type=str, default='api', choices=['ollama', 'api'])
-    parser.add_argument('--model', type=str, default=None)
-    parser.add_argument('--mock', action='store_true')
+    parser = argparse.ArgumentParser(description="实验2A：全信息率定")
+    parser.add_argument("--backend", type=str, default="api", choices=["ollama", "api"])
+    parser.add_argument("--model", type=str, default=None)
+    parser.add_argument("--mock", action="store_true")
     args = parser.parse_args()
 
-    log_file = setup_logging("exp_2a_full_params")
+    experiment = BaseExperiment(
+        exp_name="exp_2a_full_params",
+        exp_description="实验2A：全信息率定"
+    )
+
+    log_file = experiment.setup_logging()
 
     print("╔══════════════════════════════════════════════════════════════╗")
     print("║             实验2A：全信息率定                               ║")
     print("╚══════════════════════════════════════════════════════════════╝")
     print(f"\n📝 日志文件: {log_file}\n")
-    print(f"查询: {QUERY}\n")
 
-    # 临时修改查询
-    import exp_1_standard_calibration
-    original_run = exp_1_standard_calibration.run_experiment
+    try:
+        from configs import definitions_private as config
+    except ImportError:
+        from configs import definitions as config
 
-    def modified_run(llm, use_mock):
-        # 修改查询
-        import hydroagent.agents.intent_agent
-        original_process = hydroagent.agents.intent_agent.IntentAgent.process
+    from hydroagent.core.llm_interface import create_llm_interface
 
-        def custom_process(self, input_data):
-            # 替换查询
-            if "query" in input_data:
-                input_data["query"] = QUERY
-            return original_process(self, input_data)
+    if args.backend == "ollama":
+        model = args.model or "qwen3:8b"
+        llm = create_llm_interface("ollama", model)
+    else:
+        api_key = getattr(config, "OPENAI_API_KEY", None)
+        base_url = getattr(config, "OPENAI_BASE_URL", None)
+        if not api_key:
+            print("❌ API key未配置")
+            return 1
+        model = args.model or "qwen3-max"
+        llm = create_llm_interface("openai", model, api_key=api_key, base_url=base_url)
 
-        hydroagent.agents.intent_agent.IntentAgent.process = custom_process
-        result = original_run(llm, use_mock)
-        hydroagent.agents.intent_agent.IntentAgent.process = original_process
-        return result
+    result = experiment.run_experiment(QUERY, llm, use_mock=args.mock)
 
-    exp_1_standard_calibration.run_experiment = modified_run
-    return base_main()
+    if result.get("success"):
+        print("\n🎉 实验2A完成!")
+        return 0
+    else:
+        print(f"\n❌ 实验2A失败: {result.get('error')}")
+        return 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

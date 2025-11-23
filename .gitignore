@@ -204,6 +204,8 @@ configs/definitions_private.py
 logs/
 test/results/
 results/
+experiment_results/
+temp_calibration_result/
 
 # 重构相关临时文件
 refactor_script.py
