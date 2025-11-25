@@ -14,7 +14,7 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 - 进行统计分析评估稳定性
 
 测试查询:
-"重复率定流域 01013500 五次，使用不同随机种子"
+"重复率定流域 12025000 五次，使用不同随机种子"
 """
 
 import sys
@@ -31,7 +31,7 @@ if sys.platform == "win32":
 
 from base_experiment import BaseExperiment
 
-QUERY = "重复率定流域 01013500 五次，使用不同随机种子"
+QUERY = "重复率定流域 12025000 五次，使用不同随机种子"
 
 
 def main():

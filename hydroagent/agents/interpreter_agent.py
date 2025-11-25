@@ -70,86 +70,117 @@ class InterpreterAgent(BaseAgent):
         self.system_prompt = self._load_system_prompt()
 
     def _get_default_system_prompt(self) -> str:
-        """Return default system prompt for InterpreterAgent."""
-        return """You are the Interpreter Agent of HydroAgent.
+        """
+        Return default system prompt for InterpreterAgent.
+        Dynamically injects algorithm parameters from config.py.
+        """
+        # Load algorithm defaults from config.py
+        sce_ua_params = getattr(config, "DEFAULT_SCE_UA_PARAMS", {
+            "rep": 5000, "ngs": 7, "kstop": 3, "pcento": 0.0001, "peps": 0.001, "random_seed": 1234
+        })
+        ga_params = getattr(config, "DEFAULT_GA_PARAMS", {
+            "generations": 100, "population_size": 50, "crossover_prob": 0.9, "mutation_prob": 0.1
+        })
+        de_params = getattr(config, "DEFAULT_DE_PARAMS", {
+            "max_generations": 100, "pop_size": 50, "F": 0.5, "CR": 0.9
+        })
+
+        # Format algorithm parameters section dynamically
+        sce_ua_section = "\n".join([f"- {k}: {v}" for k, v in sce_ua_params.items()])
+        ga_section = "\n".join([f"- {k}: {v}" for k, v in ga_params.items()])
+        de_section = "\n".join([f"- {k}: {v}" for k, v in de_params.items()])
+
+        return f"""You are the Interpreter Agent of HydroAgent.
 
 Your role is to generate hydromodel-compatible configuration dictionaries from task prompts.
 
+**TASK TYPES**:
+1. **Hydromodel tasks** (calibrate/evaluate/simulate): Generate full hydromodel config
+2. **Custom analysis tasks** (custom_analysis): Generate minimal config with metadata only
+
 **CRITICAL REQUIREMENTS**:
 1. Output MUST be valid JSON
-2. Config MUST follow the unified format with these sections:
+2. For hydromodel tasks, config MUST follow the unified format with these sections:
    - data_cfgs
    - model_cfgs
    - training_cfgs
    - evaluation_cfgs (optional)
-3. All required fields must be present
-4. Use exact field names (case-sensitive)
+3. For custom_analysis tasks, generate MINIMAL config (see below)
+4. All required fields must be present
+5. Use exact field names (case-sensitive)
 
 **Configuration Structure**:
 
 ```json
-{
-  "data_cfgs": {
+{{
+  "data_cfgs": {{
     "data_source_type": "camels_us" or "custom",
     "data_source_path": null or "/path/to/data",
-    "basin_ids": ["01013500"],
+    "basin_ids": ["12025000"],
     "warmup_length": 365,
     "variables": ["precipitation", "potential_evapotranspiration", "streamflow"],
     "train_period": ["1985-10-01", "1995-09-30"],
     "test_period": ["2005-10-01", "2014-09-30"]
-  },
-  "model_cfgs": {
+  }},
+  "model_cfgs": {{
     "model_name": "xaj" | "gr4j" | "gr5j" | "gr6j",
-    "model_params": {
+    "model_params": {{
       "source_type": "sources",
       "source_book": "HF",
       "kernel_size": 15
-    }
-  },
-  "training_cfgs": {
-    "algorithm_name": "SCE_UA" | "GA" | "DE" | "PSO" | "scipy",
-    "algorithm_params": {
+    }}
+  }},
+  "training_cfgs": {{
+    "algorithm_name": "SCE_UA" | "GA" |  "scipy",
+    "algorithm_params": {{
       // Algorithm-specific parameters (see schema below)
-    },
-    "loss_config": {
+    }},
+    "loss_config": {{
       "type": "time_series",
-      "obj_func": "RMSE" | "NSE" | "KGE"
-    },
+      "obj_func": "RMSE"
+    }},
     "param_range_file": null,
     "output_dir": "results",
     "experiment_name": "exp_name",
     "random_seed": 1234,
     "save_config": true
-  },
-  "evaluation_cfgs": {
+  }},
+  "evaluation_cfgs": {{
     "metrics": ["NSE", "RMSE", "KGE", "PBIAS"],
     "save_results": true,
     "plot_results": true
-  }
-}
+  }}
+}}
 ```
 
-**Algorithm Parameters**:
+**Algorithm Parameters (from configs/config.py)**:
 
 SCE_UA:
-- rep: 5000 (evolution steps)
-- ngs: 7 (complexes)
-- kstop: 3 (convergence criterion)
-- pcento: 0.0001
-- peps: 0.001
-- random_seed: 1234
+{sce_ua_section}
 
 GA:
-- generations: 100
-- population_size: 50
-- crossover_prob: 0.9
-- mutation_prob: 0.1
+{ga_section}
 
 DE:
-- max_generations: 100
-- pop_size: 50
-- F: 0.5
-- CR: 0.9
+{de_section}
+
+**Custom Analysis Tasks (task_type: custom_analysis)**:
+
+For custom_analysis tasks (e.g., runoff coefficient, FDC curves), generate a MINIMAL config:
+
+```json
+{{
+  "task_metadata": {{
+    "task_type": "custom_analysis",
+    "analysis_type": "runoff_coefficient" or "FDC" or other,
+    "basin_id": "01013500",
+    "model_name": "xaj"
+  }}
+}}
+```
+
+**DO NOT** generate data_cfgs, model_cfgs, or training_cfgs for custom_analysis tasks.
+These tasks will be handled by code generation, not hydromodel execution.
 
 **Response Format**:
 ONLY output the JSON config. No explanations, no markdown code blocks, just pure JSON.
@@ -236,9 +267,13 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
                     "task_id": task_id
                 }
 
-            # Step 4: Apply workspace directory
-            if self.workspace_dir:
+            # Step 4: Apply workspace directory (only for hydromodel tasks)
+            if self.workspace_dir and "training_cfgs" in config:
                 config["training_cfgs"]["output_dir"] = str(self.workspace_dir)
+
+            # Step 5: Add parameters to config for RunnerAgent to detect task type
+            # ⭐ CRITICAL: RunnerAgent needs config["parameters"]["task_type"] to route correctly
+            config["parameters"] = parameters
 
             logger.info(f"[InterpreterAgent] Config generated successfully for {task_id}")
 
@@ -311,25 +346,35 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
         Raises:
             ValueError: If JSON parsing fails
         """
+        if not response or not response.strip():
+            logger.error("[InterpreterAgent] Received empty response from LLM")
+            raise ValueError("LLM returned empty response")
+
         # Try to extract JSON from markdown code blocks
         json_match = re.search(r'```json\s*\n(.*?)\n```', response, re.DOTALL)
         if json_match:
             json_str = json_match.group(1)
+            logger.info("[InterpreterAgent] Extracted JSON from markdown code block")
         else:
             # Try to find JSON directly
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
+                logger.info("[InterpreterAgent] Extracted JSON from response body")
             else:
                 json_str = response
+                logger.warning("[InterpreterAgent] No JSON pattern found, using entire response")
 
         # Parse JSON
         try:
             config = json.loads(json_str)
+            logger.info(f"[InterpreterAgent] Successfully parsed JSON config with {len(config)} sections")
             return config
         except json.JSONDecodeError as e:
             logger.error(f"[InterpreterAgent] JSON parsing failed: {e}")
-            logger.error(f"[InterpreterAgent] Response: {response[:500]}")
+            logger.error(f"[InterpreterAgent] Response length: {len(response)} characters")
+            logger.error(f"[InterpreterAgent] Response preview (first 500 chars): {response[:500]}")
+            logger.error(f"[InterpreterAgent] Extracted JSON string (first 500 chars): {json_str[:500]}")
             raise ValueError(f"Failed to parse JSON from LLM response: {e}")
 
     def _validate_config(self, config: Dict[str, Any]) -> tuple[bool, List[str]]:
@@ -345,7 +390,21 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
         """
         errors = []
 
-        # Check required top-level sections
+        # Check if this is a custom_analysis task (minimal config)
+        task_metadata = config.get("task_metadata", {})
+        if task_metadata.get("task_type") == "custom_analysis":
+            # For custom_analysis, only validate task_metadata
+            if not task_metadata.get("analysis_type"):
+                errors.append("task_metadata.analysis_type is required")
+            if not task_metadata.get("basin_id"):
+                errors.append("task_metadata.basin_id is required")
+            if not task_metadata.get("model_name"):
+                errors.append("task_metadata.model_name is required")
+
+            is_valid = len(errors) == 0
+            return is_valid, errors
+
+        # For hydromodel tasks, check required top-level sections
         required_sections = ["data_cfgs", "model_cfgs", "training_cfgs"]
         for section in required_sections:
             if section not in config:

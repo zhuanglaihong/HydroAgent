@@ -56,10 +56,11 @@ def main():
     print(f"\n📝 日志文件: {log_file}\n")
 
     try:
-        from configs import definitions_private as config
+        from configs import definitions_private as def_config
     except ImportError:
-        from configs import definitions as config
+        from configs import definitions as def_config
 
+    from configs import config
     from hydroagent.core.llm_interface import create_llm_interface
 
     # 创建通用LLM
@@ -68,14 +69,14 @@ def main():
         llm = create_llm_interface("ollama", model)
         print(f"✅ 通用LLM初始化完成: {model}")
 
-        # 创建代码专用LLM
-        code_model = args.code_model or "deepseek-coder:6.7b"
+        # 创建代码专用LLM（从config.py读取默认值）
+        code_model = args.code_model or getattr(config, "DEFAULT_CODE_MODEL", "deepseek-coder:6.7b")
         code_llm = create_llm_interface("ollama", code_model)
         print(f"✅ 代码专用LLM初始化完成: {code_model}\n")
 
     else:
-        api_key = getattr(config, "OPENAI_API_KEY", None)
-        base_url = getattr(config, "OPENAI_BASE_URL", None)
+        api_key = getattr(def_config, "OPENAI_API_KEY", None)
+        base_url = getattr(def_config, "OPENAI_BASE_URL", None)
         if not api_key:
             print("❌ API key未配置")
             return 1
@@ -84,8 +85,8 @@ def main():
         llm = create_llm_interface("openai", model, api_key=api_key, base_url=base_url)
         print(f"✅ 通用LLM初始化完成: {model}")
 
-        # 创建代码专用LLM
-        code_model = args.code_model or "qwen-coder-turbo"
+        # 创建代码专用LLM（从config.py读取默认值）
+        code_model = args.code_model or getattr(config, "DEFAULT_CODE_MODEL", "qwen3-coder-plus")
         code_llm = create_llm_interface("openai", code_model, api_key=api_key, base_url=base_url)
         print(f"✅ 代码专用LLM初始化完成: {code_model}\n")
 

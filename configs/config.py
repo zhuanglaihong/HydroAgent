@@ -1,11 +1,11 @@
 """
 Author: zhuanglaihong
-Date: 2024-11-22 10:10:00
-LastEditTime: 2024-11-22 10:10:00
+Date: 2025-11-22 10:10:00
+LastEditTime: 2025-11-22 10:10:00
 LastEditors: zhuanglaihong
 Description: Global configuration parameters for HydroAgent
 FilePath: /HydroAgent/configs/config.py
-Copyright (c) 2023-2024 HydroAgent. All rights reserved.
+Copyright (c) 2024-2025 HydroAgent. All rights reserved.
 """
 
 # ============================================================================
@@ -13,7 +13,10 @@ Copyright (c) 2023-2024 HydroAgent. All rights reserved.
 # ============================================================================
 
 # Default LLM model for API backend
-DEFAULT_MODEL = "qwen-turbo"
+DEFAULT_MODEL = "qwen3-max"
+
+# Default code-specific LLM model (for DeveloperAgent code generation)
+DEFAULT_CODE_MODEL = "qwen3-coder-plus"
 
 # LLM temperature (0.0 = deterministic, 1.0 = creative)
 TEMPERATURE = 0.1
@@ -29,10 +32,10 @@ REQUEST_TIMEOUT = 60
 # ============================================================================
 
 # Default training period for calibration
-DEFAULT_TRAIN_PERIOD = ["1985-10-01", "1995-09-30"]
+DEFAULT_TRAIN_PERIOD = ["2000-01-01", "2009-12-31"]
 
 # Default testing period for evaluation
-DEFAULT_TEST_PERIOD = ["2005-10-01", "2014-09-30"]
+DEFAULT_TEST_PERIOD = ["2010-01-01", "2014-12-31"]
 
 # Default warmup period (days)
 DEFAULT_WARMUP_DAYS = 365

@@ -552,12 +552,32 @@ Respond with ONLY valid JSON, no extra text."""
         # 检测关键词 → 任务类型映射
         # 优先级从高到低
 
+        # 🆕 0. 自动迭代率定（v4.0新功能）- 最高优先级
+        # 关键词：迭代地去率定、直到NSE达到、自动运行
+        auto_iter_keywords = ["迭代地", "迭代率定", "自动运行", "自动执行", "不断尝试", "直到nse", "直到 nse"]
+        if any(kw in query_lower for kw in auto_iter_keywords):
+            logger.debug("[IntentAgent] Detected: auto_iterative_calibration (v4.0)")
+            # 提取NSE阈值和最大次数
+            import re
+            nse_match = re.search(r'nse\s*[>>=]+\s*(\d+\.?\d*)', query_lower)
+            if nse_match:
+                intent_result["nse_threshold"] = float(nse_match.group(1))
+                logger.info(f"[IntentAgent] Extracted NSE threshold: {intent_result['nse_threshold']}")
+
+            max_iter_match = re.search(r'最多\s*(\d+)|(\d+)\s*次', query_lower)
+            if max_iter_match:
+                max_iter = int(max_iter_match.group(1) or max_iter_match.group(2))
+                intent_result["max_iterations"] = max_iter
+                logger.info(f"[IntentAgent] Extracted max iterations: {max_iter}")
+
+            return "auto_iterative_calibration"
+
         # 1. 重复实验（实验5）
         if any(kw in query_lower for kw in ["重复", "多次", "repeat", "multiple times", "不同种子", "different seed"]):
             logger.debug("[IntentAgent] Detected: repeated_experiment")
             return "repeated_experiment"
 
-        # 2. 迭代优化（实验3）
+        # 2. 迭代优化（实验3 - 参数范围调整）
         if any(kw in query_lower for kw in ["迭代", "边界", "调整范围", "adaptive", "boundary", "iterative", "两阶段", "two-phase"]):
             logger.debug("[IntentAgent] Detected: iterative_optimization")
             return "iterative_optimization"

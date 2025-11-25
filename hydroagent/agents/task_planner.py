@@ -107,6 +107,7 @@ class TaskPlanner(BaseAgent):
             "extended_analysis": self._decompose_extended_analysis,
             "batch_processing": self._decompose_batch_processing,
             "custom_data": self._decompose_custom_data,
+            "auto_iterative_calibration": self._decompose_auto_iterative_calibration,  # 🆕 v4.0
         }
 
     def _get_default_system_prompt(self) -> str:
@@ -263,22 +264,26 @@ Always create structured, actionable task plans."""
 
     def _decompose_iterative_optimization(self, intent: Dict[str, Any]) -> List[SubTask]:
         """
-        实验3：两阶段迭代优化
+        实验3：迭代优化 (循环式参数范围调整)
         Decompose iterative optimization task.
 
-        Flow:
-        1. Phase 1: Initial calibration
-        2. Phase 2: Boundary-aware re-calibration (depends on Phase 1 results)
+        ⭐ NEW DESIGN (2025-01-24):
+        创建1个循环迭代任务，由RunnerAgent内部完成多轮率定，直到：
+        - NSE达到阈值 (default: 0.5)
+        - 达到最大轮数 (default: 5)
+        - 连续N轮无改善 (default: 2)
+
+        每轮迭代自动调整参数范围：
+        - range_scale = initial_scale × (decay_factor ^ iteration)
+        - 以上一轮最佳参数为中心
         """
         strategy = intent.get("strategy", {})
-        phases = strategy.get("phases", ["initial", "boundary_aware"])
 
         subtasks = [
-            # Phase 1: Initial calibration
             SubTask(
-                task_id="task_1_phase1",
-                task_type="calibration",
-                description=f"Phase 1: Initial calibration for {intent.get('basin_id', 'N/A')}",
+                task_id="iterative_boundary_optimization",
+                task_type="boundary_check_recalibration",
+                description=f"Iterative optimization for {intent.get('basin_id', 'N/A')} (internal loop until convergence)",
                 prompt="",
                 parameters={
                     "model_name": intent.get("model_name"),
@@ -286,29 +291,15 @@ Always create structured, actionable task plans."""
                     "algorithm": intent.get("algorithm"),
                     "time_period": intent.get("time_period"),
                     "extra_params": intent.get("extra_params", {}),
-                    "phase": "initial",
-                    "auto_evaluate": True
+                    # ⭐ 迭代控制参数
+                    "max_iterations": strategy.get("max_iterations", 5),
+                    "nse_threshold": strategy.get("nse_threshold", 0.5),
+                    "min_nse_improvement": strategy.get("min_nse_improvement", 0.01),
+                    "initial_range_scale": strategy.get("initial_range_scale", 0.6),
+                    "range_scale_decay": strategy.get("range_scale_decay", 0.7),
+                    "consecutive_no_improvement_limit": strategy.get("consecutive_no_improvement_limit", 2)
                 },
                 dependencies=[]
-            ),
-
-            # Phase 2: Boundary-aware recalibration
-            SubTask(
-                task_id="task_2_phase2",
-                task_type="boundary_check_recalibration",
-                description="Phase 2: Check parameter boundaries and re-calibrate if needed",
-                prompt="",
-                parameters={
-                    "model_name": intent.get("model_name"),
-                    "basin_id": intent.get("basin_id"),
-                    "algorithm": intent.get("algorithm"),
-                    "time_period": intent.get("time_period"),
-                    "extra_params": intent.get("extra_params", {}),
-                    "phase": "boundary_aware",
-                    "boundary_threshold": strategy.get("boundary_threshold", 0.05),
-                    "auto_evaluate": True
-                },
-                dependencies=["task_1_phase1"]  # Depends on Phase 1 results
             )
         ]
 
@@ -404,6 +395,7 @@ Always create structured, actionable task plans."""
                     description=f"Custom analysis: {need}",
                     prompt="",
                     parameters={
+                        "task_type": "custom_analysis",  # ⭐ CRITICAL: RunnerAgent needs this
                         "analysis_type": need,
                         "basin_id": intent.get("basin_id"),
                         "model_name": intent.get("model_name")
@@ -479,6 +471,43 @@ Always create structured, actionable task plans."""
                     "data_source_type": "custom",
                     "data_source_path": intent.get("data_source"),
                     "auto_evaluate": True
+                },
+                dependencies=[]
+            )
+        ]
+
+        return subtasks
+
+    def _decompose_auto_iterative_calibration(self, intent: Dict[str, Any]) -> List[SubTask]:
+        """
+        🆕 v4.0: 自动迭代率定（直到NSE达标或达到最大次数）
+        Decompose auto-iterative calibration task (v4.0 new feature).
+
+        与iterative_optimization的区别：
+        - iterative_optimization: 参数范围自适应调整（实验3）
+        - auto_iterative_calibration: 自动多次率定直到NSE达标（v4.0新功能）
+
+        Flow: 自动多次率定 → 每轮生成径流拟合图 → 最终生成NSE收敛图
+        """
+        nse_threshold = intent.get("nse_threshold", 0.7)
+        max_iterations = intent.get("max_iterations", 10)
+
+        subtasks = [
+            SubTask(
+                task_id="auto_iterative_calib",
+                task_type="auto_iterative_calibration",
+                description=f"Auto-iterative calibration until NSE >= {nse_threshold} (max {max_iterations} iterations)",
+                prompt="",
+                parameters={
+                    "model_name": intent.get("model_name"),
+                    "basin_id": intent.get("basin_id"),
+                    "algorithm": intent.get("algorithm"),
+                    "time_period": intent.get("time_period"),
+                    "extra_params": intent.get("extra_params", {}),
+                    # 🆕 迭代控制参数
+                    "nse_threshold": nse_threshold,
+                    "max_iterations": max_iterations,
+                    "plot_each_iteration": True  # 每轮绘图
                 },
                 dependencies=[]
             )

@@ -1,53 +1,75 @@
-# HydroAgent 实验脚本
+# HydroAgent 实验指南
 
-本目录包含HydroAgent的5个核心实验脚本，用于验证系统的各项功能。
+**版本**: v2.0
+**更新日期**: 2025-01-24
+
+本目录包含HydroAgent的核心实验脚本，分为2大类共7个实验（实验1-2已重构）。
 
 ## 📋 实验列表
 
-| 实验ID | 名称 | 查询示例 | 验证目标 |
-|-------|------|---------|---------|
-| **1** | 标准流域验证 | "率定流域 01013500，使用标准 XAJ 模型" | task_type识别，标准流程 |
-| **2a** | 全信息率定 | "使用 SCE-UA 算法，设置 rep=500..." | 参数提取 |
-| **2b** | 缺省信息补全 | "帮我率定流域 01013500" | 信息自动补全 |
-| **2c** | 自定义数据路径 | "用我 D 盘 my_data 文件夹里的数据..." | 自定义数据源 |
-| **3** | 参数自适应优化 | "如果参数收敛到边界，自动调整范围重新率定" | 两阶段率定，依赖处理 |
-| **4** | 扩展分析 | "计算径流系数，并画一张FDC" | 代码生成，扩展功能 |
-| **5** | 稳定性验证 | "重复率定流域 01013500 五次" | 重复实验，统计分析 |
+### 实验1：基础功能验证
+
+| 实验ID | 脚本文件 | 查询示例 | 验证目标 |
+|-------|---------|---------|---------|
+| **1A** | `exp_1a_standard.py` | "率定流域 01013500，使用 GR4J 模型..." | 标准流程，完整信息 |
+| **1B** | `exp_1b_info_completion.py` | "帮我率定流域 01013500" | 缺省信息智能补全 |
+| **1C** | `exp_1c_error_handling.py` | "率定流域 99999999" (错误ID) | 错误处理鲁棒性 |
+
+### 实验2：稳定性与批量处理
+
+| 实验ID | 脚本文件 | 查询示例 | 验证目标 |
+|-------|---------|---------|---------|
+| **2A** | `exp_2a_repeated_calibration.py` | "重复执行20次率定..." | 单流域稳定性（20次） |
+| **2B** | `exp_2b_multi_basin.py` | "批量率定10个流域..." | 多流域性能对比 |
+| **2C** | `exp_2c_multi_algorithm.py` | "分别使用 SCE-UA、DE、PSO、GA..." | 多算法对比 |
+
+### 实验3-4：高级功能
+
+| 实验ID | 脚本文件 | 验证目标 |
+|-------|---------|---------|
+| **3** | `exp_3_iterative_optimization.py` | 参数自适应优化 |
+| **4** | `exp_4_extended_analysis.py` | 代码生成与扩展分析 |
 
 ## 🚀 快速开始
 
-### 方式1：使用通用运行器（推荐）
+### 第一步：环境准备
 
 ```bash
-# 运行所有实验
-python experiment/run_experiments.py all --backend api
+# 激活虚拟环境
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Linux/Mac
 
-# 运行单个实验
-python experiment/run_experiments.py 1 --backend api
-python experiment/run_experiments.py 2b --backend api
-python experiment/run_experiments.py 3 --backend api
-
-# 使用Ollama
-python experiment/run_experiments.py all --backend ollama
-
-# 使用Mock模式（不执行真实hydromodel）
-python experiment/run_experiments.py all --backend api --mock
+# 确保配置文件存在
+# 复制 configs/example_definitions_private.py 到 configs/definitions_private.py
+# 并填写API Key
 ```
 
-### 方式2：运行独立实验脚本
+### 第二步：运行实验（推荐顺序）
 
 ```bash
-# 实验1：标准流域验证
-python experiment/exp_1_standard_calibration.py --backend api --mock
+# 1. 基础功能验证（推荐Mock模式快速验证）
+python experiment/exp_1a_standard.py --backend api --mock
+python experiment/exp_1b_info_completion.py --backend api --mock
+python experiment/exp_1c_error_handling.py --backend api --mock
 
-# 实验2A：全信息率定
-python experiment/exp_2a_full_params.py --backend api --mock
+# 2. 稳定性和批量（建议真实执行或减少参数）
+python experiment/exp_2a_repeated_calibration.py --backend api --repetitions 5  # 先测试5次
+python experiment/exp_2b_multi_basin.py --backend api --mock
+python experiment/exp_2c_multi_algorithm.py --backend api --mock
 
-# 实验2B：缺省信息补全
-python experiment/exp_2b_missing_info.py --backend api --mock
+# 3. 高级功能
+python experiment/exp_3_iterative_optimization.py --backend api --mock
+python experiment/exp_4_extended_analysis.py --backend api --mock
+```
 
-# 实验2C：自定义数据路径
-python experiment/exp_2c_custom_data.py --backend api --mock
+### 常用参数
+
+- `--backend api`: 使用API（qwen-turbo）
+- `--backend ollama`: 使用本地Ollama（qwen3:8b）
+- `--mock`: Mock模式（不运行真实hydromodel，快速验证流程）
+- `--repetitions N`: 重复次数（仅实验2A，默认20）
+- `--basins "ID1,ID2"`: 自定义流域列表（仅实验2B）
+- `--algorithms "A1,A2"`: 自定义算法列表（仅实验2C）
 
 # 实验3：参数自适应优化
 python experiment/exp_3_iterative_optimization.py --backend api --mock

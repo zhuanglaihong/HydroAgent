@@ -1,11 +1,11 @@
 """
 Author: zhuanglaihong
-Date: 2024-11-21 21:30:00
-LastEditTime: 2024-11-21 21:30:00
+Date: 2025-11-21 21:30:00
+LastEditTime: 2025-11-21 21:30:00
 LastEditors: zhuanglaihong
 Description: Project-wide configuration definitions for HydroAgent
 FilePath: /HydroAgent/configs/definitions.py
-Copyright (c) 2023-2024 HydroAgent. All rights reserved.
+Copyright (c) 2024-2025 HydroAgent. All rights reserved.
 """
 
 # NOTE: Create configs/definitions_private.py for your private configuration

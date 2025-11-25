@@ -206,6 +206,8 @@ test/results/
 results/
 experiment_results/
 temp_calibration_result/
+generated_code/
+test_workspace/
 
 # 重构相关临时文件
 refactor_script.py

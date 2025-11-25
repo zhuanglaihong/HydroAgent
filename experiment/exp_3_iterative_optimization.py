@@ -14,7 +14,7 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 - 如果收敛到边界，自动调整参数范围重新率定
 
 测试查询:
-"率定流域 01013500，如果参数收敛到边界，自动调整范围重新率定"
+"率定流域 12025000，如果参数收敛到边界，自动调整范围重新率定"
 """
 
 import sys
@@ -31,7 +31,7 @@ if sys.platform == "win32":
 
 from base_experiment import BaseExperiment
 
-QUERY = "率定流域 01013500，如果参数收敛到边界，自动调整范围重新率定"
+QUERY = "率定流域 01013500，如果参数收敛到边界，自动调整范围重新率定" # basin_id：12025000
 
 
 def main():

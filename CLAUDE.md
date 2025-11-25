@@ -244,46 +244,13 @@ DeveloperAgent:
 - ✅ 自定义水文指标分析
 - ✅ 数据可视化脚本
 
-**Usage Example**:
-```python
-# API模式（通用模型 + 代码专用模型）
-llm = create_llm_interface("openai", "qwen-turbo", api_key=API_KEY, base_url=BASE_URL)
-code_llm = create_llm_interface("openai", "qwen-coder-turbo", api_key=API_KEY, base_url=BASE_URL)
+**Key Points**:
+- API模式: `qwen-turbo` (通用) + `qwen-coder-turbo` (代码生成)
+- Ollama模式: `qwen3:8b` + `deepseek-coder:6.7b`
+- 生成完整可运行的Python脚本（type hints、注释、错误处理）
+- 结果自动保存到`generated_code/`目录
 
-developer_agent = DeveloperAgent(
-    llm_interface=llm,
-    code_llm_interface=code_llm,  # 🆕 代码专用LLM
-    enable_code_gen=True
-)
-
-# Ollama模式（本地模型）
-llm = create_llm_interface("ollama", "qwen3:8b")
-code_llm = create_llm_interface("ollama", "deepseek-coder:6.7b")
-
-developer_agent = DeveloperAgent(
-    llm_interface=llm,
-    code_llm_interface=code_llm,
-    enable_code_gen=True
-)
-```
-
-**Generated Code Features**:
-- 完整可运行的Python脚本
-- Type hints和详细注释
-- 错误处理机制
-- 进度提示
-- 结果自动保存（CSV、PNG）
-
-**Example Query** (实验4):
-```
-"率定完成后，请帮我计算流域的径流系数，并画一张流路历时曲线 FDC"
-```
-
-**Generated Output**:
-- `runoff_coefficient_analysis.py` - 径流系数计算脚本
-- `plot_fdc.py` - FDC绘图脚本
-- `runoff_coefficient.csv` - 计算结果
-- `fdc_curve.png` - FDC曲线图
+**示例**: "率定完成后，请帮我计算流域的径流系数，并画FDC曲线" → 生成 `runoff_coefficient_analysis.py` 和 `plot_fdc.py`
 
 ---
 
@@ -360,43 +327,11 @@ except ImportError:
 
 ## 🎨 Dynamic Prompt System
 
-### Architecture
+Agents use dynamic prompt management: `Final Prompt = Static Template + Schema/Context + Dynamic Feedback`
 
-All agents now support dynamic prompt management:
+**Prompt Files**: `hydroagent/resources/*.txt` (algorithm_params_schema, config_agent_prompt, runner_agent_prompt, developer_agent_prompt)
 
-```
-Final Prompt = Static Template + Schema/Context + Dynamic Feedback
-```
-
-### Prompt Files Location
-
-```
-hydroagent/resources/
-├── algorithm_params_schema.txt    # IntentAgent: Algorithm parameter mappings
-├── config_agent_prompt.txt        # ConfigAgent: Configuration generation guide
-├── runner_agent_prompt.txt        # RunnerAgent: Execution workflow documentation
-└── developer_agent_prompt.txt     # DeveloperAgent: Analysis guidelines
-```
-
-### Usage in Agents
-
-```python
-# IntentAgent
-self.prompt_manager = PromptManager()
-self.prompt_manager.register_static_prompt("IntentAgent", prompt_text)
-self.prompt_manager.load_schema("algorithm_params")
-
-# DeveloperAgent
-self.prompt_manager = PromptManager()
-prompt_text = self._load_prompt_from_file("developer_agent_prompt.txt")
-self.prompt_manager.register_static_prompt("DeveloperAgent", prompt_text)
-```
-
-**Benefits**:
-- ✅ Centralized prompt management
-- ✅ Version control for prompts
-- ✅ Easy A/B testing
-- ✅ Multi-language support ready
+**Benefits**: Centralized management, version control, A/B testing, multi-language support
 
 ---
 
@@ -495,67 +430,46 @@ python test/test_unified_tools.py
 
 ### Adding a New Agent
 
-1. Create agent file in `hydroagent/agents/`
-2. Inherit from `BaseAgent`
-3. Implement `process()` method
-4. Create prompt file in `resources/` (optional)
-5. Integrate into pipeline script
-
-```python
-from hydroagent.core.base_agent import BaseAgent
-
-class MyAgent(BaseAgent):
-    def process(self, input_data):
-        # Implementation
-        return result
-```
+1. Create agent in `hydroagent/agents/`, inherit from `BaseAgent`, implement `process()`
+2. Add prompt file in `resources/` (optional)
+3. Integrate into pipeline script
 
 ### Adding Algorithm Parameter Recognition
 
-1. Edit `hydroagent/resources/algorithm_params_schema.txt`
-2. Add algorithm section with parameter mappings
-3. Include Chinese keywords
-
-```
-## My_Algorithm
-Parameters:
-- **my_param** (int): Description
-  - User keywords: "关键词1", "关键词2", "keyword"
-  - Example: "迭代100次" → my_param=100
-```
+Edit `hydroagent/resources/algorithm_params_schema.txt` - add algorithm section with parameter mappings and Chinese keywords
 
 ### Modifying Global Defaults
 
-Edit `configs/config.py`:
-
-```python
-# Change default training period
-DEFAULT_TRAIN_PERIOD = ["1990-01-01", "2000-12-31"]
-
-# Change SCE-UA defaults
-DEFAULT_SCE_UA_PARAMS = {
-    "rep": 2000,  # Increase iterations
-    "ngs": 500,   # Increase complexes
-    ...
-}
-
-# Change quality thresholds
-NSE_EXCELLENT = 0.80  # Stricter threshold
-```
+Edit `configs/config.py` - adjust DEFAULT_TRAIN_PERIOD, DEFAULT_SCE_UA_PARAMS, NSE_EXCELLENT thresholds, etc.
 
 ### Customizing Output Filtering
 
-Edit `hydroagent/agents/runner_agent.py`:
+Edit `hydroagent/agents/runner_agent.py` - modify `filter_patterns` list to control terminal output
 
-```python
-filter_patterns = [
-    "🚀 =====",       # Filter decorative lines
-    "📋 Parameters",  # Filter parameter details
-    # Add more patterns...
-]
+### Using Checkpoint/Resume for Long Tasks
+
+For long-running multi-task experiments (e.g., batch calibration), use the checkpoint system:
+
+```bash
+# Start experiment
+python scripts/run_with_checkpoint.py \
+  --query "批量率定20个流域" \
+  --backend api
+
+# Interrupt with Ctrl+C (progress auto-saved)
+
+# Resume from checkpoint
+python scripts/run_with_checkpoint.py \
+  --resume results/session_xxx \
+  --backend api
 ```
 
-**Note**: Progress bars (`SCE-UA Progress:`) always display (uses `\r`)
+**Key Features**:
+- Auto-save after each subtask completion
+- Skip completed tasks on resume
+- Supports failure recovery
+
+See `docs/CHECKPOINT_SYSTEM.md` for details.
 
 ---
 
@@ -629,23 +543,9 @@ python experiment/exp_5_stability.py --backend api --mock
 
 ## 🚧 Future Development
 
-### Planned Features
+**Planned**: RAG integration, Web UI (Gradio/Streamlit), Interactive visualization, Multi-basin parallel processing, Model comparison, Parameter sensitivity analysis, Docker deployment
 
-- [ ] **RAG Integration**: Knowledge-enhanced workflow generation
-- [ ] **Web Interface**: Gradio/Streamlit UI
-- [ ] **Visualization**: Interactive result plots
-- [ ] **Multi-Basin Parallel**: Process multiple basins simultaneously
-- [ ] **Model Comparison**: Compare performance across models
-- [ ] **Parameter Sensitivity**: Analyze parameter importance
-- [ ] **Docker Deployment**: Containerized distribution
-
-### Experimental Features (in `config.py`)
-
-```python
-ENABLE_RAG = False              # RAG knowledge system
-ENABLE_VISUALIZATION = False    # Result visualization
-ENABLE_PARALLEL_BASINS = False  # Multi-basin processing
-```
+**Experimental flags in `config.py`**: ENABLE_RAG, ENABLE_VISUALIZATION, ENABLE_PARALLEL_BASINS
 
 ---
 
@@ -669,6 +569,65 @@ ENABLE_PARALLEL_BASINS = False  # Multi-basin processing
 ```bash
 uv sync  # Install all dependencies
 ```
+
+---
+
+## 🔖 Checkpoint/Resume System (New!)
+
+**Version**: v1.0 | **Date**: 2025-01-25
+
+HydroAgent now supports **task interruption and recovery** for long-running experiments!
+
+### Key Features
+
+- ✅ **Safe Interruption**: Use Ctrl+C to stop at any time
+- ✅ **Auto-Save**: Progress saved after each subtask
+- ✅ **Smart Resume**: Only executes pending tasks
+- ✅ **Cost Reduction**: Avoid restarting from scratch
+
+### Architecture
+
+```
+hydroagent/core/checkpoint_manager.py  # Checkpoint管理器
+hydroagent/agents/orchestrator.py     # 集成checkpoint支持
+```
+
+### Quick Start
+
+```bash
+# Run test
+python test/test_checkpoint_resume.py
+
+# Start experiment with checkpoint
+python scripts/run_with_checkpoint.py \
+  --query "重复率定5次" --backend api --mock
+
+# Resume after interruption
+python scripts/run_with_checkpoint.py \
+  --resume results/session_xxx --backend api --mock
+```
+
+### Use Cases
+
+1. **Multi-Basin Calibration**: 20+ basins, interrupt after 10, resume later
+2. **Repeated Experiments**: 100 repetitions, pause at any point
+3. **Model×Algorithm Matrix**: 12 combinations, resume from failure
+
+### Implementation
+
+The checkpoint system is **integrated into Orchestrator** (central coordinator), NOT in `experiment/BaseExperiment` (user-facing wrapper).
+
+**Key Classes**:
+- `CheckpointManager`: Core checkpoint logic
+- `Orchestrator`: Integrates checkpoint in process() pipeline
+
+**Checkpoint File** (`checkpoint.json`):
+- Intent results
+- Task plan with subtask status
+- Config and results for each subtask
+- Progress tracking
+
+See `docs/CHECKPOINT_SYSTEM.md` for complete documentation.
 
 ---
 
@@ -723,20 +682,9 @@ When contributing code:
 
 ---
 
-## 🚧 Architecture Improvement Plan (Experiment-Driven Design)
+## 🚧 Architecture Evolution
 
-### System Goals
-
-Support **5 core experiments** (see `experiment/experiment.md`):
-1. Standard basin calibration
-2. Versatility & robustness (info completion)
-3. Adaptive parameter optimization (iterative)
-4. Code generation for extended analysis
-5. Stability validation (repeated runs)
-
-### Architecture Evolution
-
-**📋 Latest Design**: `docs/ARCHITECTURE_V3_FINAL.md` (Experiment-Driven, Final Version)
+### Current Architecture (v3.5)
 
 ```
 IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (配置生成)
@@ -746,63 +694,16 @@ IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (
                                                    RunnerAgent → DeveloperAgent
 ```
 
-### Implementation Status
+**System Goals**: Support 5 core experiments (standard calibration, info completion, iterative optimization, code generation, stability validation)
 
-**✅ Phase 1: IntentAgent Enhancement (COMPLETED - 2025-01-22)**
-- ✅ Task type decision (7 types: standard, info_completion, iterative, repeated, extended, batch, custom_data)
-- ✅ Information completion (auto-fill model, algorithm, time_period, data_source)
-- ✅ Extract extended analysis needs (Exp 4)
-- ✅ Extract repetition count (Exp 5)
-- ✅ Extract custom data path (Exp 2C)
-- ✅ Multi-basin/multi-algorithm detection (batch processing)
-- ✅ Updated test scripts and pipeline script
+**Status**: ✅ Core system fully functional (Phases 1-4 completed)
 
-**✅ Phase 2: TaskPlanner + InterpreterAgent (COMPLETED - 2025-01-22)**
-- ✅ Created TaskPlanner agent (战术拆解层)
-- ✅ Task decomposition logic for all 7 task types
-- ✅ Prompt generation for each subtask
-- ✅ Created simplified PromptPool (历史案例管理)
-- ✅ Handle dependencies between subtasks
-- ✅ Created InterpreterAgent (LLM-driven config generator)
-- ✅ Parse prompts from TaskPlanner
-- ✅ Generate hydromodel config JSON with LLM
-- ✅ Self-correction mechanism (max 3 attempts)
-- ✅ Config validation with detailed error messages
-- ✅ Created test scripts: test_task_planner.py, test_interpreter_agent.py
-- ✅ Created new pipeline: scripts/run_new_pipeline.py (5-Agent architecture)
+**Design Philosophy**:
+- Experiment-driven, layered decision-making
+- Strategic (Intent) → Tactical (Planning) → Configuration → Execution
+- Clear separation of concerns between agents
 
-**✅ Phase 3: RunnerAgent Enhancement (COMPLETED - 2025-01-22)**
-- ✅ Enhanced RunnerAgent.process() to support new task types
-- ✅ Implemented _run_boundary_check_recalibration() for Exp 3
-- ✅ Implemented _run_statistical_analysis() for Exp 5
-- ✅ Implemented _run_custom_analysis() for Exp 4
-- ✅ Added task_type detection from config.parameters
-- ✅ Support for boundary checking and parameter re-calibration
-- ✅ Statistical analysis of repeated experiments with stability evaluation
-
-**✅ Phase 4: End-to-End Testing (COMPLETED - 2025-01-22)**
-- ✅ Created comprehensive E2E test suite (test_experiments_e2e.py)
-- ✅ Tests cover all 5 experiments
-- ✅ Validates IntentAgent → TaskPlanner → InterpreterAgent flow
-- ✅ Checks task decomposition logic
-- ✅ Verifies dependency handling
-- ✅ Created detailed testing guide (docs/TESTING_GUIDE.md)
-- ✅ Documentation for unit tests, integration tests, E2E tests
-
-**Phase 5: Production Readiness (Planned)**
-- [ ] Performance optimization
-- [ ] Error handling improvements
-- [ ] User documentation
-- [ ] Deployment guide
-
-### Design Philosophy
-
-> **Experiment-driven, layered decision-making, clear responsibilities**
->
-> - All design serves the 5 core experiments
-> - Strategic (IntentAgent) → Tactical (TaskPlanner) → Configuration (Interpreter) → Execution (Runner)
-> - Isolate logical complexity (TaskPlanner) from execution complexity (Runner)
-> - Iterative improvement based on real experimental needs
+**详细架构文档见**: `docs/ARCHITECTURE_FINAL.md`, `docs/TESTING_GUIDE.md`
 
 ---
 
@@ -836,3 +737,22 @@ IntentAgent (战略决策) → TaskPlanner (战术拆解) → InterpreterAgent (
 - ✅ 参数范围调整算法验证通过
 - ✅ 代码生成框架就绪
 - 📝 待验证：实验4的实际代码生成效果
+
+---
+
+## 🚀 Future Development
+
+### v4.0 Planned Enhancements
+
+详细的v4.0改进计划（代码生成迁移、可视化绘图、自动迭代率定）见：
+- `docs/v4.0_improvements_summary.md` - v4.0已实现的功能总结
+- Architecture planning documents in `docs/` directory
+
+### Other Planned Features
+
+- [ ] **RAG Integration**: Knowledge-enhanced workflow generation
+- [ ] **Web Interface**: Gradio/Streamlit UI
+- [ ] **Multi-Basin Parallel**: Process multiple basins simultaneously
+- [ ] **Model Comparison**: Compare performance across models
+- [ ] **Parameter Sensitivity**: Analyze parameter importance
+- [ ] **Docker Deployment**: Containerized distribution

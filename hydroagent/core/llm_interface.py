@@ -162,6 +162,7 @@ class OpenAIInterface(LLMInterface):
     ) -> Dict[str, Any]:
         """Generate JSON output using OpenAI API."""
         import json
+        import re
 
         response = self.generate(
             system_prompt=system_prompt + "\n\nRespond with valid JSON only.",
@@ -170,10 +171,26 @@ class OpenAIInterface(LLMInterface):
             **kwargs
         )
 
+        # Extract JSON from markdown code blocks if present
+        json_str = response
+        json_match = re.search(r'```json\s*\n(.*?)\n```', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+            logger.debug("Extracted JSON from markdown code block")
+        else:
+            # Try to find JSON directly
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                logger.debug("Extracted JSON from response body")
+
         try:
-            return json.loads(response)
+            return json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response: {str(e)}")
+            logger.error(f"Response length: {len(response) if response else 0} characters")
+            logger.error(f"Response preview (first 500 chars): {response[:500] if response else '(empty)'}")
+            logger.error(f"Response preview (last 200 chars): {response[-200:] if response and len(response) > 200 else '(n/a)'}")
             raise
 
 
@@ -227,6 +244,7 @@ class ClaudeInterface(LLMInterface):
     ) -> Dict[str, Any]:
         """Generate JSON output using Claude API."""
         import json
+        import re
 
         response = self.generate(
             system_prompt=system_prompt + "\n\nRespond with valid JSON only.",
@@ -235,10 +253,25 @@ class ClaudeInterface(LLMInterface):
             **kwargs
         )
 
+        # Extract JSON from markdown code blocks if present
+        json_str = response
+        json_match = re.search(r'```json\s*\n(.*?)\n```', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+            logger.debug("Extracted JSON from markdown code block")
+        else:
+            # Try to find JSON directly
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                logger.debug("Extracted JSON from response body")
+
         try:
-            return json.loads(response)
+            return json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response: {str(e)}")
+            logger.error(f"Response length: {len(response) if response else 0} characters")
+            logger.error(f"Response preview (first 500 chars): {response[:500] if response else '(empty)'}")
             raise
 
 
@@ -330,6 +363,7 @@ class OllamaInterface(LLMInterface):
     ) -> Dict[str, Any]:
         """Generate JSON output using Ollama API."""
         import json
+        import re
 
         response = self.generate(
             system_prompt=system_prompt + "\n\nRespond with valid JSON only.",
@@ -338,10 +372,25 @@ class OllamaInterface(LLMInterface):
             **kwargs
         )
 
+        # Extract JSON from markdown code blocks if present
+        json_str = response
+        json_match = re.search(r'```json\s*\n(.*?)\n```', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+            logger.debug("Extracted JSON from markdown code block")
+        else:
+            # Try to find JSON directly
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                logger.debug("Extracted JSON from response body")
+
         try:
-            return json.loads(response)
+            return json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response: {str(e)}")
+            logger.error(f"Response length: {len(response) if response else 0} characters")
+            logger.error(f"Response preview (first 500 chars): {response[:500] if response else '(empty)'}")
             raise
 
 

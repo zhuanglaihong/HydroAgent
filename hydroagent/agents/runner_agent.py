@@ -136,11 +136,13 @@ class RunnerAgent(BaseAgent):
     - Capture errors and tracebacks
     - Provide feedback to Orchestrator for error recovery
     - Manage execution timeout and resource limits
+    - 🆕 Generate and execute custom analysis code (v4.0)
     """
 
     def __init__(
         self,
         llm_interface: LLMInterface,
+        code_llm_interface: Optional[LLMInterface] = None,  # 🆕 代码专用LLM
         workspace_dir: Optional[Path] = None,
         timeout: int = 3600,
         show_progress: bool = True,
@@ -151,6 +153,8 @@ class RunnerAgent(BaseAgent):
 
         Args:
             llm_interface: LLM API interface
+            code_llm_interface: 🆕 Optional LLM interface for code generation
+                Examples: qwen-coder-turbo, deepseek-coder:6.7b
             workspace_dir: Working directory
             timeout: Execution timeout in seconds
             show_progress: 是否显示实时进度（进度条等）
@@ -167,6 +171,13 @@ class RunnerAgent(BaseAgent):
         self.timeout = timeout
         self.show_progress = show_progress
         self.last_execution_log = None
+
+        # 🆕 代码生成LLM
+        self.code_llm = code_llm_interface if code_llm_interface else None
+        if self.code_llm:
+            logger.info(f"[RunnerAgent] Code generation enabled with model: {self.code_llm.model_name}")
+        else:
+            logger.info("[RunnerAgent] Code generation not configured (code_llm_interface not provided)")
 
     def _get_default_system_prompt(self) -> str:
         """Return default system prompt for RunnerAgent."""
@@ -248,6 +259,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             mode = "statistical_analysis"
         elif task_type == "custom_analysis":
             mode = "custom_analysis"
+        elif task_type == "auto_iterative_calibration":  # 🆕 v4.0
+            mode = "auto_iterative"
         else:
             # 传统模式：从intent推断
             intent = input_data.get("intent_result", {}).get("intent") or input_data.get("intent", "calibration")
@@ -263,8 +276,17 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 mode = "calibrate"  # 默认为率定
 
         logger.info(f"[RunnerAgent] 开始执行任务: {task_id}, 模式: {mode}")
-        logger.info(f"[RunnerAgent] 模型: {config.get('model_cfgs', {}).get('model_name', 'N/A')}")
-        logger.info(f"[RunnerAgent] 流域: {config.get('data_cfgs', {}).get('basin_ids', [])}")
+
+        # For custom_analysis tasks, get metadata from task_metadata or parameters
+        if mode == "custom_analysis":
+            task_metadata = config.get("task_metadata", {})
+            model_name = task_metadata.get("model_name") or parameters.get("model_name", "N/A")
+            basin_ids = task_metadata.get("basin_id") or parameters.get("basin_id", "N/A")
+            logger.info(f"[RunnerAgent] 模型: {model_name}")
+            logger.info(f"[RunnerAgent] 流域: {basin_ids}")
+        else:
+            logger.info(f"[RunnerAgent] 模型: {config.get('model_cfgs', {}).get('model_name', 'N/A')}")
+            logger.info(f"[RunnerAgent] 流域: {config.get('data_cfgs', {}).get('basin_ids', [])}")
 
         try:
             if mode == "calibrate":
@@ -279,6 +301,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 result = self._run_statistical_analysis(config, parameters, input_data)
             elif mode == "custom_analysis":
                 result = self._run_custom_analysis(config, parameters)
+            elif mode == "auto_iterative":  # 🆕 v4.0
+                result = self._run_auto_iterative_calibration(config, parameters)
             else:
                 raise ValueError(f"未知的执行模式: {mode}")
 
@@ -1214,8 +1238,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         parameters: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        执行自定义分析代码（实验4）。
-        Execute custom analysis code (Experiment 4).
+        执行自定义分析（包括代码生成和执行）- v4.0增强版。
+        Execute custom analysis (including code generation and execution) - v4.0 enhanced.
 
         Args:
             config: 配置字典
@@ -1236,17 +1260,59 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         logger.info(f"[RunnerAgent] 分析类型: {analysis_type}")
         logger.info(f"[RunnerAgent] 流域: {basin_id}, 模型: {model_name}")
 
-        # 自定义分析需要DeveloperAgent生成代码后执行
-        # 这里RunnerAgent只是标记需要执行自定义分析
-        # 实际的代码生成和执行由DeveloperAgent完成
+        # 🆕 v4.0: RunnerAgent负责代码生成和执行（带错误反馈循环）
+        if not self.code_llm:
+            logger.warning("[RunnerAgent] Code LLM not configured, cannot generate code")
+            return {
+                "status": "code_llm_not_configured",
+                "analysis_type": analysis_type,
+                "basin_id": basin_id,
+                "model_name": model_name,
+                "message": "Code LLM未配置，无法生成代码。请在创建RunnerAgent时提供code_llm_interface参数。"
+            }
 
-        return {
-            "status": "pending_code_generation",
-            "analysis_type": analysis_type,
-            "basin_id": basin_id,
-            "model_name": model_name,
-            "message": "自定义分析需要DeveloperAgent生成代码"
-        }
+        # 🆕 v4.0: 使用带错误反馈的代码生成方法
+        logger.info("[RunnerAgent] 开始代码生成和执行（带错误反馈循环）...")
+        max_retries = parameters.get("code_gen_max_retries", 3)
+
+        result = self._generate_code_with_feedback(
+            analysis_type=analysis_type,
+            params=parameters,
+            max_retries=max_retries
+        )
+
+        # 处理结果
+        if result.get("status") == "success":
+            logger.info(f"[RunnerAgent] ✅ 自定义分析成功（尝试{result.get('attempts')}次）")
+            exec_result = result.get("execution_result", {})
+
+            return {
+                "status": "success",
+                "analysis_type": analysis_type,
+                "basin_id": basin_id,
+                "model_name": model_name,
+                "code_file": result["code_file"],
+                "execution_output": exec_result,
+                "generated_files": exec_result.get("output_files", []),
+                "stdout": exec_result.get("stdout", ""),
+                "attempts": result.get("attempts", 1),
+                "error_history": result.get("error_history", []),
+                "message": f"自定义分析'{analysis_type}'执行成功（尝试{result.get('attempts')}次后成功）"
+            }
+        else:
+            # 代码生成或执行失败
+            logger.error(f"[RunnerAgent] ❌ 自定义分析失败: {result.get('error')}")
+            return {
+                "status": result.get("status", "failed"),
+                "analysis_type": analysis_type,
+                "basin_id": basin_id,
+                "model_name": model_name,
+                "code_file": result.get("last_error", {}).get("code_file"),
+                "error": result.get("error"),
+                "error_history": result.get("error_history", []),
+                "attempts": result.get("attempts", 0),
+                "message": "代码执行失败"
+            }
 
     # ========================================================================
     # 智能参数范围调整工具
@@ -1409,3 +1475,573 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 "success": False,
                 "error": str(e)
             }
+
+    # ========================================================================
+    # 🆕 v4.0: 代码生成和执行方法
+    # ========================================================================
+
+    def _generate_analysis_code(
+        self,
+        analysis_type: str,
+        params: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        调用Code LLM生成分析代码。
+        Call Code LLM to generate analysis code.
+
+        Args:
+            analysis_type: 分析类型（runoff_coefficient, FDC等）
+            params: 参数字典
+
+        Returns:
+            生成结果 {"code_file": str, "code": str} 或 {"error": str}
+        """
+        if not self.code_llm:
+            return {"error": "Code LLM not configured"}
+
+        # 构建代码生成提示词
+        prompt = self._build_code_generation_prompt(analysis_type, params)
+
+        try:
+            # 使用Code LLM生成代码
+            logger.info(f"[RunnerAgent] 调用Code LLM: {self.code_llm.model_name}")
+            code = self.code_llm.generate(
+                system_prompt="你是一个专业的Python代码生成助手，擅长编写水文数据分析和可视化代码。",
+                user_prompt=prompt,
+                temperature=0.1,  # 低温度确保代码准确性
+                max_tokens=2000
+            )
+
+            # 提取代码（去除markdown格式）
+            if "```python" in code:
+                code = code.split("```python")[1].split("```")[0].strip()
+            elif "```" in code:
+                code = code.split("```")[1].split("```")[0].strip()
+
+            # 保存代码到文件（统一保存到项目 generated_code 目录）
+            # 获取项目根目录
+            project_root = Path(__file__).parent.parent.parent
+            generated_code_dir = project_root / "generated_code"
+            generated_code_dir.mkdir(exist_ok=True)
+
+            # 生成带时间戳的文件名，方便查看历史记录
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            code_file = generated_code_dir / f"{analysis_type}_analysis_{timestamp}.py"
+            code_file.write_text(code, encoding='utf-8')
+
+            logger.info(f"[RunnerAgent] Generated code saved to: {code_file}")
+            logger.info(f"[RunnerAgent] 💡 Code saved to project directory for easy inspection")
+
+            return {
+                "code_file": str(code_file),
+                "code": code
+            }
+
+        except Exception as e:
+            logger.error(f"[RunnerAgent] Code generation failed: {str(e)}", exc_info=True)
+            return {"error": str(e)}
+
+    def _execute_generated_code(self, code_file: str) -> Dict[str, Any]:
+        """
+        执行生成的代码。
+        Execute generated code.
+
+        Args:
+            code_file: 代码文件路径
+
+        Returns:
+            执行结果
+        """
+        import subprocess
+
+        logger.info(f"[RunnerAgent] Executing code: {code_file}")
+
+        try:
+            # 使用subprocess执行代码
+            result = subprocess.run(
+                [sys.executable, code_file],
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=self.workspace_dir
+            )
+
+            if result.returncode == 0:
+                logger.info("[RunnerAgent] Code execution successful")
+                return {
+                    "status": "success",
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "output_files": self._scan_output_files()
+                }
+            else:
+                logger.error(f"[RunnerAgent] Code execution failed with return code {result.returncode}")
+                return {
+                    "status": "failed",
+                    "error": result.stderr,
+                    "stdout": result.stdout,
+                    "returncode": result.returncode
+                }
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"[RunnerAgent] Code execution timeout ({self.timeout}s)")
+            return {
+                "status": "timeout",
+                "error": f"Execution timeout after {self.timeout} seconds"
+            }
+
+        except Exception as e:
+            logger.error(f"[RunnerAgent] Code execution error: {str(e)}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def _build_code_generation_prompt(
+        self,
+        analysis_type: str,
+        params: Dict[str, Any]
+    ) -> str:
+        """
+        构建代码生成提示词。
+        Build code generation prompt.
+
+        Args:
+            analysis_type: 分析类型
+            params: 参数字典
+
+        Returns:
+            完整的提示词
+        """
+        basin_id = params.get("basin_id", "N/A")
+        model_name = params.get("model_name", "N/A")
+
+        # 预定义的分析类型模板
+        templates = {
+            "runoff_coefficient": f"""
+请生成Python代码，计算流域 {basin_id} 的径流系数。
+
+具体要求：
+1. 从率定结果目录读取流量和降水数据
+2. 计算总径流量和总降水量
+3. 径流系数 = 总径流量 / 总降水量
+4. 打印结果，保存到CSV文件（runoff_coefficient.csv）
+5. 如果可能，绘制时间序列对比图
+
+数据源：
+- 从 calibration_results.json 或 NetCDF 文件读取
+- 或使用 hydrodataset 加载原始数据
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+- 打印进度信息
+""",
+
+            "FDC": f"""
+请生成Python代码，绘制流域 {basin_id} 的流量历时曲线（Flow Duration Curve, FDC）。
+
+具体要求：
+1. 从率定结果读取流量数据（观测值和模拟值）
+2. 对流量数据进行降序排序
+3. 计算超越概率（exceedance probability）
+4. 绘制FDC曲线（使用对数坐标）
+5. 同时绘制观测值和模拟值的FDC，进行对比
+6. 保存高分辨率图片（fdc_curve.png, 300 DPI）
+
+绘图要求：
+- 使用 matplotlib
+- 图表清晰美观，包含图例、网格
+- 保存为PNG格式
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+""",
+
+            "water_balance": f"""
+请生成Python代码，分析流域 {basin_id} 的水量平衡。
+
+具体要求：
+1. 读取降水、蒸散发、径流数据
+2. 计算水量平衡：P = ET + Q + ΔS
+3. 分析各项占比（降水、蒸散发、径流）
+4. 绘制水量平衡饼图或柱状图
+5. 计算和显示误差项
+6. 保存结果到CSV和图片
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+""",
+
+            "seasonal_analysis": f"""
+请生成Python代码，进行流域 {basin_id} 的季节性分析。
+
+具体要求：
+1. 读取多年流量数据
+2. 按季节（春夏秋冬）分组统计
+3. 计算每个季节的平均流量、最大流量、最小流量
+4. 绘制季节性变化箱线图
+5. 分析径流的季节性特征
+6. 保存统计结果和图表
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+"""
+        }
+
+        # 获取对应的模板，如果没有则使用通用模板
+        if analysis_type in templates:
+            return templates[analysis_type]
+        else:
+            # 通用模板
+            return f"""
+请生成Python代码，进行流域 {basin_id} 的 {analysis_type} 分析。
+
+具体要求：
+1. 从率定结果目录读取必要的数据
+2. 进行 {analysis_type} 相关的计算和分析
+3. 如果适用，生成可视化图表
+4. 将结果保存到文件（CSV或图片）
+5. 打印清晰的分析结果
+
+数据源：
+- 从 workspace_dir 中的 calibration_results.json 或 NetCDF 文件读取
+- 使用 {model_name} 模型的输出结果
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+- 打印进度信息
+"""
+
+    def _scan_output_files(self) -> list[str]:
+        """
+        扫描生成的输出文件。
+        Scan generated output files.
+
+        Returns:
+            输出文件路径列表
+        """
+        output_files = []
+        if self.workspace_dir:
+            workspace_path = Path(self.workspace_dir)
+            for ext in ['.csv', '.png', '.pdf', '.json', '.txt']:
+                output_files.extend(
+                    [str(f) for f in workspace_path.glob(f'*{ext}')]
+                )
+        return output_files
+
+    def _analyze_execution_error(
+        self,
+        error_message: str,
+        code_content: str,
+        execution_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        分析代码执行错误并提供修复建议（v4.0）。
+        Analyze code execution error and provide fix suggestions.
+
+        Args:
+            error_message: 错误信息（stderr）
+            code_content: 原始代码内容
+            execution_context: 执行上下文（参数、数据路径等）
+
+        Returns:
+            错误分析结果
+            {
+                "error_type": str,  # import_error, runtime_error, data_error, etc.
+                "root_cause": str,  # 根本原因
+                "fix_suggestions": List[str],  # 修复建议
+                "needs_config_update": bool,  # 是否需要更新config
+                "needs_code_regeneration": bool  # 是否需要重新生成代码
+            }
+        """
+        logger.info("[RunnerAgent] 分析执行错误...")
+
+        analysis = {
+            "error_type": "unknown",
+            "root_cause": "",
+            "fix_suggestions": [],
+            "needs_config_update": False,
+            "needs_code_regeneration": False
+        }
+
+        error_lower = error_message.lower()
+
+        # 1. 导入错误
+        if "importerror" in error_lower or "modulenotfounderror" in error_lower:
+            analysis["error_type"] = "import_error"
+            analysis["root_cause"] = "缺少必要的Python库"
+            analysis["fix_suggestions"].append("安装缺失的依赖包")
+            analysis["needs_code_regeneration"] = True
+
+        # 2. 文件未找到错误
+        elif "filenotfounderror" in error_lower or "no such file" in error_lower:
+            analysis["error_type"] = "data_error"
+            analysis["root_cause"] = "数据文件路径不正确或文件不存在"
+            analysis["fix_suggestions"].append("检查数据文件路径")
+            analysis["fix_suggestions"].append("确认calibration已完成并生成了结果文件")
+            analysis["needs_config_update"] = True  # 可能需要更新数据路径
+
+        # 3. KeyError / IndexError
+        elif "keyerror" in error_lower or "indexerror" in error_lower:
+            analysis["error_type"] = "data_structure_error"
+            analysis["root_cause"] = "数据结构不匹配或字段缺失"
+            analysis["fix_suggestions"].append("检查数据文件格式")
+            analysis["fix_suggestions"].append("更新代码以适配实际数据结构")
+            analysis["needs_code_regeneration"] = True
+
+        # 4. ValueError / TypeError
+        elif "valueerror" in error_lower or "typeerror" in error_lower:
+            analysis["error_type"] = "runtime_error"
+            analysis["root_cause"] = "数据类型或值不符合预期"
+            analysis["fix_suggestions"].append("检查输入数据的类型和范围")
+            analysis["fix_suggestions"].append("添加数据验证和类型转换")
+            analysis["needs_code_regeneration"] = True
+
+        # 5. 其他运行时错误
+        else:
+            analysis["error_type"] = "general_runtime_error"
+            analysis["root_cause"] = "代码执行过程中发生未预期的错误"
+            analysis["fix_suggestions"].append("检查完整的错误堆栈信息")
+            analysis["fix_suggestions"].append("可能需要重新生成代码")
+            analysis["needs_code_regeneration"] = True
+
+        logger.info(f"[RunnerAgent] 错误类型: {analysis['error_type']}")
+        logger.info(f"[RunnerAgent] 根本原因: {analysis['root_cause']}")
+
+        return analysis
+
+    def _generate_code_with_feedback(
+        self,
+        analysis_type: str,
+        params: Dict[str, Any],
+        max_retries: int = 3
+    ) -> Dict[str, Any]:
+        """
+        带错误反馈的代码生成（v4.0增强）。
+        Code generation with error feedback loop.
+
+        流程：
+        1. 生成代码
+        2. 尝试执行
+        3. 如果失败，分析错误
+        4. 根据错误类型决定：
+           - 重新生成代码（附带错误信息）
+           - 更新参数
+           - 或放弃并返回错误
+        5. 循环直到成功或达到最大重试次数
+
+        Args:
+            analysis_type: 分析类型
+            params: 参数字典
+            max_retries: 最大重试次数
+
+        Returns:
+            生成和执行结果
+        """
+        logger.info(f"[RunnerAgent] 开始代码生成（带错误反馈），最大重试{max_retries}次")
+
+        error_history = []  # 记录错误历史
+
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"[RunnerAgent] 尝试 {attempt}/{max_retries}")
+
+            # 1. 生成代码（第一次用原始prompt，后续附带错误信息）
+            if attempt == 1:
+                # 初次生成
+                code_result = self._generate_analysis_code(analysis_type, params)
+            else:
+                # 重新生成，附带错误信息
+                last_error = error_history[-1]
+                enhanced_params = params.copy()
+                enhanced_params["previous_error"] = last_error["error_message"]
+                enhanced_params["error_analysis"] = last_error["analysis"]
+                enhanced_params["retry_attempt"] = attempt
+
+                code_result = self._generate_analysis_code(analysis_type, enhanced_params)
+
+            if "error" in code_result:
+                logger.error(f"[RunnerAgent] 代码生成失败: {code_result['error']}")
+                return {
+                    "status": "code_generation_failed",
+                    "error": code_result["error"],
+                    "attempt": attempt
+                }
+
+            code_file = code_result["code_file"]
+            code_content = code_result["code"]
+
+            # 2. 执行代码
+            exec_result = self._execute_generated_code(code_file)
+
+            # 3. 检查执行结果
+            if exec_result.get("status") == "success":
+                logger.info(f"[RunnerAgent] 代码执行成功（尝试 {attempt}/{max_retries}）")
+                return {
+                    "status": "success",
+                    "code_file": code_file,
+                    "code": code_content,
+                    "execution_result": exec_result,
+                    "attempts": attempt,
+                    "error_history": error_history
+                }
+
+            # 4. 执行失败，分析错误
+            error_msg = exec_result.get("error", "") or exec_result.get("stderr", "")
+            logger.warning(f"[RunnerAgent] 代码执行失败（尝试 {attempt}/{max_retries}）")
+
+            error_analysis = self._analyze_execution_error(
+                error_message=error_msg,
+                code_content=code_content,
+                execution_context=params
+            )
+
+            error_history.append({
+                "attempt": attempt,
+                "error_message": error_msg,
+                "analysis": error_analysis,
+                "code_file": code_file
+            })
+
+            # 5. 决定是否继续重试
+            if not error_analysis["needs_code_regeneration"] and not error_analysis["needs_config_update"]:
+                # 不可恢复的错误，立即停止
+                logger.error("[RunnerAgent] 检测到不可恢复的错误，停止重试")
+                break
+
+            logger.info(f"[RunnerAgent] 错误可能可修复，准备重试...")
+
+        # 所有重试都失败
+        logger.error(f"[RunnerAgent] 代码生成和执行在{max_retries}次尝试后仍然失败")
+        return {
+            "status": "failed_after_retries",
+            "error": "代码执行在多次重试后仍然失败",
+            "error_history": error_history,
+            "attempts": max_retries,
+            "last_error": error_history[-1] if error_history else {}
+        }
+
+    # ========================================================================
+    # 🆕 v4.0: 自动迭代率定方法
+    # ========================================================================
+
+    def _run_auto_iterative_calibration(
+        self,
+        config: Dict[str, Any],
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        自动迭代率定，直到NSE达标或达到最大次数（v4.0新功能）。
+        Auto-iterative calibration until NSE threshold is met or max iterations reached.
+
+        Args:
+            config: 配置字典
+            parameters: 任务参数
+                - nse_threshold: 目标NSE阈值（默认0.7）
+                - max_iterations: 最大迭代次数（默认10）
+                - plot_each_iteration: 是否每轮绘图（默认True）
+
+        Returns:
+            迭代历史和结果
+        """
+        nse_threshold = parameters.get("nse_threshold", 0.7)
+        max_iterations = parameters.get("max_iterations", 10)
+        plot_each = parameters.get("plot_each_iteration", True)
+
+        logger.info(f"[RunnerAgent] 🔄 开始自动迭代率定 (v4.0)")
+        logger.info(f"  目标NSE: >= {nse_threshold}")
+        logger.info(f"  最大次数: {max_iterations}")
+        logger.info(f"  每轮绘图: {plot_each}")
+
+        iteration_history = []
+        converged = False
+
+        for iteration in range(max_iterations):
+            logger.info(f"\n{'='*70}")
+            logger.info(f"🔄 Iteration {iteration + 1}/{max_iterations}")
+            logger.info(f"{'='*70}")
+
+            # 执行率定
+            try:
+                result = self._run_calibration(config)
+
+                if not result.get("status") == "success":
+                    logger.error(f"❌ Iteration {iteration + 1} failed")
+                    iteration_history.append({
+                        "iteration": iteration + 1,
+                        "status": "failed",
+                        "error": result.get("error", "Unknown error")
+                    })
+                    break
+
+                # 获取NSE
+                nse = result.get("metrics", {}).get("NSE", 0.0)
+                calibration_dir = result.get("calibration_dir")
+
+                logger.info(f"📊 Iteration {iteration + 1} NSE: {nse:.4f}")
+
+                # 记录历史
+                iteration_history.append({
+                    "iteration": iteration + 1,
+                    "nse": nse,
+                    "calibration_dir": calibration_dir,
+                    "metrics": result.get("metrics", {}),
+                    "status": "completed"
+                })
+
+                # 判断是否达标
+                if nse >= nse_threshold:
+                    logger.info(f"🎉 NSE达标！({nse:.4f} >= {nse_threshold})")
+                    converged = True
+                    break
+                else:
+                    logger.info(f"⚠️  NSE未达标 ({nse:.4f} < {nse_threshold})，继续下一轮...")
+
+            except Exception as e:
+                logger.error(f"❌ Iteration {iteration + 1} error: {str(e)}", exc_info=True)
+                iteration_history.append({
+                    "iteration": iteration + 1,
+                    "status": "error",
+                    "error": str(e)
+                })
+                break
+
+        # 汇总结果
+        if converged:
+            status = "converged"
+            message = f"Successfully converged after {len(iteration_history)} iterations"
+        elif len(iteration_history) == max_iterations:
+            status = "max_iterations_reached"
+            message = f"Reached maximum iterations ({max_iterations})"
+        else:
+            status = "failed"
+            message = "Calibration failed during iteration"
+
+        final_nse = iteration_history[-1].get("nse", 0.0) if iteration_history else 0.0
+
+        logger.info(f"\n{'='*70}")
+        logger.info(f"✅ 自动迭代率定完成")
+        logger.info(f"  状态: {status}")
+        logger.info(f"  总迭代次数: {len(iteration_history)}")
+        logger.info(f"  最终NSE: {final_nse:.4f}")
+        logger.info(f"{'='*70}\n")
+
+        return {
+            "status": status,
+            "converged": converged,
+            "total_iterations": len(iteration_history),
+            "final_nse": final_nse,
+            "nse_threshold": nse_threshold,
+            "iteration_history": iteration_history,
+            "message": message
+        }

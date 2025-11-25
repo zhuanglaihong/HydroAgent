@@ -40,6 +40,7 @@ class Orchestrator(BaseAgent):
         workspace_root: Optional[Path] = None,
         show_progress: bool = True,
         enable_code_gen: bool = True,
+        enable_checkpoint: bool = True,
         **kwargs
     ):
         """
@@ -50,6 +51,7 @@ class Orchestrator(BaseAgent):
             workspace_root: Root directory for all workspaces
             show_progress: Whether to show hydromodel execution progress
             enable_code_gen: Whether to enable code generation in DeveloperAgent
+            enable_checkpoint: Whether to enable checkpoint/resume functionality
             **kwargs: Additional configuration
         """
         workspace_root = workspace_root or Path.cwd() / "results"
@@ -63,9 +65,11 @@ class Orchestrator(BaseAgent):
         self.workspace_root = workspace_root
         self.show_progress = show_progress
         self.enable_code_gen = enable_code_gen
+        self.enable_checkpoint = enable_checkpoint
         self.current_session_id: Optional[str] = None
         self.current_workspace: Optional[Path] = None
         self.conversation_history: List[Dict[str, Any]] = []
+        self.checkpoint_manager = None  # Will be initialized per session
 
         # Sub-agents will be initialized when session starts
         self.intent_agent = None
@@ -112,11 +116,65 @@ Always think step-by-step and explain your reasoning."""
         self.conversation_history.clear()
         self.clear_context()
 
+        # Initialize checkpoint manager if enabled
+        if self.enable_checkpoint:
+            from ..core.checkpoint_manager import CheckpointManager
+            self.checkpoint_manager = CheckpointManager(self.current_workspace)
+            logger.info("Checkpoint manager initialized")
+
         # Initialize all sub-agents for this session
         self._initialize_agents()
 
         logger.info(f"Started new session: {self.current_session_id}")
         logger.info(f"Workspace: {self.current_workspace}")
+
+        return self.current_session_id
+
+    def resume_session(self, workspace_path: Path) -> str:
+        """
+        Resume a previous session from checkpoint.
+        从检查点恢复之前的会话。
+
+        Args:
+            workspace_path: Path to the workspace containing checkpoint.json
+
+        Returns:
+            Session ID
+
+        Raises:
+            FileNotFoundError: If checkpoint file not found
+            RuntimeError: If checkpoint cannot be resumed
+        """
+        workspace_path = Path(workspace_path)
+        if not workspace_path.exists():
+            raise FileNotFoundError(f"Workspace not found: {workspace_path}")
+
+        # Initialize checkpoint manager and load checkpoint
+        from ..core.checkpoint_manager import CheckpointManager
+        self.checkpoint_manager = CheckpointManager(workspace_path)
+
+        if not self.checkpoint_manager.exists():
+            raise FileNotFoundError(f"No checkpoint found in: {workspace_path}")
+
+        self.checkpoint_manager.load()
+
+        if not self.checkpoint_manager.can_resume():
+            raise RuntimeError(
+                f"Cannot resume: experiment already completed or no pending tasks"
+            )
+
+        # Restore session state
+        self.current_session_id = workspace_path.name
+        self.current_workspace = workspace_path
+
+        # Initialize agents
+        self._initialize_agents()
+
+        progress = self.checkpoint_manager.get_progress_summary()
+        logger.info(f"Resumed session: {self.current_session_id}")
+        logger.info(
+            f"Progress: {progress['completed']}/{progress['total']} tasks completed"
+        )
 
         return self.current_session_id
 
