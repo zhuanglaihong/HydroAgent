@@ -1,7 +1,7 @@
 """
 Author: zhuanglaihong
-Date: 2025-01-20 19:55:00
-LastEditTime: 2025-01-20 19:55:00
+Date: 2025-11-20 19:55:00
+LastEditTime: 2025-11-20 19:55:00
 LastEditors: zhuanglaihong
 Description: Execution and monitoring agent - runs hydromodel and captures output
              执行监控智能体 - 运行 hydromodel 并捕获输出
@@ -136,13 +136,13 @@ class RunnerAgent(BaseAgent):
     - Capture errors and tracebacks
     - Provide feedback to Orchestrator for error recovery
     - Manage execution timeout and resource limits
-    - 🆕 Generate and execute custom analysis code (v4.0)
+    -   Generate and execute custom analysis code (v4.0)
     """
 
     def __init__(
         self,
         llm_interface: LLMInterface,
-        code_llm_interface: Optional[LLMInterface] = None,  # 🆕 代码专用LLM
+        code_llm_interface: Optional[LLMInterface] = None,  #   代码专用LLM
         workspace_dir: Optional[Path] = None,
         timeout: int = 3600,
         show_progress: bool = True,
@@ -153,7 +153,7 @@ class RunnerAgent(BaseAgent):
 
         Args:
             llm_interface: LLM API interface
-            code_llm_interface: 🆕 Optional LLM interface for code generation
+            code_llm_interface:   Optional LLM interface for code generation
                 Examples: qwen-coder-turbo, deepseek-coder:6.7b
             workspace_dir: Working directory
             timeout: Execution timeout in seconds
@@ -172,7 +172,7 @@ class RunnerAgent(BaseAgent):
         self.show_progress = show_progress
         self.last_execution_log = None
 
-        # 🆕 代码生成LLM
+        #   代码生成LLM
         self.code_llm = code_llm_interface if code_llm_interface else None
         if self.code_llm:
             logger.info(f"[RunnerAgent] Code generation enabled with model: {self.code_llm.model_name}")
@@ -210,7 +210,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        执行 hydromodel 工作流（Phase 3增强：支持新任务类型）。
+        执行 hydromodel 工作流。
         Execute hydromodel workflow (Phase 3 enhanced: support new task types).
 
         Args:
@@ -252,14 +252,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         task_type = parameters.get("task_type")
         task_id = input_data.get("task_id", "unknown")
 
-        # 推断执行模式
+        # 推断执行模式 TODO
         if task_type == "boundary_check_recalibration":
             mode = "boundary_check"
         elif task_type == "statistical_analysis":
             mode = "statistical_analysis"
         elif task_type == "custom_analysis":
             mode = "custom_analysis"
-        elif task_type == "auto_iterative_calibration":  # 🆕 v4.0
+        elif task_type == "auto_iterative_calibration":  
             mode = "auto_iterative"
         else:
             # 传统模式：从intent推断
@@ -301,7 +301,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 result = self._run_statistical_analysis(config, parameters, input_data)
             elif mode == "custom_analysis":
                 result = self._run_custom_analysis(config, parameters)
-            elif mode == "auto_iterative":  # 🆕 v4.0
+            elif mode == "auto_iterative":  #   v4.0
                 result = self._run_auto_iterative_calibration(config, parameters)
             else:
                 raise ValueError(f"未知的执行模式: {mode}")
@@ -378,6 +378,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                         "Using data paths",  # 数据路径
                         "dynamic data already exists",  # 数据存在提示
                         "Remote service setup failed",  # 远程服务错误（不重要）
+                        "Remote service setup failed: Invalid endpoint:",
                     ]
 
                     # 使用TeeIO同时显示进度和保存日志，过滤装饰性输出
@@ -718,41 +719,72 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 output_path = Path(output_dir)
                 logger.info(f"[RunnerAgent] 查找率定输出目录: {output_path}")
 
-                # 查找最新的实验目录（通常是按时间戳命名）
+                # 🔧 FIX: 支持两种情况
+                # 1. 有子目录: output_dir/experiment_name/calibration_results.json (旧版)
+                # 2. 无子目录: output_dir/calibration_results.json (experiment_name="" 时)
                 if output_path.exists():
-                    experiment_dirs = sorted([d for d in output_path.iterdir() if d.is_dir()],
-                                           key=lambda x: x.stat().st_mtime,
-                                           reverse=True)
+                    # 先检查是否直接在 output_path 中有 calibration_results.json
+                    results_file_direct = output_path / "calibration_results.json"
 
-                    if experiment_dirs:
-                        calibration_dir = str(experiment_dirs[0])
-                        logger.info(f"[RunnerAgent] 找到率定目录: {calibration_dir}")
+                    if results_file_direct.exists():
+                        # 情况2：直接保存在 output_dir（experiment_name=""）
+                        calibration_dir = str(output_path)
+                        logger.info(f"[RunnerAgent] 找到率定目录（直接模式）: {calibration_dir}")
                         parsed["calibration_dir"] = calibration_dir
 
-                        # 尝试读取calibration_results.json
-                        results_file = Path(calibration_dir) / "calibration_results.json"
-                        if results_file.exists():
-                            with open(results_file, 'r') as f:
-                                calib_results = json.load(f)
-                                logger.info(f"[RunnerAgent] 读取calibration_results.json")
+                        # 读取 calibration_results.json
+                        with open(results_file_direct, 'r') as f:
+                            calib_results = json.load(f)
+                            logger.info(f"[RunnerAgent] 读取calibration_results.json")
 
-                                # 提取第一个basin的参数
-                                if calib_results:
-                                    basin_id = list(calib_results.keys())[0]
-                                    basin_data = calib_results[basin_id]
+                            # 提取第一个basin的参数
+                            if calib_results:
+                                basin_id = list(calib_results.keys())[0]
+                                basin_data = calib_results[basin_id]
 
-                                    if "best_params" in basin_data:
-                                        # best_params格式: {"gr4j": {"x1": ..., "x2": ...}}
-                                        model_params = basin_data["best_params"]
-                                        # 提取第一个模型的参数
-                                        if model_params:
-                                            model_name = list(model_params.keys())[0]
-                                            parsed["best_params"] = model_params[model_name]
-                                            logger.info(f"[RunnerAgent] 提取参数: {parsed['best_params']}")
-                        else:
-                            logger.warning(f"[RunnerAgent] 未找到calibration_results.json: {results_file}")
+                                if "best_params" in basin_data:
+                                    # best_params格式: {"gr4j": {"x1": ..., "x2": ...}}
+                                    model_params = basin_data["best_params"]
+                                    # 提取第一个模型的参数
+                                    if model_params:
+                                        model_name = list(model_params.keys())[0]
+                                        parsed["best_params"] = model_params[model_name]
+                                        logger.info(f"[RunnerAgent] 提取参数: {parsed['best_params']}")
                     else:
-                        logger.warning(f"[RunnerAgent] 输出目录中没有实验目录: {output_path}")
+                        # 情况1：查找最新的实验子目录（旧版逻辑）
+                        experiment_dirs = sorted([d for d in output_path.iterdir() if d.is_dir()],
+                                               key=lambda x: x.stat().st_mtime,
+                                               reverse=True)
+
+                        if experiment_dirs:
+                            calibration_dir = str(experiment_dirs[0])
+                            logger.info(f"[RunnerAgent] 找到率定目录（子目录模式）: {calibration_dir}")
+                            parsed["calibration_dir"] = calibration_dir
+
+                            # 尝试读取calibration_results.json
+                            results_file = Path(calibration_dir) / "calibration_results.json"
+                            if results_file.exists():
+                                with open(results_file, 'r') as f:
+                                    calib_results = json.load(f)
+                                    logger.info(f"[RunnerAgent] 读取calibration_results.json")
+
+                                    # 提取第一个basin的参数
+                                    if calib_results:
+                                        basin_id = list(calib_results.keys())[0]
+                                        basin_data = calib_results[basin_id]
+
+                                        if "best_params" in basin_data:
+                                            # best_params格式: {"gr4j": {"x1": ..., "x2": ...}}
+                                            model_params = basin_data["best_params"]
+                                            # 提取第一个模型的参数
+                                            if model_params:
+                                                model_name = list(model_params.keys())[0]
+                                                parsed["best_params"] = model_params[model_name]
+                                                logger.info(f"[RunnerAgent] 提取参数: {parsed['best_params']}")
+                            else:
+                                logger.warning(f"[RunnerAgent] 未找到calibration_results.json: {results_file}")
+                        else:
+                            logger.warning(f"[RunnerAgent] 输出目录中没有实验目录或结果文件: {output_path}")
                 else:
                     logger.warning(f"[RunnerAgent] 输出目录不存在: {output_path}")
             else:
@@ -921,7 +953,18 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             logger.info("🚀 Iteration 0: 初始率定（使用默认参数范围）")
             logger.info("=" * 70)
 
-            initial_result = self._run_calibration(config)
+            # ⭐ 为初始率定设置唯一的输出目录
+            initial_config = config.copy()
+            if "training_cfgs" in initial_config:
+                initial_config["training_cfgs"] = config["training_cfgs"].copy()
+                # 设置输出目录名为 calibration_iter0
+                if self.workspace_dir:
+                    initial_config["training_cfgs"]["output_dir"] = str(self.workspace_dir / "calibration_iter0")
+                    # ⭐ 清空 experiment_name，避免 hydromodel 创建额外的子目录
+                    initial_config["training_cfgs"]["experiment_name"] = ""
+                    logger.info(f"[RunnerAgent] Iteration 0 输出目录: {initial_config['training_cfgs']['output_dir']}")
+
+            initial_result = self._run_calibration(initial_config)
 
             if not initial_result.get("status") == "success":
                 logger.error("[RunnerAgent] 初始率定失败")
@@ -1003,7 +1046,23 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 # 更新config，使用新的参数范围文件
                 new_config = config.copy()
                 new_config["model_cfgs"] = config["model_cfgs"].copy()
+                # ⭐ 保存到 model_cfgs 用于记录（在 calibration_config.yaml 中）
                 new_config["model_cfgs"]["param_range_file"] = adjust_result["output_file"]
+
+                # ⭐ 为每次迭代设置唯一的输出目录
+                if "training_cfgs" in new_config:
+                    new_config["training_cfgs"] = config["training_cfgs"].copy()
+                    # 🔧 FIX: hydromodel 只从 training_cfgs 读取 param_range_file
+                    # 必须设置到 training_cfgs，否则会使用内置的 MODEL_PARAM_DICT（原始范围）
+                    new_config["training_cfgs"]["param_range_file"] = adjust_result["output_file"]
+                    logger.info(f"[RunnerAgent] 设置参数范围文件: {adjust_result['output_file']}")
+
+                    # 设置输出目录名为 calibration_iter{N}
+                    if self.workspace_dir:
+                        new_config["training_cfgs"]["output_dir"] = str(self.workspace_dir / f"calibration_iter{iteration}")
+                        # ⭐ 清空 experiment_name，避免 hydromodel 创建额外的子目录
+                        new_config["training_cfgs"]["experiment_name"] = ""
+                        logger.info(f"[RunnerAgent] Iteration {iteration} 输出目录: {new_config['training_cfgs']['output_dir']}")
 
                 # 执行率定
                 logger.info(f"🚀 执行第 {iteration} 次率定...")
@@ -1260,7 +1319,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         logger.info(f"[RunnerAgent] 分析类型: {analysis_type}")
         logger.info(f"[RunnerAgent] 流域: {basin_id}, 模型: {model_name}")
 
-        # 🆕 v4.0: RunnerAgent负责代码生成和执行（带错误反馈循环）
+        #   v4.0: RunnerAgent负责代码生成和执行（带错误反馈循环）
         if not self.code_llm:
             logger.warning("[RunnerAgent] Code LLM not configured, cannot generate code")
             return {
@@ -1271,7 +1330,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 "message": "Code LLM未配置，无法生成代码。请在创建RunnerAgent时提供code_llm_interface参数。"
             }
 
-        # 🆕 v4.0: 使用带错误反馈的代码生成方法
+        #   v4.0: 使用带错误反馈的代码生成方法
         logger.info("[RunnerAgent] 开始代码生成和执行（带错误反馈循环）...")
         max_retries = parameters.get("code_gen_max_retries", 3)
 
@@ -1292,26 +1351,34 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 "basin_id": basin_id,
                 "model_name": model_name,
                 "code_file": result["code_file"],
+                "generated_code_path": result["code_file"],  # 🔧 标准字段名，供DeveloperAgent使用
                 "execution_output": exec_result,
                 "generated_files": exec_result.get("output_files", []),
+                "output_files": exec_result.get("output_files", []),  # 🔧 别名，供DeveloperAgent使用
                 "stdout": exec_result.get("stdout", ""),
+                "stderr": exec_result.get("stderr", ""),  # 🔧 添加stderr
+                "retry_count": result.get("attempts", 1),  # 🔧 标准字段名，供DeveloperAgent使用
                 "attempts": result.get("attempts", 1),
                 "error_history": result.get("error_history", []),
-                "message": f"自定义分析'{analysis_type}'执行成功（尝试{result.get('attempts')}次后成功）"
+                "message": f"✅ 自定义分析 '{analysis_type}' 执行成功\n📄 生成的代码: {result['code_file']}\n🔄 尝试次数: {result.get('attempts', 1)}"
             }
         else:
             # 代码生成或执行失败
             logger.error(f"[RunnerAgent] ❌ 自定义分析失败: {result.get('error')}")
+            last_code_file = result.get("last_error", {}).get("code_file")
             return {
                 "status": result.get("status", "failed"),
                 "analysis_type": analysis_type,
                 "basin_id": basin_id,
                 "model_name": model_name,
-                "code_file": result.get("last_error", {}).get("code_file"),
+                "code_file": last_code_file,
+                "generated_code_path": last_code_file,  # 🔧 标准字段名，供DeveloperAgent使用
                 "error": result.get("error"),
+                "stderr": result.get("last_error", {}).get("stderr", ""),  # 🔧 添加stderr
                 "error_history": result.get("error_history", []),
+                "retry_count": result.get("attempts", 0),  # 🔧 标准字段名
                 "attempts": result.get("attempts", 0),
-                "message": "代码执行失败"
+                "message": f"❌ 自定义分析 '{analysis_type}' 执行失败\n📄 最后生成的代码: {last_code_file or 'N/A'}\n🔄 尝试次数: {result.get('attempts', 0)}\n⚠️ 错误: {result.get('error')}"
             }
 
     # ========================================================================
@@ -1371,7 +1438,30 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 }
 
             with open(param_range_file, 'r', encoding='utf-8') as f:
-                prev_param_range = yaml.safe_load(f)
+                param_range_data = yaml.safe_load(f)
+
+            # ⭐ BUG FIX: 提取实际的参数范围字典
+            # param_range.yaml 格式可能是:
+            # 1. {model_name: {param_range: {...}}}  # hydromodel标准格式
+            # 2. {param_name: [...]}                 # 直接格式
+            if isinstance(param_range_data, dict):
+                # 检查是否有模型名作为第一层key（如 'xaj', 'gr4j'）
+                model_names = ['xaj', 'gr4j', 'gr5j', 'gr6j', 'lstm']  # 常见模型名
+                found_model = None
+                for model_name in model_names:
+                    if model_name in param_range_data:
+                        found_model = model_name
+                        break
+
+                if found_model and 'param_range' in param_range_data[found_model]:
+                    # 格式1: {model_name: {param_range: {...}}}
+                    prev_param_range = param_range_data[found_model]['param_range']
+                    logger.info(f"[RunnerAgent] 检测到模型: {found_model}")
+                else:
+                    # 格式2: 直接就是参数范围字典
+                    prev_param_range = param_range_data
+            else:
+                prev_param_range = param_range_data
 
             logger.info(f"[RunnerAgent] 上一次参数范围: {prev_param_range}")
 
@@ -1396,15 +1486,30 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
             # 获取第一行（第一个流域）
             param_row = df.iloc[0]
-            # 假设第一列是 basin_id 或类似的标识符，其余是参数
-            param_columns = [col for col in df.columns if col not in ['basin_id', 'basin', 'id']]
+
+            # ⭐ BUG FIX: 排除流域ID列（可能的列名变体）
+            # hydromodel可能生成的流域ID列名: 'Unnamed: 0', 'basin_id', 'basin', 'id', 'index'
+            id_column_patterns = ['unnamed', 'basin_id', 'basin', 'id', 'index']
+
+            param_columns = [
+                col for col in df.columns
+                if not any(pattern in col.lower() for pattern in id_column_patterns)
+            ]
+
+            # 如果没有找到参数列（所有列都被排除了），使用除第一列外的所有列
+            if not param_columns and len(df.columns) > 1:
+                logger.warning("[RunnerAgent] 无法识别ID列，使用除第一列外的所有列作为参数")
+                param_columns = df.columns[1:].tolist()
+
             best_params = {col: param_row[col] for col in param_columns}
 
+            logger.info(f"[RunnerAgent] 参数列: {param_columns}")
             logger.info(f"[RunnerAgent] 最佳参数（反归一化）: {best_params}")
 
             # 3. 计算新的参数范围
             # 格式: {param_name: [min, max]}
             new_param_range = {}
+            param_name_list = []  # 保存参数名列表（用于生成标准格式）
 
             for param_name, best_value in best_params.items():
                 if param_name not in prev_param_range:
@@ -1440,13 +1545,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     new_min = max(new_max - new_length, prev_min)
 
                 new_param_range[param_name] = [float(new_min), float(new_max)]
+                param_name_list.append(param_name)  # 记录参数名
 
                 logger.info(f"[RunnerAgent] 参数 {param_name}:")
                 logger.info(f"  原范围: [{prev_min}, {prev_max}] (长度: {prev_length})")
                 logger.info(f"  最佳值: {best_value}")
                 logger.info(f"  新范围: [{new_min:.4f}, {new_max:.4f}] (长度: {new_max - new_min:.4f})")
 
-            # 4. 保存新的参数范围
+            # 4. 保存新的参数范围（使用标准格式）
             if output_yaml_path is None:
                 # 默认保存在当前工作目录
                 output_yaml_path = self.workspace_dir / "adjusted_param_range.yaml" if self.workspace_dir else Path("adjusted_param_range.yaml")
@@ -1455,10 +1561,25 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
 
+            # ⭐ 生成标准格式的YAML（与原始param_range.yaml格式一致）
+            # 检测模型名（如果原始YAML有嵌套结构）
+            if found_model:
+                # 格式1: {model_name: {param_name: [...], param_range: {...}}}
+                standard_format_yaml = {
+                    found_model: {
+                        'param_name': param_name_list,
+                        'param_range': new_param_range
+                    }
+                }
+            else:
+                # 格式2: 直接格式（保持向后兼容）
+                standard_format_yaml = new_param_range
+
             with open(output_yaml_path, 'w', encoding='utf-8') as f:
-                yaml.dump(new_param_range, f, default_flow_style=False, allow_unicode=True)
+                yaml.dump(standard_format_yaml, f, default_flow_style=False, allow_unicode=True)
 
             logger.info(f"[RunnerAgent] 新参数范围已保存: {output_yaml_path}")
+            logger.info(f"[RunnerAgent] 使用格式: {'标准格式 (含模型名)' if found_model else '简化格式'}")
 
             return {
                 "success": True,
@@ -1477,7 +1598,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             }
 
     # ========================================================================
-    # 🆕 v4.0: 代码生成和执行方法
+    #   v4.0: 代码生成和执行方法
     # ========================================================================
 
     def _generate_analysis_code(
@@ -1638,6 +1759,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 - 添加详细注释
 - 包含错误处理
 - 打印进度信息
+
+🔧 **CRITICAL: 中文显示配置**
+如果使用 matplotlib 绘图，必须在代码开头添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
 """,
 
             "FDC": f"""
@@ -1651,8 +1780,16 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 5. 同时绘制观测值和模拟值的FDC，进行对比
 6. 保存高分辨率图片（fdc_curve.png, 300 DPI）
 
+🔧 **CRITICAL: matplotlib 中文显示配置**
+必须在导入matplotlib后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+
 绘图要求：
-- 使用 matplotlib
+- 使用 matplotlib 并配置中文字体
 - 图表清晰美观，包含图例、网格
 - 保存为PNG格式
 
@@ -1673,6 +1810,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 5. 计算和显示误差项
 6. 保存结果到CSV和图片
 
+🔧 **CRITICAL: matplotlib 中文显示配置**
+必须在导入matplotlib后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+
 代码要求：
 - 使用 type hints
 - 添加详细注释
@@ -1689,6 +1834,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 4. 绘制季节性变化箱线图
 5. 分析径流的季节性特征
 6. 保存统计结果和图表
+
+🔧 **CRITICAL: matplotlib 中文显示配置**
+必须在导入matplotlib后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
 
 代码要求：
 - 使用 type hints
@@ -1715,6 +1868,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 数据源：
 - 从 workspace_dir 中的 calibration_results.json 或 NetCDF 文件读取
 - 使用 {model_name} 模型的输出结果
+
+🔧 **CRITICAL: matplotlib 中文显示配置**
+如果使用 matplotlib 绘图，必须在导入后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
 
 代码要求：
 - 使用 type hints
@@ -1932,7 +2093,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         }
 
     # ========================================================================
-    # 🆕 v4.0: 自动迭代率定方法
+    #   v4.0: 自动迭代率定方法
     # ========================================================================
 
     def _run_auto_iterative_calibration(

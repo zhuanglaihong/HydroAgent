@@ -1,7 +1,7 @@
 """
 Author: Claude
-Date: 2025-01-22 16:30:00
-LastEditTime: 2025-01-22 16:30:00
+Date: 2025-11-22 16:30:00
+LastEditTime: 2025-11-22 16:30:00
 LastEditors: Claude
 Description: Interpreter Agent - LLM-driven hydromodel config generation
              解释器智能体 - 基于LLM的hydromodel配置生成
@@ -108,6 +108,9 @@ Your role is to generate hydromodel-compatible configuration dictionaries from t
 3. For custom_analysis tasks, generate MINIMAL config (see below)
 4. All required fields must be present
 5. Use exact field names (case-sensitive)
+6. **experiment_name**: MUST be descriptive, not "exp_name"!
+   - Format: "{{model_name}}_{{algorithm}}_{{task_type}}"
+   - Example: "xaj_SCE_UA_calibration", "gr4j_GA_evaluation"
 
 **Configuration Structure**:
 
@@ -141,7 +144,7 @@ Your role is to generate hydromodel-compatible configuration dictionaries from t
     }},
     "param_range_file": null,
     "output_dir": "results",
-    "experiment_name": "exp_name",
+    "experiment_name": "{{model_name}}_{{algorithm}}_{{task_type}}",  // Generate descriptive name based on task
     "random_seed": 1234,
     "save_config": true
   }},
@@ -273,7 +276,13 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
 
             # Step 5: Add parameters to config for RunnerAgent to detect task type
             # ⭐ CRITICAL: RunnerAgent needs config["parameters"]["task_type"] to route correctly
-            config["parameters"] = parameters
+            config["parameters"] = parameters.copy()  # Copy to avoid modifying original
+
+            # ⭐ BUG FIX: Add task_type from subtask (not in parameters dict)
+            task_type = subtask.get("task_type")
+            if task_type:
+                config["parameters"]["task_type"] = task_type
+                logger.info(f"[InterpreterAgent] Set task_type in config: {task_type}")
 
             logger.info(f"[InterpreterAgent] Config generated successfully for {task_id}")
 

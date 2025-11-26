@@ -1,7 +1,7 @@
 """
 Author: Claude
-Date: 2025-01-25 10:00:00
-LastEditTime: 2025-01-25 10:00:00
+Date: 2025-11-25 10:00:00
+LastEditTime: 2025-11-25 10:00:00
 LastEditors: Claude
 Description: Checkpoint manager for task interruption and recovery
              任务中断和恢复的检查点管理器
@@ -20,8 +20,27 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+class NumpyJSONEncoder(json.JSONEncoder):
+    """自定义JSON编码器，处理numpy数组和其他非标准类型。"""
+
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif hasattr(obj, '__dict__'):
+            # 处理自定义对象，尝试转换为字典
+            return {k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
+        return super().default(obj)
 
 
 class CheckpointManager:
@@ -391,7 +410,7 @@ class CheckpointManager:
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         with open(self.checkpoint_file, 'w', encoding='utf-8') as f:
-            json.dump(self.checkpoint_data, f, indent=2, ensure_ascii=False)
+            json.dump(self.checkpoint_data, f, indent=2, ensure_ascii=False, cls=NumpyJSONEncoder)
 
         logger.debug(f"Checkpoint saved: {self.checkpoint_file}")
 

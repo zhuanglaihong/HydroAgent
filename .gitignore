@@ -208,7 +208,8 @@ experiment_results/
 temp_calibration_result/
 generated_code/
 test_workspace/
-
+test_prompt_pool/
+prompt_pool/
 # 重构相关临时文件
 refactor_script.py
 split_agent.py

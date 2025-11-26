@@ -1,7 +1,7 @@
 """
 Author: Claude
-Date: 2025-01-22 16:00:00
-LastEditTime: 2025-01-22 16:00:00
+Date: 2025-11-22 16:00:00
+LastEditTime: 2025-11-22 16:00:00
 LastEditors: Claude
 Description: Task Planner Agent - Decomposes high-level tasks into subtasks with prompts
              任务规划智能体 - 将高层任务拆解为带提示词的子任务
@@ -17,6 +17,12 @@ import logging
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
 from ..core.prompt_pool import PromptPool
+
+# Import config for iterative optimization defaults
+try:
+    from configs import config
+except ImportError:
+    config = None
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +285,12 @@ Always create structured, actionable task plans."""
         """
         strategy = intent.get("strategy", {})
 
+        # Get defaults from config.py (or use fallback values)
+        max_iterations = getattr(config, 'MAX_ITERATIONS', 5) if config else 5
+        nse_threshold = getattr(config, 'NSE_THRESHOLD_FOR_ITERATION', 0.65) if config else 0.65
+        min_nse_improvement = getattr(config, 'MIN_NSE_IMPROVEMENT', 0.01) if config else 0.01
+        initial_range_scale = getattr(config, 'INITIAL_RANGE_SCALE', 0.6) if config else 0.6
+
         subtasks = [
             SubTask(
                 task_id="iterative_boundary_optimization",
@@ -291,11 +303,11 @@ Always create structured, actionable task plans."""
                     "algorithm": intent.get("algorithm"),
                     "time_period": intent.get("time_period"),
                     "extra_params": intent.get("extra_params", {}),
-                    # ⭐ 迭代控制参数
-                    "max_iterations": strategy.get("max_iterations", 5),
-                    "nse_threshold": strategy.get("nse_threshold", 0.5),
-                    "min_nse_improvement": strategy.get("min_nse_improvement", 0.01),
-                    "initial_range_scale": strategy.get("initial_range_scale", 0.6),
+                    # ⭐ 迭代控制参数 (从 config.py 读取，可被 strategy 覆盖)
+                    "max_iterations": strategy.get("max_iterations", max_iterations),
+                    "nse_threshold": strategy.get("nse_threshold", nse_threshold),
+                    "min_nse_improvement": strategy.get("min_nse_improvement", min_nse_improvement),
+                    "initial_range_scale": strategy.get("initial_range_scale", initial_range_scale),
                     "range_scale_decay": strategy.get("range_scale_decay", 0.7),
                     "consecutive_no_improvement_limit": strategy.get("consecutive_no_improvement_limit", 2)
                 },

@@ -1,7 +1,7 @@
 """
 Author: Claude & zhuanglaihong
-Date: 2025-01-20 20:00:00
-LastEditTime: 2025-01-20 20:00:00
+Date: 2025-011-20 20:00:00
+LastEditTime: 2025-11-20 20:00:00
 LastEditors: Claude
 Description: Few-shot prompt templates for agent guidance (Tech 4.6)
              少样本提示词模板 - 用于智能体指导

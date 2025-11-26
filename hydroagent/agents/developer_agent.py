@@ -1,7 +1,7 @@
 """
 Author: Claude & zhuanglaihong
-Date: 2025-01-20 19:55:00
-LastEditTime: 2025-01-20 19:55:00
+Date: 2025-11-20 19:55:00
+LastEditTime: 2025-11-20 19:55:00
 LastEditors: Claude
 Description: Developer agent for result analysis and code generation (Exp 3)
              开发者智能体 - 负责结果分析和代码生成
@@ -170,7 +170,7 @@ Always explain your analysis and provide actionable recommendations."""
         处理结果并可选地生成代码。
 
         Args:
-            input_data: 可以是以下两种格式之一：
+            input_data: 可以是以下三种格式之一：
                 1. RunnerAgent的输出（自动分析模式）:
                 {
                     "success": True,
@@ -179,7 +179,14 @@ Always explain your analysis and provide actionable recommendations."""
                     "execution_log": {...}
                 }
 
-                2. 手动分析配置:
+                2. Orchestrator的输出（多任务分析模式）:
+                {
+                    "subtask_results": [runner_result1, runner_result2, ...],
+                    "task_plan": {...},
+                    "intent": {...}
+                }
+
+                3. 手动分析配置:
                 {
                     "mode": "analyze"|"generate_code",
                     "result_dir": Path,
@@ -190,8 +197,14 @@ Always explain your analysis and provide actionable recommendations."""
         Returns:
             Dict containing analysis or code generation result
         """
-        # 检测输入类型：RunnerAgent输出 vs 手动配置
-        # RunnerAgent输出特征：有"success"和"mode"字段
+        # 检测输入类型1：Orchestrator的多任务输出
+        # 特征：有"subtask_results"字段
+        if "subtask_results" in input_data:
+            logger.info("[DeveloperAgent] 检测到Orchestrator多任务输出，进行结果分析")
+            return self._analyze_orchestrator_output(input_data)
+
+        # 检测输入类型2：RunnerAgent单任务输出
+        # 特征：有"success"和"mode"字段
         if "success" in input_data and "mode" in input_data:
             # RunnerAgent输出 - 自动分析模式
             logger.info("[DeveloperAgent] 检测到RunnerAgent输出，进行结果分析")
@@ -226,6 +239,57 @@ Always explain your analysis and provide actionable recommendations."""
                 "success": False,
                 "error": str(e)
             }
+
+    def _analyze_orchestrator_output(self, orchestrator_output: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析Orchestrator的多任务输出结果。
+        Analyze Orchestrator's multi-task output.
+
+        Args:
+            orchestrator_output: Orchestrator的输出
+                {
+                    "subtask_results": [runner_result1, runner_result2, ...],
+                    "task_plan": {...},
+                    "intent": {...}
+                }
+
+        Returns:
+            分析结果 Analysis result
+        """
+        logger.info("[DeveloperAgent] 分析Orchestrator多任务输出...")
+
+        subtask_results = orchestrator_output.get("subtask_results", [])
+
+        if not subtask_results:
+            logger.warning("[DeveloperAgent] No subtask results to analyze")
+            return {
+                "success": False,
+                "error": "No subtask results provided"
+            }
+
+        # 如果只有一个subtask，直接分析它
+        if len(subtask_results) == 1:
+            logger.info("[DeveloperAgent] Single subtask detected, analyzing directly")
+            return self._analyze_runner_output(subtask_results[0])
+
+        # 多个subtask：分别分析并汇总
+        logger.info(f"[DeveloperAgent] Analyzing {len(subtask_results)} subtasks")
+        analyses = []
+
+        for i, subtask_result in enumerate(subtask_results, 1):
+            logger.info(f"[DeveloperAgent] Analyzing subtask {i}/{len(subtask_results)}")
+            analysis = self._analyze_runner_output(subtask_result)
+            analyses.append(analysis)
+
+        # 汇总所有分析结果
+        all_success = all(a.get("success", False) for a in analyses)
+
+        return {
+            "success": all_success,
+            "subtask_analyses": analyses,
+            "total_subtasks": len(subtask_results),
+            "successful_subtasks": sum(1 for a in analyses if a.get("success"))
+        }
 
     def _analyze_runner_output(self, runner_output: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -268,8 +332,8 @@ Always explain your analysis and provide actionable recommendations."""
             elif mode == "simulate":
                 analysis = self._analyze_simulation_result(result_data)
             elif mode == "custom_analysis":
-                # ⭐ 处理自定义分析，触发代码生成
-                analysis = self._handle_custom_analysis_and_generate_code(result_data)
+                # 🆕 v4.0: 分析 RunnerAgent 已执行的自定义代码结果
+                analysis = self._analyze_custom_analysis_result(result_data)
             elif mode == "auto_iterative":
                 # 🆕 v4.0: 处理自动迭代率定结果
                 analysis = self._analyze_auto_iterative_result(result_data)
@@ -794,6 +858,65 @@ Format: Return a JSON array of recommendation strings."""
         except Exception as e:
             logger.error(f"Failed to generate recommendations: {str(e)}")
             return ["Unable to generate recommendations"]
+
+    def _analyze_custom_analysis_result(self, result_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析 RunnerAgent 执行的自定义代码分析结果 (v4.0)
+
+        Args:
+            result_data: RunnerAgent 返回的结果数据
+
+        Returns:
+            分析结果字典
+        """
+        logger.info("[DeveloperAgent] 分析自定义代码执行结果...")
+
+        analysis = {
+            "analysis_type": "custom_analysis",
+            "status": result_data.get("status", "unknown"),
+        }
+
+        # 提取分析类型
+        analysis_type = result_data.get("analysis_type", "unknown")
+        analysis["task_description"] = f"自定义分析: {analysis_type}"
+
+        # 提取代码生成信息
+        if "generated_code_path" in result_data:
+            code_path = result_data["generated_code_path"]
+            analysis["generated_code"] = code_path
+            analysis["code_location"] = f"📄 生成的代码: {code_path}"
+            logger.info(f"[DeveloperAgent] 代码位置: {code_path}")
+
+        # 提取执行结果
+        if result_data.get("status") == "success":
+            analysis["execution_status"] = "✅ 执行成功"
+
+            # 提取输出
+            if "stdout" in result_data:
+                analysis["output"] = result_data["stdout"]
+                logger.info(f"[DeveloperAgent] 代码输出长度: {len(result_data['stdout'])} 字符")
+
+            # 提取生成的文件
+            if "output_files" in result_data:
+                analysis["output_files"] = result_data["output_files"]
+                logger.info(f"[DeveloperAgent] 输出文件: {result_data['output_files']}")
+
+        else:
+            analysis["execution_status"] = "❌ 执行失败"
+
+            # 提取错误信息
+            if "error" in result_data:
+                analysis["error"] = result_data["error"]
+                logger.warning(f"[DeveloperAgent] 执行错误: {result_data['error']}")
+
+            if "stderr" in result_data:
+                analysis["error_details"] = result_data["stderr"]
+
+        # 添加重试信息
+        if "retry_count" in result_data:
+            analysis["retry_info"] = f"尝试次数: {result_data['retry_count']}"
+
+        return analysis
 
     # ========================================================================
     # 🚫 DEPRECATED (v4.0): Code generation methods moved to RunnerAgent

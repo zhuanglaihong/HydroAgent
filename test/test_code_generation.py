@@ -87,7 +87,7 @@ if __name__ == "__main__":
     import tempfile
     workspace = Path(tempfile.mkdtemp())
 
-    # 🆕 v4.0: 创建RunnerAgent（代码生成已迁移到这里）
+    #  v4.0: 创建RunnerAgent（代码生成已迁移到这里）
     agent = RunnerAgent(
         llm_interface=mock_llm,
         code_llm_interface=mock_code_llm,  # v4.0: RunnerAgent现在需要代码LLM
@@ -105,17 +105,23 @@ if __name__ == "__main__":
 
     print(f"\n✅ 代码生成成功")
     print(f"生成的代码文件: {result.get('code_file')}")
-    print(f"生成的代码长度: {result.get('code_length')} 字符")
+
+    # 计算代码长度
+    code_content = result.get('code', '')
+    code_length = len(code_content) if code_content else 0
+    print(f"生成的代码长度: {code_length} 字符")
+
     print(f"\n生成的代码片段:")
     print("-" * 70)
-    code_content = result.get('code', '')
     print(code_content[:500] if code_content else "无代码内容")
-    print("...")
+    if len(code_content) > 500:
+        print("...")
     print("-" * 70)
 
     # 验证代码包含关键元素
-    assert result.get('status') == 'success', "代码生成应该成功"
+    assert 'error' not in result, f"不应该有错误: {result.get('error')}"
     assert result.get('code_file'), "应该返回代码文件路径"
+    assert code_length > 0, "代码应该有内容"
 
     print("\n✅ 测试1通过: RunnerAgent代码生成功能正常 (v4.0)\n")
 
@@ -197,17 +203,23 @@ if __name__ == "__main__":
 
     print(f"\n✅ 代码生成成功")
     print(f"生成的代码文件: {result.get('code_file')}")
-    print(f"生成的代码长度: {result.get('code_length')} 字符")
+
+    # 计算代码长度
+    code_content = result.get('code', '')
+    code_length = len(code_content) if code_content else 0
+    print(f"生成的代码长度: {code_length} 字符")
+
     print(f"\n生成的代码片段:")
     print("-" * 70)
-    code_content = result.get('code', '')
     print(code_content[:500] if code_content else "无代码内容")
-    print("...")
+    if len(code_content) > 500:
+        print("...")
     print("-" * 70)
 
     # 验证代码包含关键元素
-    assert result.get('status') == 'success', "代码生成应该成功"
+    assert 'error' not in result, f"不应该有错误: {result.get('error')}"
     assert result.get('code_file'), "应该返回代码文件路径"
+    assert code_length > 0, "代码应该有内容"
 
     print("\n✅ 测试2通过: RunnerAgent FDC代码生成功能正常 (v4.0)\n")
 
@@ -265,11 +277,13 @@ if __name__ == "__main__":
 
     print(f"\n分析结果:")
     print(f"  status: {result.get('status')}")
-    print(f"  mode: {result.get('mode')}")
+    print(f"  analysis_type: {result.get('analysis_type')}")
+    print(f"  code_file: {result.get('code_file')}")
 
     # 验证结果
     assert result.get("status") in ["success", "partial_success"], "处理应该成功或部分成功"
-    assert result.get("mode") == "custom_analysis", "模式应该是custom_analysis"
+    assert result.get("analysis_type") == "runoff_coefficient", "分析类型应该是runoff_coefficient"
+    assert result.get("code_file") is not None, "应该返回代码文件路径"
 
     print("\n✅ 测试3通过: RunnerAgent custom_analysis功能正常 (v4.0)")
     print("   代码生成和执行已迁移到RunnerAgent\n")
@@ -320,7 +334,9 @@ def analyze_basin(basin_id):
     parameters = {"analysis_type": "test", "description": "测试"}
     result = agent._generate_analysis_code("test", parameters)
 
-    print(f"\n代码生成结果状态: {result.get('status')}")
+    print(f"\n代码生成结果:")
+    print(f"  code_file: {result.get('code_file')}")
+    print(f"  has_error: {'error' in result}")
 
     print("\n✅ 测试4通过: RunnerAgent双LLM模式正常工作 (v4.0)")
     print("   代码生成使用专门的代码模型\n")

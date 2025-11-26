@@ -21,7 +21,7 @@
 |-------|---------|---------|---------|
 | **2A** | `exp_2a_repeated_calibration.py` | "重复执行20次率定..." | 单流域稳定性（20次） |
 | **2B** | `exp_2b_multi_basin.py` | "批量率定10个流域..." | 多流域性能对比 |
-| **2C** | `exp_2c_multi_algorithm.py` | "分别使用 SCE-UA、DE、PSO、GA..." | 多算法对比 |
+| **2C** | `exp_2c_multi_algorithm.py` | "分别使用 SCE-UA、PSO、GA..." | 多算法对比 |
 
 ### 实验3-4：高级功能
 

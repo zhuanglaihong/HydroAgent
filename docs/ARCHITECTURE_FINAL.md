@@ -1,112 +1,988 @@
-﻿# HydroAgent 架构设计（终版）
+# HydroAgent 架构设计文档
 
 **Author**: HydroAgent Team
-**Date**: 2025-01-24 (Last Updated)
-**Version**: 3.1 (Implementation Complete - Phase 1-4)
-**Status**: Core Implementation Complete, Testing in Progress
+**Date**: 2025-11-26
+**Version**: 4.0
+**Status**: Production Ready
 
 ---
 
 ## 📋 目录
 
-- [1. 实施状态概览](#1-实施状态概览)
+- [1. 系统概览](#1-系统概览)
 - [2. 设计理念](#2-设计理念)
 - [3. 核心实验场景](#3-核心实验场景)
 - [4. 系统架构](#4-系统架构)
 - [5. 组件详细设计](#5-组件详细设计)
 - [6. 数据流与协作](#6-数据流与协作)
-- [7. 实验场景实现](#7-实验场景实现)
+- [7. 实验实现要点](#7-实验实现要点)
 - [8. 已知问题与修复](#8-已知问题与修复)
-- [9. 实施计划](#9-实施计划)
+- [9. 未来规划](#9-未来规划)
 
 ---
 
-## 1. 实施状态概览
+## 1. 系统概览
 
-### 1.1 总体进度
+### 1.1 当前状态（v4.0）
 
-| Phase | 状态 | 完成时间 | 说明 |
-|-------|------|---------|------|
-| **Phase 1: IntentAgent增强** | ✅完成 | 2025-01-22 | 支持7种任务类型，信息补全功能 |
-| **Phase 2: TaskPlanner** | ✅完成 | 2025-01-22 | 任务拆解，提示词生成，PromptPool |
-| **Phase 3: InterpreterAgent** | ✅完成 | 2025-01-24 | LLM配置生成，支持custom_analysis |
-| **Phase 4: RunnerAgent & DeveloperAgent增强** | ✅完成 | 2025-01-24 | 代码生成，统计分析，迭代优化 |
-| **Phase 5: 端到端验验证* | 🔄 进行中 | 预计2025-01-25 | 实验1-5全面测试 |
+| 组件 | 状态 | 说明 |
+|------|------|------|
+| **5-Agent架构** | ✅完成 | IntentAgent → TaskPlanner → InterpreterAgent → RunnerAgent → DeveloperAgent |
+| **8个核心实验** | ✅验证通过 | 基础功能3个、稳定性批量3个、高级功能2个 |
+| **双LLM模式** | ✅完成 | 通用模型（分析）+ 代码专用模型（生成） |
+| **自适应优化** | ✅完成 | 参数边界检测、动态范围调整 |
+| **代码生成** | ✅完成 | 径流系数、FDC曲线、自定义分析 |
 
 ### 1.2 实验验证状态
 
-| 实验 | 状态 | 测试结果 | 备注 |
-|------|------|---------|------|
-| **实验1：标准流域验验证* | ✅通过 | NSE=0.68 (Good) | 已修复JSON解析和config使用问题 |
-| **实验2A：全信息率定** | ✅通过 | 参数提取正常 | - |
-| **实验2B：缺省信息补全** | ✅通过 | 信息自动补全 | - |
-| **实验2C：自定义数据** | 🟡 待测试 | - | - |
-| **实验3：参数自适应优化** | ✅修复完成 | 迭代逻辑重构 | 修复了线性架构问题 |
-| **实验4：代码生成扩扩展* | ✅修复完成 | custom_analysis路由正常 | 已修复task_type路由和最小化配置 |
-| **实验5：稳定性验验证* | 🟡 待测试 | - | - |
+**实验1：基础功能验证**
+- ✅ **1A** - 标准流程：完整信息率定
+- ✅ **1B** - 信息补全：自动填充缺失参数
+- ✅ **1C** - 错误处理：异常情况鲁棒性
 
-### 1.3 核心功能实现清单
+**实验2：稳定性与批量**
+- ✅ **2A** - 重复率定：单流域多次执行（20次）
+- ✅ **2B** - 多流域：批量处理10个流域
+- ✅ **2C** - 多算法：对比 SCE-UA/PSO/GA
 
-#### IntentAgent
-- ✅ 7种任务类型识别（standard, info_completion, iterative, repeated, extended, batch, custom_data）
-- ✅ 信息补全（model_name, algorithm, time_period, data_source）
-- ✅ 提取扩展分析需求（runoff_coefficient, FDC等）
-- ✅ 提取重复次数和自定义数据路径
+**实验3-4：高级功能**
+- ✅ **3** - 自适应优化：参数边界检测与动态调整（range_scale: 60%→15%）
+- ✅ **4** - 智能代码生成：双LLM（qwen-turbo + qwen-coder-turbo）
 
-#### TaskPlanner
-- ✅ 任务拆解逻辑（所有7种task_type）
-- ✅ 提示词生成（每个子任务）
-- ✅ 依赖关系管理（dependencies字段）
-- ✅ PromptPool（历史案例管理）
-- ✅ **为custom_analysis任务添加task_type字段**（2025-01-24修复）
+### 1.3 核心功能清单
 
-#### InterpreterAgent
-- ✅ LLM驱动的配置生成
-- ✅ 配置验证和自我修正（最多3次）
-- ✅ 动态加载algorithm参数（config.py）
-- ✅ **支持custom_analysis最小化配置**（2025-01-24新增）
-- ✅ **双重验证逻辑**（hydromodel任务 vs custom_analysis任务）
+**IntentAgent**
+- 8种任务类型识别（standard, info_completion, iterative, repeated, extended, batch, custom_data, error_handling）
+- 信息自动补全（model, algorithm, time_period, data_source）
+- 扩展分析需求提取（runoff_coefficient, FDC等）
 
-#### RunnerAgent
-- ✅ 标准率定执行
-- ✅ 自动评估（calibration后）
-- ✅ 边界检查重率定（实验3）
-- ✅ 统计分析（实验5）
-- ✅ **custom_analysis模式识别**（2025-01-24修复）
-- ✅ 智能参数范围调整
+**TaskPlanner**
+- 任务拆解（支持所有8种task_type）
+- 提示词生成（每个子任务定制化prompt）
+- 依赖关系管理（dependency tracking）
+- PromptPool历史案例管理
 
-#### DeveloperAgent
-- ✅ 结果分析和建议生成
-- ✅ **完整代码生成工作流**（2025-01-24完成）
-- ✅ **_handle_custom_analysis_and_generate_code()**
-- ✅ **_build_task_description()预定义模板**
-- ✅ **双LLM架构（通用LLM + 代码LLM）**
+**InterpreterAgent**
+- LLM驱动配置生成（支持自我修正，最多3次）
+- 双重验证逻辑（hydromodel任务 vs custom_analysis任务）
+- 动态加载算法参数（config.py）
 
-### 1.4 最近修复（2025-01-24）
+**RunnerAgent**
+- 标准率定执行
+- 自动评估（calibration后）
+- 迭代优化执行（实验3）
+- 统计分析（实验2A）
+- 智能参数范围调整（以最优参数为中心）
 
-#### 实验4: Custom Analysis任务路由问题
+**DeveloperAgent**
+- 结果分析和建议生成
+- 双LLM代码生成（思考分析 + 代码生成）
+- 支持任务：径流系数、FDC、自定义水文指标
+
+---
+
+## 2. 设计理念
+
+### 2.1 核心原则
+
+> **实验驱动，分层决策，职责清晰**
+
+1. **战略与战术分离**：IntentAgent决策"要做什么"，TaskPlanner决策"怎么做"
+2. **任务拆解与配置生成分离**：TaskPlanner拆解任务，InterpreterAgent生成config
+3. **逻辑复杂性与执行复杂性隔离**：TaskPlanner处理组合逻辑，RunnerAgent只负责执行
+4. **支持8个核心实验**：所有设计围绕实际实验需求展开
+
+### 2.2 设计目标
+
+| 实验 | 核心需求 | 架构支持 |
+|------|---------|---------|
+| **实验1A-1C** | 标准流程、信息补全、错误处理 | IntentAgent识别 + Interpreter智能生成 |
+| **实验2A-2C** | 重复实验、多流域、多算法 | TaskPlanner拆解 + 批量执行 |
+| **实验3** | 参数自适应优化 | TaskPlanner拆解 + RunnerAgent迭代执行 |
+| **实验4** | 代码生成扩展 | DeveloperAgent双LLM生成脚本 |
+
+---
+
+## 3. 核心实验场景
+
+### 3.1 实验1A：标准流域验证（简单任务）
+
+**用户输入**
+```
+"率定流域 01013500，使用标准 XAJ 模型"
+```
+
+**系统行为**
+```
+IntentAgent → 识别"standard_calibration"任务
+      ↓
+TaskPlanner → 无需拆解，生成单一提示词
+      ↓
+InterpreterAgent → 生成hydromodel配置
+      ↓
+RunnerAgent → 执行率定
+      ↓
+DeveloperAgent → 分析结果（NSE=0.68, Good）
+```
+
+### 3.2 实验2A：重复率定（稳定性验证）
+
+**用户输入**
+```
+"重复率定流域 01013500 二十次，使用不同随机种子"
+```
+
+**系统行为**
+```
+IntentAgent → 识别"repeated_experiment"，提取n_repeats=20
+      ↓
+TaskPlanner → 拆解为21个子任务：
+              - 20个 repetition_N 子任务（独立执行）
+              - 1个 statistical_analysis 子任务（依赖前20个）
+      ↓
+InterpreterAgent → 为每个repetition生成配置（不同random_seed）
+      ↓
+RunnerAgent → 执行20次率定
+      ↓
+DeveloperAgent → 统计分析（mean NSE, std, CI）
+```
+
+### 3.3 实验3：参数自适应优化（迭代优化）
+
+**用户输入**
+```
+"率定流域 01013500，如果参数收敛到边界，自动调整范围重新率定"
+```
+
+**系统行为**
+```
+IntentAgent → 识别"iterative_optimization"
+      ↓
+TaskPlanner → 创建单一iterative任务（不拆解为多个phase）
+      ↓
+InterpreterAgent → 生成初始配置
+      ↓
+RunnerAgent → 内部循环迭代执行：
+              Iter 0: 默认范围（100%） → NSE=0.42
+              Iter 1: 缩小至60% → NSE=0.48 ✅
+              Iter 2: 缩小至42% → NSE=0.51 ✅ 达标停止
+              （智能停止条件：NSE达标/连续无改善/迭代上限）
+      ↓
+DeveloperAgent → 分析最优结果
+```
+
+**关键机制**：
+- **动态range_scale调整**：60% → 42% → 29% → 20% → 15%
+- **以最优参数为中心**：根据上一轮最优参数生成新的YAML范围文件
+- **智能停止**：NSE>0.75 或 改善<0.001 或 达到最大迭代次数
+
+### 3.4 实验4：智能代码生成（扩展分析）
+
+**用户输入**
+```
+"率定完成后，请帮我计算流域的径流系数，并画一张 FDC 曲线"
+```
+
+**系统行为**
+```
+IntentAgent → 识别"extended_analysis"，提取needs=["runoff_coefficient", "FDC"]
+      ↓
+TaskPlanner → 拆解为3个子任务：
+              - subtask_1: standard_calibration（执行率定）
+              - subtask_2: custom_analysis - runoff_coefficient（依赖1）
+              - subtask_3: custom_analysis - FDC（依赖1）
+      ↓
+InterpreterAgent → 为subtask_1生成hydromodel配置
+                   为subtask_2/3生成最小化配置（只含task_metadata）
+      ↓
+RunnerAgent → 执行subtask_1率定
+      ↓
+DeveloperAgent → 处理subtask_2/3：
+                 【通用LLM】思考分析需求
+                       ↓
+                 【代码LLM】生成完整Python脚本：
+                       - runoff_coefficient_analysis.py
+                       - plot_fdc.py
+                 自动保存到 generated_code/
+```
+
+**双LLM架构**：
+- **API模式**：qwen-turbo（通用）+ qwen-coder-turbo（代码生成）
+- **Ollama模式**：qwen3:8b（通用）+ deepseek-coder:6.7b（代码生成）
+
+---
+
+## 4. 系统架构
+
+### 4.1 整体架构图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        用户输入（自然语言）                      │
+└───────────────────────────┬─────────────────────────────────┘
+                            ↓
+┌───────────────────────────────────────────────────────────────┐
+│ 1. IntentAgent（战略决策层）                                    │
+│    - 任务类型识别（8种task_type）                               │
+│    - 信息提取 + 补全                                           │
+│    - 扩展需求识别                                              │
+│    Output: intent_result (task_type, extracted_info, ...)     │
+└───────────────────────────┬───────────────────────────────────┘
+                            ↓
+┌───────────────────────────────────────────────────────────────┐
+│ 2. TaskPlanner（战术拆解层）                                    │
+│    - 任务拆解（1个或多个subtask）                               │
+│    - 提示词生成（为每个subtask）                                │
+│    - 依赖关系管理                                              │
+│    - PromptPool历史管理                                       │
+│    Output: task_plan (subtasks[], dependencies)               │
+└───────────────────────────┬───────────────────────────────────┘
+                            ↓
+┌───────────────────────────────────────────────────────────────┐
+│ 3. InterpreterAgent（配置生成层）                               │
+│    - LLM生成hydromodel配置（for standard/calibration）         │
+│    - 最小化配置（for custom_analysis）                         │
+│    - 自我修正（最多3次）                                        │
+│    - 配置验证                                                 │
+│    Output: configs[] (每个subtask一个config)                  │
+└───────────────────────────┬───────────────────────────────────┘
+                            ↓
+┌───────────────────────────────────────────────────────────────┐
+│ 4. RunnerAgent（执行层）                                        │
+│    - 标准率定执行                                              │
+│    - 自动评估（calibration后）                                 │
+│    - 迭代优化执行（内部循环）                                   │
+│    - 统计分析                                                 │
+│    Output: execution_results (params, metrics, ...)           │
+└───────────────────────────┬───────────────────────────────────┘
+                            ↓
+┌───────────────────────────────────────────────────────────────┐
+│ 5. DeveloperAgent（分析 + 代码生成层）                           │
+│    - 结果分析（NSE, RMSE, 建议）                                │
+│    - 代码生成（custom_analysis）                               │
+│      - 通用LLM：思考分析                                       │
+│      - 代码LLM：生成Python脚本                                 │
+│    Output: analysis_report / generated_code                   │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 目录结构
+
+```
+HydroAgent/
+├── hydroagent/
+│   ├── core/
+│   │   ├── base_agent.py         # BaseAgent抽象类
+│   │   ├── llm_interface.py      # LLM API封装
+│   │   ├── checkpoint_manager.py # Checkpoint系统
+│   │   └── prompt_pool.py        # PromptPool管理
+│   ├── agents/
+│   │   ├── intent_agent.py       # 意图识别
+│   │   ├── task_planner.py       # 任务规划
+│   │   ├── interpreter_agent.py  # 配置生成
+│   │   ├── runner_agent.py       # 模型执行
+│   │   ├── developer_agent.py    # 分析+代码生成
+│   │   └── orchestrator.py       # 编排器（统一接口）
+│   ├── utils/
+│   │   └── error_handler.py      # 错误处理
+│   └── resources/
+│       └── *.txt                 # 提示词模板
+├── configs/
+│   ├── definitions.py            # 公共配置
+│   ├── definitions_private.py    # 私有配置（API keys）
+│   └── config.py                 # 全局参数
+├── experiment/
+│   ├── base_experiment.py        # 实验基类
+│   ├── exp_1a_standard.py        # 实验1A
+│   ├── exp_1b_info_completion.py # 实验1B
+│   ├── exp_1c_error_handling.py  # 实验1C
+│   ├── exp_2a_repeated_calibration.py  # 实验2A
+│   ├── exp_2b_multi_basin.py     # 实验2B
+│   ├── exp_2c_multi_algorithm.py # 实验2C
+│   ├── exp_3_iterative_optimization.py # 实验3
+│   └── exp_4_extended_analysis.py      # 实验4
+├── scripts/
+│   ├── run_developer_agent_pipeline.py  # 主入口（已废弃，推荐run.py）
+│   └── run.py                    # 新入口（使用Orchestrator）
+└── test/
+    └── test_*.py                 # 各组件测试
+```
+
+---
+
+## 5. 组件详细设计
+
+### 5.1 IntentAgent（战略决策）
+
+**核心职责**
+1. 任务类型识别（8种task_type）
+2. 信息提取（model, basin, algorithm, params）
+3. 信息补全（自动填充缺失字段）
+4. 扩展需求识别（runoff_coefficient, FDC等）
+
+**主要接口**
+```python
+class IntentAgent(BaseAgent):
+    def process(self, user_query: str) -> Dict:
+        """
+        Input: 用户自然语言查询
+        Output: {
+            "task_type": str,           # 8种类型之一
+            "model_name": str,
+            "basin_ids": List[str],
+            "algorithm": str,
+            "extra_params": Dict,
+            "extended_needs": List[str],  # 仅extended_analysis
+            "n_repeats": int,             # 仅repeated_experiment
+            "data_path": str,             # 仅custom_data
+            ...
+        }
+        """
+```
+
+**任务类型分类**
+```python
+TASK_TYPES = {
+    "standard_calibration": "标准单任务率定",
+    "info_completion": "缺省信息补全型率定",
+    "iterative_optimization": "参数自适应迭代优化",
+    "repeated_experiment": "重复实验（多随机种子）",
+    "extended_analysis": "扩展分析（超出hydromodel功能）",
+    "batch_processing": "批量处理（多流域/多算法）",
+    "custom_data": "自定义数据路径",
+    "error_handling": "错误处理测试"
+}
+```
+
+**决策逻辑**（简化版）
+- 检测关键词：重复/多次 → `repeated_experiment`
+- 检测关键词：迭代/边界/调整范围 → `iterative_optimization`
+- 检测关键词：径流系数/FDC → `extended_analysis`
+- 检测信息完备度：缺失字段 → `info_completion`
+- 检测批量：多流域/多算法 → `batch_processing`
+- 默认 → `standard_calibration`
+
+**信息补全机制**
+- 补全model_name：默认 `xaj`
+- 补全algorithm：默认 `SCE_UA`
+- 补全time_period：从数据集获取可用时间（1990-2000）
+- 推断data_source：根据basin_id格式（8位数字 → CAMELS_US）
+
+### 5.2 TaskPlanner（战术拆解）
+
+**核心职责**
+1. 任务拆解（根据task_type）
+2. 提示词生成（为每个subtask定制化）
+3. 依赖关系管理
+4. PromptPool历史案例管理
+
+**主要接口**
+```python
+class TaskPlanner(BaseAgent):
+    def process(self, intent_result: Dict) -> Dict:
+        """
+        Input: IntentAgent的输出
+        Output: {
+            "subtasks": [
+                {
+                    "id": str,
+                    "type": str,  # calibration/evaluation/custom_analysis/statistical_analysis
+                    "parameters": Dict,
+                    "dependencies": List[str],
+                    "generated_prompt": str
+                },
+                ...
+            ]
+        }
+        """
+```
+
+**任务拆解策略**
+
+| task_type | 拆解策略 | subtask数量 | 示例 |
+|-----------|---------|------------|------|
+| `standard_calibration` | 不拆解 | 1 | subtask_1: calibration |
+| `info_completion` | 不拆解 | 1 | subtask_1: calibration |
+| `iterative_optimization` | **不拆解** | 1 | subtask_1: iterative（内部循环） |
+| `repeated_experiment` | N+1拆解 | N+1 | N个repetition + 1个statistical_analysis |
+| `extended_analysis` | 1+M拆解 | 1+M | 1个calibration + M个custom_analysis |
+| `batch_processing` | K拆解 | K | K个calibration（多流域/多算法） |
+
+**关键设计点**：
+- **实验3不拆解为多个phase**：TaskPlanner创建单一`iterative`任务，RunnerAgent内部循环处理
+- **依赖关系**：custom_analysis和statistical_analysis依赖calibration任务
+- **提示词生成**：根据subtask类型和parameters动态生成
+
+**PromptPool**
+- 存储历史成功案例
+- 格式：`{task_type: [examples]}`
+- Few-shot学习：为InterpreterAgent提供参考
+
+### 5.3 InterpreterAgent（配置生成）
+
+**核心职责**
+1. LLM生成hydromodel配置（for standard/calibration任务）
+2. 最小化配置（for custom_analysis任务）
+3. 配置验证和自我修正（最多3次）
+
+**主要接口**
+```python
+class InterpreterAgent(BaseAgent):
+    def process(self, subtask: Dict, prompt_from_planner: str) -> Dict:
+        """
+        Input: TaskPlanner生成的单个subtask
+        Output: hydromodel配置字典 或 最小化配置
+        """
+```
+
+**双重逻辑**
+
+**1. hydromodel任务**（calibration/evaluation）
+```python
+# System Prompt（简化）
+"Generate complete hydromodel config with:
+ - data_cfgs: {basin_ids, train_period, test_period, ...}
+ - model_cfgs: {model_name, model_params}
+ - training_cfgs: {algorithm, params, epochs}
+ Output MUST be valid JSON."
+
+# 生成完整配置
+config = llm.generate(system_prompt, user_prompt)
+
+# 验证配置（必需字段检查）
+errors = validate_config(config)
+if errors and attempt < 3:
+    # 自我修正
+    config = llm.correct(config, errors)
+```
+
+**2. custom_analysis任务**
+```python
+# System Prompt（简化）
+"For custom_analysis tasks, generate minimal config:
+ {
+   'task_metadata': {
+     'analysis_type': 'runoff_coefficient',
+     'description': '...'
+   }
+ }"
+
+# 生成最小化配置
+minimal_config = llm.generate(system_prompt, user_prompt)
+
+# 验证（只检查task_metadata存在）
+```
+
+**验证逻辑**
+- hydromodel任务：检查`data_cfgs`, `model_cfgs`, `training_cfgs`
+- custom_analysis任务：只检查`task_metadata`
+
+**动态参数加载**
+```python
+# 从config.py加载算法默认参数
+from configs.config import DEFAULT_SCE_UA_PARAMS, DEFAULT_PSO_PARAMS
+# 合并用户指定参数和默认参数
+final_params = {**DEFAULT_SCE_UA_PARAMS, **user_extra_params}
+```
+
+### 5.4 RunnerAgent（执行）
+
+**核心职责**
+1. 标准率定执行
+2. 自动评估（calibration后）
+3. 迭代优化执行（内部循环，实验3）
+4. 统计分析（实验2A）
+5. custom_analysis模式识别（跳过hydromodel执行）
+
+**主要接口**
+```python
+class RunnerAgent(BaseAgent):
+    def process(self, config: Dict, subtask: Dict) -> Dict:
+        """
+        Input: InterpreterAgent的配置 + subtask信息
+        Output: {
+            "execution_mode": str,  # calibrate/evaluate/iterative/skip
+            "results": Dict,
+            "metrics": Dict,
+            ...
+        }
+        """
+```
+
+**执行模式**
+
+**1. 标准率定**
+```python
+if subtask['type'] == 'calibration':
+    # 执行率定
+    calibrate(config)
+    # 自动执行评估
+    evaluate(config)
+    # 解析结果
+    results = parse_results()
+```
+
+**2. 迭代优化**（实验3）
+```python
+if subtask['type'] == 'iterative':
+    iteration = 0
+    range_scales = [1.0, 0.6, 0.42, 0.29, 0.2, 0.15]
+
+    while iteration < max_iterations:
+        # 使用当前range_scale执行率定
+        config['training_cfgs']['param_range_file'] = f'param_range_iter{iteration}.yaml'
+        calibrate(config)
+        evaluate(config)
+
+        # 检查停止条件
+        if nse > 0.75:  # 达到优秀阈值
+            break
+        if abs(nse - prev_nse) < 0.001:  # 连续无改善
+            break
+
+        # 调整参数范围（以最优参数为中心）
+        iteration += 1
+        new_range = generate_param_range(
+            best_params,
+            range_scale=range_scales[iteration]
+        )
+        save_yaml(new_range, f'param_range_iter{iteration}.yaml')
+```
+
+**3. custom_analysis模式**
+```python
+if subtask.get('parameters', {}).get('task_type') == 'custom_analysis':
+    # 跳过hydromodel执行
+    return {"execution_mode": "skip", "message": "custom_analysis任务"}
+```
+
+**4. 统计分析**（实验2A）
+```python
+if subtask['type'] == 'statistical_analysis':
+    # 聚合所有repetition结果
+    all_nse = [subtask_results[i]['nse'] for i in range(n_repeats)]
+    # 计算统计指标
+    stats = {
+        "mean_nse": np.mean(all_nse),
+        "std_nse": np.std(all_nse),
+        "ci_95": confidence_interval(all_nse, 0.95)
+    }
+    return stats
+```
+
+**智能参数范围调整机制**（实验3）
+- **动态range_scale**：60% → 42% → 29% → 20% → 15%
+- **以最优参数为中心**：`new_min = best_param - (max-min)*range_scale/2`
+- **保持物理意义**：确保新范围在原始范围内
+- **自动生成YAML**：每次迭代生成新的`param_range_iterN.yaml`
+
+### 5.5 DeveloperAgent（分析 + 代码生成）
+
+**核心职责**
+1. 结果分析（NSE评估、建议生成）
+2. 代码生成（custom_analysis任务）
+3. 双LLM架构（通用模型思考 + 代码模型生成）
+
+**主要接口**
+```python
+class DeveloperAgent(BaseAgent):
+    def process(self, subtask: Dict, results: Dict) -> Dict:
+        """
+        Input: subtask + RunnerAgent结果
+        Output: 分析报告 或 生成的代码
+        """
+```
+
+**双LLM代码生成工作流**
+
+**1. 检测custom_analysis任务**
+```python
+if subtask.get('parameters', {}).get('task_type') == 'custom_analysis':
+    return _handle_custom_analysis_and_generate_code(subtask, results)
+```
+
+**2. 构建任务描述**
+```python
+# 预定义模板
+TASK_TEMPLATES = {
+    "runoff_coefficient": "计算流域径流系数（总径流量/总降水量）",
+    "FDC": "绘制流量历时曲线（Flow Duration Curve）",
+    ...
+}
+
+task_desc = TASK_TEMPLATES.get(analysis_type, "自定义分析")
+```
+
+**3. 通用LLM思考分析**
+```python
+# 使用通用模型（qwen-turbo / qwen3:8b）
+system_prompt = "你是水文分析专家，分析用户需求并规划实现步骤"
+user_prompt = f"任务：{task_desc}\n可用数据：{available_data}"
+
+thought = general_llm.generate(system_prompt, user_prompt)
+```
+
+**4. 代码LLM生成脚本**
+```python
+# 使用代码专用模型（qwen-coder-turbo / deepseek-coder:6.7b）
+code_system_prompt = """
+生成完整的Python脚本：
+- 包含type hints
+- 详细注释
+- 错误处理
+- 进度提示
+- 结果保存
+"""
+
+code_user_prompt = f"""
+任务：{task_desc}
+思考分析：{thought}
+生成完整可运行的Python脚本。
+"""
+
+code = code_llm.generate(code_system_prompt, code_user_prompt)
+```
+
+**5. 保存代码**
+```python
+# 保存到 generated_code/
+output_path = f"generated_code/{analysis_type}_analysis.py"
+save_code(code, output_path)
+```
+
+**配置**
+```python
+# API模式
+GENERAL_MODEL = "qwen-turbo"
+CODE_MODEL = "qwen-coder-turbo"
+
+# Ollama模式
+GENERAL_MODEL = "qwen3:8b"
+CODE_MODEL = "deepseek-coder:6.7b"
+```
+
+**结果分析**（标准任务）
+```python
+def _analyze_standard_results(results: Dict) -> str:
+    nse = results['metrics']['NSE']
+
+    # NSE质量评估
+    if nse > 0.75:
+        quality = "优秀（Excellent）"
+    elif nse > 0.65:
+        quality = "良好（Good）"
+    elif nse > 0.50:
+        quality = "一般（Fair）"
+    else:
+        quality = "较差（Poor）"
+
+    # 生成建议
+    suggestions = []
+    if nse < 0.75:
+        suggestions.append("可考虑延长训练期或增加迭代轮数")
+    if params_at_boundary:
+        suggestions.append("部分参数收敛到边界，建议调整参数范围")
+
+    report = f"""
+📊 质量评估: {quality}
+   NSE={nse:.2f}, RMSE={rmse:.2f}
+
+🔧 最优参数: {len(params)} 个
+   {format_params(params)}
+
+💡 改进建议:
+{format_suggestions(suggestions)}
+"""
+    return report
+```
+
+### 5.6 Orchestrator（编排器）
+
+**核心职责**
+- 统一入口：协调5个Agent的执行
+- 流程编排：IntentAgent → TaskPlanner → InterpreterAgent → RunnerAgent → DeveloperAgent
+- 错误处理：捕获异常，提供友好提示
+- 结果聚合：收集所有subtask结果
+
+**主要接口**
+```python
+class Orchestrator:
+    def process(self, user_query: str, backend: str = "api") -> Dict:
+        """
+        Input: 用户查询 + LLM后端选择
+        Output: {
+            "intent_result": Dict,
+            "task_plan": Dict,
+            "subtask_results": List[Dict],
+            "final_analysis": str
+        }
+        """
+
+        # 1. IntentAgent
+        intent_result = self.intent_agent.process(user_query)
+
+        # 2. TaskPlanner
+        task_plan = self.task_planner.process(intent_result)
+
+        # 3-5. 遍历所有subtask
+        subtask_results = []
+        for subtask in task_plan['subtasks']:
+            # 3. InterpreterAgent生成配置
+            config = self.interpreter_agent.process(subtask, subtask['generated_prompt'])
+
+            # 4. RunnerAgent执行
+            exec_result = self.runner_agent.process(config, subtask)
+
+            # 5. DeveloperAgent分析
+            analysis = self.developer_agent.process(subtask, exec_result)
+
+            subtask_results.append({
+                "subtask": subtask,
+                "config": config,
+                "execution": exec_result,
+                "analysis": analysis
+            })
+
+        return {"subtask_results": subtask_results, ...}
+```
+
+**使用示例**
+```bash
+# 方式1：直接使用Orchestrator
+python run.py --query "率定流域01013500" --backend api
+
+# 方式2：交互模式
+python run.py --backend api
+> 请输入查询：率定流域01013500
+```
+
+---
+
+## 6. 数据流与协作
+
+### 6.1 完整数据流
+
+```
+用户输入
+  ↓
+[IntentAgent]
+  Output: intent_result = {
+    task_type: "repeated_experiment",
+    model_name: "gr4j",
+    basin_ids: ["01013500"],
+    algorithm: "SCE_UA",
+    n_repeats: 20
+  }
+  ↓
+[TaskPlanner]
+  Input: intent_result
+  Output: task_plan = {
+    subtasks: [
+      {id: "subtask_1", type: "calibration", parameters: {repetition: 1}},
+      {id: "subtask_2", type: "calibration", parameters: {repetition: 2}},
+      ...
+      {id: "subtask_20", type: "calibration", parameters: {repetition: 20}},
+      {id: "subtask_21", type: "statistical_analysis", dependencies: ["subtask_1", ..., "subtask_20"]}
+    ]
+  }
+  ↓
+[InterpreterAgent] (for each subtask)
+  Input: subtask_1 + generated_prompt
+  Output: config_1 = {
+    data_cfgs: {...},
+    model_cfgs: {...},
+    training_cfgs: {algorithm: "SCE_UA", random_seed: 1, ...}
+  }
+  ↓
+[RunnerAgent] (for each subtask)
+  Input: config_1 + subtask_1
+  Output: result_1 = {
+    execution_mode: "calibrate",
+    best_params: [0.77, 0.00023, 0.30, 0.70],
+    metrics: {NSE: 0.68, RMSE: 1.45}
+  }
+  ↓
+[DeveloperAgent] (for each subtask)
+  Input: subtask_1 + result_1
+  Output: analysis_1 = "📊 Repetition 1: NSE=0.68 (Good)"
+
+  (对于subtask_21 - statistical_analysis)
+  Input: subtask_21 + all_results
+  Output: stats_analysis = """
+  📊 统计分析（20次重复）
+     Mean NSE: 0.67 ± 0.03
+     95% CI: [0.64, 0.70]
+     稳定性：良好
+  """
+```
+
+### 6.2 组件协作时序图
+
+```
+User → Orchestrator → IntentAgent → TaskPlanner → InterpreterAgent → RunnerAgent → DeveloperAgent
+  |         |              |             |                |                |               |
+  |         |              |             |                |                |               |
+  query     process()      process()     process()        process()        process()       process()
+  |         |              |             |                |                |               |
+  |         |        intent_result       |                |                |               |
+  |         |  <------------|             |                |                |               |
+  |         |              |      task_plan              |                |               |
+  |         |              | <-----------|                |                |               |
+  |         |              |             |                |                |               |
+  |         |              |             |    (for each subtask)          |               |
+  |         |              |             |       config                   |               |
+  |         |              |             | <--------------|                |               |
+  |         |              |             |                |   exec_result  |               |
+  |         |              |             |                | <--------------|               |
+  |         |              |             |                |                |   analysis    |
+  |         |              |             |                |                | <-------------|
+  |         |              |             |                |                |               |
+  |         |   final_result (aggregated)                                  |               |
+  | <-------|--------------|-------------|----------------|----------------|---------------|
+  |
+ Display
+```
+
+### 6.3 关键协作点
+
+**1. IntentAgent → TaskPlanner**
+- 传递：task_type, extracted_info（model, basin, algorithm, extra_params, extended_needs, n_repeats等）
+- TaskPlanner根据task_type选择拆解策略
+
+**2. TaskPlanner → InterpreterAgent**
+- 传递：subtask（含type, parameters, generated_prompt）
+- InterpreterAgent根据subtask type选择配置生成策略（完整配置 vs 最小化配置）
+
+**3. InterpreterAgent → RunnerAgent**
+- 传递：config（hydromodel配置 或 最小化配置）
+- RunnerAgent根据subtask.parameters.task_type决定执行模式（calibrate/evaluate/skip）
+
+**4. RunnerAgent → DeveloperAgent**
+- 传递：execution_results（params, metrics, mode）
+- DeveloperAgent根据subtask.parameters.task_type选择处理方式（分析 vs 代码生成）
+
+**5. 依赖关系处理**
+- TaskPlanner标记dependencies
+- Orchestrator按拓扑排序执行subtasks
+- 后续任务可访问依赖任务的results
+
+---
+
+## 7. 实验实现要点
+
+### 7.1 实验3：迭代优化关键点
+
+**设计决策**：TaskPlanner不拆解为多个phase，RunnerAgent内部循环
+
+**原因**：
+- 参数范围调整需要上一轮最优参数
+- 停止条件需要连续NSE比较
+- 拆解会导致状态传递复杂
+
+**实现**：
+```python
+# TaskPlanner (task_planner.py)
+if task_type == "iterative_optimization":
+    subtasks = [{
+        "id": "subtask_1",
+        "type": "iterative",  # 特殊类型
+        "parameters": {
+            "model_name": "gr4j",
+            "basin_id": "01013500",
+            "max_iterations": 5
+        }
+    }]
+
+# RunnerAgent (runner_agent.py)
+if subtask['type'] == 'iterative':
+    # 内部循环执行
+    for i in range(max_iterations):
+        calibrate_with_range_scale(range_scales[i])
+        if should_stop():
+            break
+```
+
+### 7.2 实验4：代码生成关键点
+
+**设计决策**：custom_analysis任务跳过hydromodel执行
+
+**原因**：
+- custom_analysis需要的是代码生成，不需要率定
+- 避免InterpreterAgent生成无效的hydromodel配置
+
+**实现**：
+```python
+# TaskPlanner为custom_analysis添加task_type字段
+subtask['parameters']['task_type'] = 'custom_analysis'
+
+# InterpreterAgent识别custom_analysis，生成最小化配置
+if 'custom_analysis' in prompt:
+    config = {"task_metadata": {"analysis_type": "runoff_coefficient"}}
+
+# RunnerAgent识别custom_analysis，跳过执行
+if subtask.get('parameters', {}).get('task_type') == 'custom_analysis':
+    return {"execution_mode": "skip"}
+
+# DeveloperAgent处理custom_analysis，调用双LLM生成代码
+if subtask.get('parameters', {}).get('task_type') == 'custom_analysis':
+    return _handle_custom_analysis_and_generate_code(subtask, results)
+```
+
+### 7.3 实验2A：重复实验关键点
+
+**设计决策**：N+1拆解，最后一个subtask做统计分析
+
+**实现**：
+```python
+# TaskPlanner
+subtasks = []
+for i in range(n_repeats):
+    subtasks.append({
+        "id": f"subtask_{i+1}",
+        "type": "calibration",
+        "parameters": {"repetition": i+1}
+    })
+# 添加统计分析任务
+subtasks.append({
+    "id": f"subtask_{n_repeats+1}",
+    "type": "statistical_analysis",
+    "dependencies": [f"subtask_{i+1}" for i in range(n_repeats)]
+})
+
+# RunnerAgent识别statistical_analysis
+if subtask['type'] == 'statistical_analysis':
+    # 从依赖任务获取所有NSE
+    all_nse = [prev_results[dep]['nse'] for dep in subtask['dependencies']]
+    stats = compute_statistics(all_nse)
+    return stats
+```
+
+---
+
+## 8. 已知问题与修复
+
+### 8.1 实验4：Custom Analysis任务路由问题（2025-01-24已修复）
+
 **问题**：
 - TaskPlanner创建的custom_analysis任务parameters缺少`task_type`字段
-- InterpreterAgent为custom_analysis生成完整hydromodel配置，导致`data_source_type: "custom"`错误
+- InterpreterAgent为custom_analysis生成完整hydromodel配置，导致验证错误
 - RunnerAgent无法识别custom_analysis模式，误识别为"calibrate"
 
 **修复**：
-1. **TaskPlanner (task_planner.py:397)**：添加 `"task_type": "custom_analysis"` 到parameters
-2. **InterpreterAgent (interpreter_agent.py:93-189, 393-405, 270-272)**：
-   - 更新system prompt，区分hydromodel任务和custom_analysis任务
-   - 为custom_analysis生成最小化配置（只包含task_metadata）
-   - 修改validation逻辑，支持最小化配置验证
-   - 修改workspace设置，只对hydromodel任务设置output_dir
-3. **RunnerAgent (runner_agent.py:267-276)**：添加custom_analysis模式的特殊日志处理
+1. **TaskPlanner**：添加 `"task_type": "custom_analysis"` 到parameters
+2. **InterpreterAgent**：区分hydromodel任务和custom_analysis任务，为后者生成最小化配置
+3. **RunnerAgent**：添加custom_analysis模式识别逻辑
 
-**测试验验证*：`test/test_exp4_fixes.py` 全部通过
+**测试**：`test/test_exp4_fixes.py` 全部通过
 
-#### 实验3: 迭代优化架构问题
+### 8.2 实验3：迭代优化架构问题（2025-01-23已修复）
+
 **问题**：两次率定使用相同参数范围，NSE值相同
 
-**修复**：TaskPlanner创建单一iterative任务而非两个独立任务，RunnerAgent内部循环处理
+**修复**：TaskPlanner创建单一iterative任务，RunnerAgent内部循环处理
 
-#### 实验1: JSON解析和Config使用
+### 8.3 实验1：JSON解析和Config使用（2025-01-22已修复）
+
 **问题**：
 - LLM返回markdown包裹的JSON导致解析失败
 - InterpreterAgent使用hardcoded参数而非config.py
@@ -117,1202 +993,130 @@
 
 ---
 
-## 2. 设计理念
+## 9. 未来规划
 
-### 2.1 核心原则
+### 9.1 Checkpoint/Resume系统
 
-> **实验驱动，分层决策，职责清晰**
+**目标**：支持长任务中断恢复
 
-1. **战略与战术分离：IntentAgent决策"要做什么"，TaskPlanner决策"怎么做"
-2. **任务拆解与配置生成分离：TaskPlanner拆解任务，InterpreterAgent生成config
-3. **逻辑复杂性与执行复杂性隔离：TaskPlanner处理组合逻辑，Runner只负责执行
-4. **支持5个核心实验：所有设计围绕实际实验需求展开
+**计划**：
+- CheckpointManager：保存/加载任务进度
+- Orchestrator集成：自动checkpoint after每个subtask
+- 命令行支持：`--resume SESSION_ID`
 
-### 2.2 设计目标
+**用例**：
+- 批量率定20个流域，中断后从第11个继续
+- 100次重复实验，暂停后恢复
 
-| 实验 | 核心需求| 架构支持 |
-|------|---------|---------|
-| **实验1：标准流域验证** | 简单任务直接执行| IntentAgent识别 直接执行 |
-| **实验2：通用性鲁棒性** | 信息补全、多种输入| IntentAgent补全 + Interpreter智能生成 |
-| **实验3：参数自适应** | 两阶段迭代优化| TaskPlanner拆解 + 错误反馈 |
-| **实验4：代码生成扩展** | 超出hydromodel功能 | DeveloperAgent编写额外脚本 |
-| **实验5：稳定性验证** | 重复实验统计 | TaskPlanner生成多个子任务|
+### 9.2 RAG知识库集成
 
----
+**目标**：知识增强的工作流生成
 
-## 3. 核心实验场景
+**计划**：
+- 向量数据库（FAISS）：存储历史实验、论文知识
+- 知识检索：为IntentAgent/TaskPlanner提供参考
+- 动态prompt：根据检索结果调整提示词
 
-### 实验1：标准流域验证（简单任务）
+### 9.3 Web界面
 
-**用户输入**
-```
-"率定流域 01013500，使用标准XAJ 模型
-```
+**目标**：Gradio/Streamlit UI
 
-**系统行为**
-1. IntentAgent → 识别标准率定"任务
-2. TaskPlanner → 无需拆解，生成单一提示词
-3. InterpreterAgent → 生成config
-4. RunnerAgent → 执行率定
-5. DeveloperAgent → 分析结果，NSE > 0.8
+**功能**：
+- 交互式查询输入
+- 实时进度显示
+- 结果可视化（图表、参数分布）
+- 历史实验管理
 
----
+### 9.4 多流域并行处理
 
-### 实验2：通用性与鲁棒性（信息补全
+**目标**：提升批量处理性能
 
-**场景A - 全信息**
-```
-"使用 SCE-UA 算法，设→rep=5000, ngs=1000，率定CAMELS_US 01013500 流域，时期1990-2000
-```
-
-**场景B - 缺省信息**
-```
-"帮我率定流域 01013500
-```
-- IntentAgent识别：CAMELS_US流域，补全默认算法、时间范围
-
-**场景C - 模糊信息**
-```
-"用我 D → my_data 文件夹里的数据跑一下模型
-```
-- IntentAgent识别：自定义数据，推断data_source_type
-- InterpreterAgent生成适配的config
+**计划**：
+- 并行执行独立subtasks
+- 资源管理（CPU/GPU分配）
+- 进度聚合显示
 
 ---
 
-### 实验3：参数自适应优化（两阶段迭代
+## 附录
 
-**用户输入**
-```
-"率定流域 01013500，如果参数收敛到边界，自动调整范围重新率定
-```
+### A. 配置文件说明
 
-**系统行为**
-1. IntentAgent → 识别迭代优化"任务
-2. TaskPlanner → 拆解为两阶段
-   - Phase 1: 粗率定（宽泛参数范围，rep=500
-   - Phase 2: 精率定（调整后的参数范围，rep=2000
-3. RunnerAgent → 执行Phase 1
-4. DeveloperAgent → 分析是否触发边界效应
-5. 如触TaskPlanner生成Phase 2提示词（调整param_range
-6. InterpreterAgent → 生成新config（param_range_refined.yaml
-7. RunnerAgent → 执行Phase 2
-8. DeveloperAgent → 对比NSE提升
-
----
-
-### 实验4：代码生成与工具扩展（超出功能）
-
-**用户输入**
-```
-"率定完成后，请帮我计算流域的径流系数，并画一张流路历时线(FDC)
-```
-
-**系统行为**
-1. IntentAgent → 识别率定 + 扩展分析"任务
-2. TaskPlanner → 拆解为：
-   - Task 1: 标准率定
-   - Task 2: 额外分析（超出hydromodel功能
-3. RunnerAgent → 执行Task 1
-4. DeveloperAgent → 识别Task 2需要代码生
-5. DeveloperAgent → 编写 `calc_runoff_coef.py` `plot_fdc.py`
-6. RunnerAgent → 执行额外脚本
-7. DeveloperAgent → 汇总所有果
-
----
-
-### 实验5：稳定性验证（重复实证
-
-**用户输入**
-```
-"重复率定流域 01013500 十次，使用不同随机种子
-```
-
-**系统行为**
-1. IntentAgent → 识别重复实验"任务
-2. TaskPlanner → 拆解0个子任务
-   ```python
-   [
-       {"basin": "01013500", "random_seed": 1},
-       {"basin": "01013500", "random_seed": 2},
-       ...
-       {"basin": "01013500", "random_seed": 10}
-   ]
-   ```
-3. InterpreterAgent → 为每个子任务生成config
-4. RunnerAgent → 批量执行
-5. DeveloperAgent → 计算NSE均值和标准
-
----
-
-## 3. 系统架构
-
-### 3.1 整体架构
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        User Query                               │
-└────────────────────────────┬────────────────────────────────────┘
-                             ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                   IntentAgent (战略决策✅                       │
-│ 职责✅                                                          │
-│ 1. 提取关键信息（模型、流域、算法、参数等✅                        │
-✅ 2. 决策任务类型：标准定| 信息补全 | 迭代优化 | 重复实验 | 扩展功能✅
-│ 3. 补全缺失信息（默认值、推断）                                    │
-│ 输出：{"task_type": "...", "intent_data": {...}}                │
-└────────────────────────────┬────────────────────────────────────┘
-                             ↓
-┌─────────────────────────────────────────────────────────────────┐
-│             TaskPlanner (战术拆解层，原ConfigAgent)              │
-│ 职责✅                                                          │
-│ 1. 根据task_type决定是否拆解                                      │
-│ 2. 处理变量组合、逻辑依赖                                          │
-│ 3. 为每个子任务生成提示词（Prompt✅                               │
-│ 输出：[{"subtask_id": 1, "prompt": "...", "params": {...}}, ...] │
-└────────────────────────────┬────────────────────────────────────┘
-                             ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                     Prompt Pool                                 │
-│ 职责✅                                                          │
-│ 1. 存储每个子任务的提示词                                         │
-│ 2. 历史成功案例参考（相似任务检索）                                 │
-│ 3. 提示词模板理                                                │
-└────────────────────────────┬────────────────────────────────────┘
-                             ↓
-┌─────────────────────────────────────────────────────────────────┐
-│             InterpreterAgent (配置生成层，新件                │
-│ 职责✅                                                          │
-│ 1. 根据提示词生成hydromodel格式的config                           │
-│ 2. 验证config有效✅                                             │
-│ 3. 自我修正（如验证失败✅                                         │
-│ 输出：{"config": {...}, "config_file": "config.yaml"}           │
-└────────────────────────────┬────────────────────────────────────┘
-                             ↓
-┌─────────────────────────────────────────────────────────────────┐
-│                   RunnerAgent (执行✅                          │
-│ 职责✅                                                          │
-│ 1. 执行hydromodel.calibrate/evaluate                            │
-│ 2. 执行额外的Python脚本（如DeveloperAgent生成的）                  │
-│ 3. 捕获错误和日✅                                                │
-│ 输出：{"success": True/False, "result": {...}, "error": "..."}  │
-└────────────────────────────┬────────────────────────────────────┘
-                             ↓
-                    ┌────────┴────────
-                    │  Error?        │
-                    └────┬────────┬───
-                    Yes → No
-                         │       │
-            ┌──────────────── ┌──────────────────────
-            │反馈给TaskPlanner✅ ✅ DeveloperAgent      │
-            │✅Interpreter  ✅ ✅ (后处理分析层)        │
-            │重新生成config   ✅ ✅ 1. 分析结果          │
-            └──────────────── → 2. 生成报告          ↓
- → 3. 编写额外代码（验）│
-                                │ 4. 统计分析（证  │
-                                └──────────────────────
-                                         ↓
-                                  Final Results
-```
-
-### 3.2 组件对比（旧 vs 新）
-
-| 组件 | 旧构| 新构| 变化 |
-|------|--------|--------|------|
-| IntentAgent | 只提取息| **提取信息 + 决策任务类型** | 增强 |
-| ConfigAgent | 规则生成config | **TaskPlanner** (任务拆解 + 提示词生 | 🔄 **改名+重构** |
-| ( | - | **InterpreterAgent** (LLM生成config) | 🆕 **新增** |
-| RunnerAgent | 执行hydromodel | 执行hydromodel + 额外脚本 | 增强 |
-| DeveloperAgent | 结果分析 | 结果分析 + 代码生成 + 统计 | 增强 |
-| PromptManager | 静态文件理| **Prompt Pool** (动态存+ 索 | 🔄 **重构** |
-
----
-
-## 4. 组件详细设计
-
-### 4.1 IntentAgent（战略决策
-
-#### 职责扩展
-
-**原职*：提取关键息
+**configs/definitions_private.py**（用户创建）
 ```python
-{
-    "intent": "calibration",
-    "model_name": "gr4j",
-    "basin_id": "01013500",
-    "algorithm": "SCE_UA"
-}
+# API配置
+OPENAI_API_KEY = "sk-your-qwen-api-key"
+OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+# 路径配置
+PROJECT_DIR = r"D:\your\path\to\HydroAgent"
+DATASET_DIR = r"D:\your\path\to\data"
+RESULT_DIR = r"D:\your\path\to\results"
 ```
 
-**新职*：提取息+ **决策任务类型**
+**configs/config.py**（全局参数）
 ```python
-{
-    "intent": "calibration",
-    "task_type": "iterative_optimization",  # 🆕 任务类型
-    "model_name": "gr4j",
-    "basin_id": "01013500",
-    "algorithm": "SCE_UA",
-    "extra_params": {...},
-    "strategy": {  # 🆕 战略信息
-        "phases": ["coarse_calibration", "fine_calibration"],
-        "trigger": "boundary_effect"
-    }
-}
+# LLM配置
+DEFAULT_MODEL = "qwen-turbo"
+CODE_MODEL = "qwen-coder-turbo"  # 代码专用模型
+TEMPERATURE = 0.1
+
+# 数据配置
+DEFAULT_TRAIN_PERIOD = ["1985-10-01", "1995-09-30"]
+DEFAULT_TEST_PERIOD = ["2005-10-01", "2014-09-30"]
+
+# 算法默认参数
+DEFAULT_SCE_UA_PARAMS = {"rep": 1000, "ngs": 300, "kstop": 500}
+DEFAULT_PSO_PARAMS = {"max_iterations": 500, "swarm_size": 50}
+
+# 性能阈值
+NSE_EXCELLENT = 0.75
+NSE_GOOD = 0.65
+NSE_FAIR = 0.50
 ```
 
-#### 任务类型分类
+### B. 常用命令
 
-```python
-TASK_TYPES = {
-    "standard_calibration": "标准单任务定,
-    "info_completion": "缺省信息补全型定,
-    "iterative_optimization": "两阶段迭代优化,
-    "repeated_experiment": "重复实验（多随机种子,
-    "extended_analysis": "扩展分析（超出hydromodel功能,
-    "batch_processing": "批量处理（多流域/多算法）"
-}
+```bash
+# 交互模式
+python run.py --backend api
+
+# 单次查询
+python run.py --query "率定流域01013500" --backend api
+
+# 运行实验
+python experiment/exp_1a_standard.py --backend api --mock
+python experiment/exp_3_iterative_optimization.py --backend api
+python experiment/exp_4_extended_analysis.py --backend api --model qwen-turbo --code-model qwen-coder-turbo
+
+# 测试
+python test/test_intent_agent.py --backend api
+python test/test_developer_agent_pipeline.py
 ```
 
-#### 决策逻辑
+### C. 输出结构
 
-```python
-def decide_task_type(self, user_query: str, extracted_info: Dict) -> str:
-    """决策任务类型"""
-
-    # 检测关键词
-    if "重复" in user_query or "多次" in user_query:
-        return "repeated_experiment"
-
-    if "迭代" in user_query or "边界" in user_query or "调整范围" in user_query:
-        return "iterative_optimization"
-
-    if "径流系数" in user_query or "FDC" in user_query:
-        return "extended_analysis"
-
-    # 检测信息完备度
-    required_fields = ["model_name", "basin_id", "algorithm"]
-    missing = [f for f in required_fields if not extracted_info.get(f)]
-    if missing:
-        return "info_completion"
-
-    # 检测批量务
-    if len(extracted_info.get("basins", [])) > 1 or len(extracted_info.get("algorithms", [])) > 1:
-        return "batch_processing"
-
-    return "standard_calibration"
 ```
+results/
+└── YYYYMMDD_HHMMSS/                    # 会话时间戳
+    └── gr4j_SCE_UA_YYYYMMDD_HHMMSS/    # 实验时间戳
+        ├── calibration_results.json    # 率定结果
+        ├── calibration_config.yaml     # 配置
+        ├── basins_metrics.csv          # 评估指标
+        ├── param_range_iter0.yaml      # 参数范围（实验3）
+        ├── param_range_iter1.yaml
+        └── gr4j_evaluation_results.nc  # 评估结果
 
-#### 信息补全
+generated_code/                         # 生成的代码（实验4）
+├── runoff_coefficient_analysis.py
+└── plot_fdc.py
 
-```python
-def complete_missing_info(self, extracted_info: Dict) -> Dict:
-    """补全缺失信息"""
-
-    # 补全模型
-    if not extracted_info.get("model_name"):
-        extracted_info["model_name"] = "xaj"  # 默认XAJ
-
-    # 补全算法
-    if not extracted_info.get("algorithm"):
-        extracted_info["algorithm"] = "SCE_UA"
-
-    # 补全时间范围
-    if not extracted_info.get("train_period"):
-        # 从数据集获取可用时间，取 → 0
-        extracted_info["train_period"] = ["1990-01-01", "2000-12-31"]
-
-    # 识别流域ID格式 → 推断数据
-    basin_id = extracted_info.get("basin_id", "")
-    if basin_id.startswith("0") and len(basin_id) == 8:
-        extracted_info["data_source"] = "camels_us"
-
-    return extracted_info
+logs/                                   # 日志
+└── run_YYYYMMDD_HHMMSS.log
 ```
 
 ---
 
-### 4.2 TaskPlanner（战术拆解层，原ConfigAgent
-
-#### 核心职责
-
-1. **任务拆解**：根据task_type决定是否拆解
-2. **组合逻辑**：处理多流域、多算法、多时段的笛卡尔
-3. **提示词生*：为每个子任务生成详细的提示词
-4. **依赖管理**：处理阶段性任务的依赖关系（如实验3的两阶段
-
-#### 接口设计
-
-```python
-class TaskPlanner(BaseAgent):
-    """任务规划智能体（原ConfigAgent""
-
-    def process(self, input_data: Dict) -> Dict:
-        """
-        处理任务规划
-
-        Args:
-            input_data: {
-                "intent_result": {
-                    "task_type": "...",
-                    "intent_data": {...}
-                }
-            }
-
-        Returns:
-            {
-                "success": True,
-                "tasks": [
-                    {
-                        "subtask_id": 1,
-                        "prompt": "...",
-                        "params": {...},
-                        "dependencies": []  # 依赖的子任务ID
-                    },
-                    ...
-                ]
-            }
-        """
-        intent_result = input_data["intent_result"]
-        task_type = intent_result["task_type"]
-
-        if task_type == "standard_calibration":
-            # 简单任务，不解
-            return self._create_single_task(intent_result)
-
-        elif task_type == "repeated_experiment":
-            # 重复实验，生成N个相同任务（不同随机种子
-            return self._create_repeated_tasks(intent_result)
-
-        elif task_type == "iterative_optimization":
-            # 两阶段任务，Phase 2依赖Phase 1
-            return self._create_iterative_tasks(intent_result)
-
-        elif task_type == "batch_processing":
-            # 批量任务，笛卡尔
-            return self._create_batch_tasks(intent_result)
-
-        elif task_type == "extended_analysis":
-            # 标准任务 + 额外分析
-            return self._create_extended_tasks(intent_result)
-
-        else:
-            return self._create_single_task(intent_result)
-```
-
-#### 示例：重复实验解
-
-```python
-def _create_repeated_tasks(self, intent: Dict) -> Dict:
-    """创建重复实验任务（证""
-    n_repeats = intent.get("n_repeats", 10)
-
-    tasks = []
-    for i in range(1, n_repeats + 1):
-        task = {
-            "subtask_id": i,
-            "prompt": self._generate_prompt(intent, seed=i),
-            "params": {
-                "model_name": intent["intent_data"]["model_name"],
-                "basin_id": intent["intent_data"]["basin_id"],
-                "algorithm": intent["intent_data"]["algorithm"],
-                "random_seed": i  # 不同随机种子
-            },
-            "dependencies": []
-        }
-        tasks.append(task)
-
-    return {"success": True, "tasks": tasks}
-```
-
-#### 提示词生
-
-```python
-def _generate_prompt(self, intent: Dict, **kwargs) -> str:
-    """为子任务生成提示词""
-
-    template = """
-    ### 任务描述
-    用户需要{intent}，目标流域为{basin_id}
-
-    ### 配置要求
-    - 模型: {model_name}
-    - 算法: {algorithm}
-    - 随机种子: {random_seed}
-
-    ### 参考历
-    {历史成功案例}
-
-    请生成hydromodel配置JSON个
-    """
-
-    # 从Prompt Pool获取历史案例
-    similar_cases = self.prompt_pool.get_similar_cases(intent)
-
-    prompt = template.format(
-        intent=intent["intent_data"]["intent"],
-        basin_id=intent["intent_data"]["basin_id"],
-        model_name=intent["intent_data"]["model_name"],
-        algorithm=intent["intent_data"]["algorithm"],
-        random_seed=kwargs.get("seed", 1),
-        历史成功案例=self._format_cases(similar_cases)
-    )
-
-    return prompt
-```
-
----
-
-### 4.3 Prompt Pool（提示词存储
-
-#### 职责
-
-1. 存储每个子任务的提示词
-2. 存储历史成功案例
-3. 相似任务索
-4. 提示词模板理
-
-#### 数据结构
-
-```python
-{
-    "prompts": {
-        "task_1": {
-            "prompt": "...",
-            "params": {...},
-            "timestamp": "2025-01-22T10:00:00"
-        },
-        ...
-    },
-    "history": [
-        {
-            "task_type": "standard_calibration",
-            "intent": {...},
-            "config": {...},
-            "result": {"NSE": 0.85},
-            "success": True
-        },
-        ...
-    ],
-    "templates": {
-        "standard_calibration": "...",
-        "iterative_optimization": "...",
-        ...
-    }
-}
-```
-
-#### 简化验
-
-```python
-class PromptPool:
-    """提示词池（简化版""
-
-    def __init__(self, pool_dir: Path):
-        self.pool_dir = pool_dir
-        self.prompts = {}
-        self.history = []
-        self.max_history = 50
-
-    def store_prompt(self, task_id: str, prompt: str, params: Dict):
-        """存储子任务提示词"""
-        self.prompts[task_id] = {
-            "prompt": prompt,
-            "params": params,
-            "timestamp": datetime.now().isoformat()
-        }
-
-    def get_similar_cases(self, intent: Dict, limit: int = 3) -> List[Dict]:
-        """检索相似成功例""
-        # 简单匹配：相同模型 + 相同算法
-        similar = []
-        for case in self.history:
-            if (case["intent"].get("model_name") == intent.get("model_name") and
-                case["intent"].get("algorithm") == intent.get("algorithm") and
-                case["success"]):
-                similar.append(case)
-
-        return similar[-limit:]  # 返回最近的N个
-
-    def add_history(self, task_type: str, intent: Dict, config: Dict, result: Dict, success: bool):
-        """添加历史记录"""
-        self.history.append({
-            "task_type": task_type,
-            "intent": intent,
-            "config": config,
-            "result": result,
-            "success": success,
-            "timestamp": datetime.now().isoformat()
-        })
-
-        if len(self.history) > self.max_history:
-            self.history = self.history[-self.max_history:]
-```
-
----
-
-### 4.4 InterpreterAgent（配置生成层，新组件
-
-#### 职责
-
-**专注于一件事**：根据提示词生成hydromodel格式的config
-
-#### 为什么独立出来？
-
-| 职责 | 负责组件 |
-|------|---------|
-| 任务拆解、组合逻辑 | TaskPlanner |
-| **Config JSON生成** | **InterpreterAgent** 专业|
-| 执行hydromodel | RunnerAgent |
-
-#### 接口设计
-
-```python
-class InterpreterAgent(BaseAgent):
-    """配置解释器（新组件）"""
-
-    def process(self, input_data: Dict) -> Dict:
-        """
-        生成hydromodel config
-
-        Args:
-            input_data: {
-                "prompt": "...",  # 来自TaskPlanner
-                "params": {...},  # 子任务参
-                "error_log": "..." (可选，用于重试)
-            }
-
-        Returns:
-            {
-                "success": True,
-                "config": {...},
-                "config_file": "config.yaml" (可
-            }
-        """
-        prompt = input_data["prompt"]
-        params = input_data["params"]
-        error_log = input_data.get("error_log")
-
-        # 构建完整提示词
-        full_prompt = self._build_full_prompt(prompt, error_log)
-
-        # LLM生成config
-        config = self._llm_generate_config(full_prompt)
-
-        # 验证
-        is_valid, errors = self._validate_config(config, params)
-
-        if not is_valid:
-            # 自我修正
-            config = self._llm_self_correct(config, errors)
-
-        return {
-            "success": True,
-            "config": config
-        }
-
-    def _build_full_prompt(self, base_prompt: str, error_log: Optional[str]) -> str:
-        """构建完整提示词""
-        parts = [base_prompt]
-
-        # 添加config schema
-        parts.append(self._get_config_schema())
-
-        # 添加错误反馈
-        if error_log:
-            parts.append(f"\n### ⚠️ 上次执行失败\n{error_log}\n请修正配置)
-
-        return "\n\n".join(parts)
-
-    def _llm_generate_config(self, prompt: str) -> Dict:
-        """LLM生成config"""
-        messages = [
-            {"role": "system", "content": "你是hydromodel配置生成器，输出有效JSON个},
-            {"role": "user", "content": prompt}
-        ]
-
-        response = self.llm_interface.chat(messages)
-        config = self._parse_json(response)
-
-        return config
-
-    def _validate_config(self, config: Dict, params: Dict) -> tuple[bool, List[str]]:
-        """验证config"""
-        errors = []
-
-        # 必需字段
-        if "data_cfgs" not in config:
-            errors.append("缺少data_cfgs")
-
-        # 参数一致
-        if config.get("model_cfgs", {}).get("model_name") != params.get("model_name"):
-            errors.append(f"模型不一 → 期望{params.get('model_name')}")
-
-        return len(errors) == 0, errors
-
-    def _llm_self_correct(self, config: Dict, errors: List[str]) -> Dict:
-        """LLM自我修正"""
-        prompt = f"配置有错\n{json.dumps(config, indent=2)}\n\n错误:\n{errors}\n\n请修正
-
-        messages = [
-            {"role": "system", "content": "修正hydromodel配置错误},
-            {"role": "user", "content": prompt}
-        ]
-
-        response = self.llm_interface.chat(messages)
-        return self._parse_json(response)
-```
-
----
-
-### 4.5 RunnerAgent（执行
-
-#### 增强功能
-
-**原功*：执行hydromodel
-
-**新功*
-1. 执行hydromodel
-2. **执行DeveloperAgent生成的额外本*（证
-3. 捕获更详细的错误信息
-
-```python
-class RunnerAgent(BaseAgent):
-    """执行智能体（增强版）"""
-
-    def process(self, input_data: Dict) -> Dict:
-        """
-        执行任务
-
-        Args:
-            input_data: {
-                "config": {...},
-                "extra_scripts": ["script1.py", "script2.py"]  # 🆕 可
-            }
-
-        Returns:
-            {
-                "success": True/False,
-                "result": {...},
-                "extra_results": {...},  # 🆕 额外脚本的果
-                "error": "..."
-            }
-        """
-        config = input_data["config"]
-        extra_scripts = input_data.get("extra_scripts", [])
-
-        # 执行hydromodel
-        result = self._run_calibration(config)
-
-        if not result["success"]:
-            return result
-
-        # 执行额外脚本（证
-        extra_results = {}
-        for script in extra_scripts:
-            logger.info(f"[RunnerAgent] Executing extra script: {script}")
-            script_result = self._run_script(script, result["calibration_dir"])
-            extra_results[script] = script_result
-
-        return {
-            "success": True,
-            "result": result,
-            "extra_results": extra_results
-        }
-
-    def _run_script(self, script_path: str, work_dir: str) -> Dict:
-        """执行额外的Python脚本"""
-        import subprocess
-
-        try:
-            output = subprocess.run(
-                [sys.executable, script_path],
-                cwd=work_dir,
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-
-            return {
-                "success": output.returncode == 0,
-                "stdout": output.stdout,
-                "stderr": output.stderr
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
-```
-
----
-
-### 4.6 DeveloperAgent（后处理层）
-
-#### 增强功能
-
-**原功*：结果分离+ 建议生成
-
-**新功*
-1. 结果分析
-2. **代码生成**（验：超出hydromodel功能
-3. **统计分析**（验：重复实验的NSE标准差）
-4. **边界效应索*（验：触发迭代优化）
-
-```python
-class DeveloperAgent(BaseAgent):
-    """开发分析智能体（增强版""
-
-    def process(self, input_data: Dict) -> Dict:
-        """
-        分析结果 + 可选代码生成
-
-        Args:
-            input_data: {
-                "task_type": "...",
-                "results": [...],  # 可能是多个子任务的果
-                "needs": ["runoff_coefficient", "FDC"]  # 🆕 需要额外分析的内容
-            }
-
-        Returns:
-            {
-                "analysis": "...",
-                "generated_scripts": [...],  # 🆕 生成的本
-                "statistics": {...}  # 🆕 统计结果（证
-            }
-        """
-        task_type = input_data["task_type"]
-        results = input_data["results"]
-        needs = input_data.get("needs", [])
-
-        # 标准分析
-        analysis = self._analyze_results(results)
-
-        # 代码生成（证
-        generated_scripts = []
-        if needs:
-            generated_scripts = self._generate_analysis_scripts(needs, results)
-
-        # 统计分析（证
-        statistics = {}
-        if task_type == "repeated_experiment":
-            statistics = self._compute_statistics(results)
-
-        # 边界效应检测（实验3
-        boundary_detected = False
-        if task_type == "iterative_optimization":
-            boundary_detected = self._detect_boundary_effect(results[0])
-
-        return {
-            "analysis": analysis,
-            "generated_scripts": generated_scripts,
-            "statistics": statistics,
-            "boundary_detected": boundary_detected
-        }
-
-    def _generate_analysis_scripts(self, needs: List[str], results: List[Dict]) -> List[str]:
-        """生成额外分析脚本（证""
-        scripts = []
-
-        for need in needs:
-            if need == "runoff_coefficient":
-                script = self._llm_generate_script(
-                    task="计算径流系数",
-                    input_files=results[0]["output_files"],
-                    output_file="runoff_coefficient.txt"
-                )
-                scripts.append(script)
-
-            elif need == "FDC":
-                script = self._llm_generate_script(
-                    task="绘制流路历时曲线",
-                    input_files=results[0]["output_files"],
-                    output_file="FDC.png"
-                )
-                scripts.append(script)
-
-        return scripts
-
-    def _llm_generate_script(self, task: str, input_files: List[str], output_file: str) -> str:
-        """使用LLM生成Python脚本"""
-        prompt = f"""
-        请编写Python脚本完成以下任务
-
-        任务: {task}
-        输入文件: {input_files}
-        输出文件: {output_file}
-
-        要求
-        1. 使用xarray读取.nc文件或pandas读取.csv文件
-        2. 包含必要的错误理
-        3. 输出结果到指定件
-        4. 直接输出可执行的Python代码，不要解
-        """
-
-        response = self.llm_interface.chat([
-            {"role": "system", "content": "你是Python脚本生成专家},
-            {"role": "user", "content": prompt}
-        ])
-
-        # 保存脚本
-        script_path = Path(f"generated_{task}.py")
-        script_path.write_text(response)
-
-        return str(script_path)
-
-    def _compute_statistics(self, results: List[Dict]) -> Dict:
-        """计算统计指标（证""
-        nse_values = [r["metrics"]["NSE"] for r in results]
-
-        return {
-            "mean_NSE": np.mean(nse_values),
-            "std_NSE": np.std(nse_values),
-            "min_NSE": np.min(nse_values),
-            "max_NSE": np.max(nse_values),
-            "n_samples": len(nse_values)
-        }
-
-    def _detect_boundary_effect(self, result: Dict) -> bool:
-        """检测参数是否收敛到边界（证""
-        # 读取best_params和param_range
-        best_params = result["best_params"]
-        # param_range = ...  # 需要从文件读取
-
-        # 检测是否接近边
-        for param, value in best_params.items():
-            # if value接近param_range的上界或下界:
-            #     return True
-            pass
-
-        return False
-```
-
----
-
-## 5. 数据流与协作
-
-### 5.1 完整数据
-
-```python
-# 用户输入
-user_query = "率定流域 01013500，如果参数收敛到边界，自动调整范围重新率定
-
-# Step 1: IntentAgent（战略决策）
-intent_result = intent_agent.process({"query": user_query})
-# 输出:
-# {
-#     "task_type": "iterative_optimization",
-#     "intent_data": {
-#         "intent": "calibration",
-#         "model_name": "xaj",
-#         "basin_id": "01013500",
-#         "algorithm": "SCE_UA"
-#     },
-#     "strategy": {
-#         "phases": ["coarse", "fine"],
-#         "trigger": "boundary_effect"
-#     }
-# }
-
-# Step 2: TaskPlanner（战术拆解）
-plan_result = task_planner.process({"intent_result": intent_result})
-# 输出:
-# {
-#     "tasks": [
-#         {
-#             "subtask_id": 1,
-#             "phase": "coarse",
-#             "prompt": "粗定..",
-#             "params": {"rep": 500, ...}
-#         },
-#         {
-#             "subtask_id": 2,
-#             "phase": "fine",
-#             "prompt": "精定..",
-#             "params": {"rep": 2000, ...},
-#             "dependencies": [1],  # 依赖务
-#             "condition": "boundary_detected"  # 条件执行
-#         }
-#     ]
-# }
-
-# Step 3: 执行Phase 1
-## 3.1 InterpreterAgent生成config
-config1 = interpreter_agent.process({
-    "prompt": plan_result["tasks"][0]["prompt"],
-    "params": plan_result["tasks"][0]["params"]
-})
-
-## 3.2 RunnerAgent执行
-result1 = runner_agent.process({"config": config1["config"]})
-
-## 3.3 DeveloperAgent分析
-analysis1 = developer_agent.process({
-    "task_type": "iterative_optimization",
-    "results": [result1]
-})
-
-# Step 4: 检查是否需要Phase 2
-if analysis1["boundary_detected"]:
-    # 执行Phase 2
-    ## 4.1 TaskPlanner调整提示词（包含边界信息
-    adjusted_prompt = task_planner.adjust_prompt(
-        plan_result["tasks"][1]["prompt"],
-        boundary_info=analysis1["boundary_params"]
-    )
-
-    ## 4.2 InterpreterAgent生成新config（调整param_range
-    config2 = interpreter_agent.process({
-        "prompt": adjusted_prompt,
-        "params": plan_result["tasks"][1]["params"]
-    })
-
-    ## 4.3 RunnerAgent执行
-    result2 = runner_agent.process({"config": config2["config"]})
-
-    ## 4.4 DeveloperAgent对比分析
-    final_analysis = developer_agent.process({
-        "task_type": "iterative_optimization",
-        "results": [result1, result2]
-    })
-else:
-    final_analysis = analysis1
-
-# 返回最终果
-return final_analysis
-```
-
----
-
-## 6. 实验场景实现
-
-### 实验1：标准流域证
-
-**流程**
-```
-用户 → IntentAgent (识别为standard_calibration)
-    TaskPlanner (不拆解，单一任务)
-    InterpreterAgent (生成config)
-    RunnerAgent (执行)
-    DeveloperAgent (分析，NSE > 0.8)
-```
-
----
-
-### 实验2：通用性与性
-
-**场景A**（全信息）：
-```
-IntentAgent → 直接提取 无需补全
-```
-
-**场景B**（缺省信息）
-```
-IntentAgent → 识别CAMELS_US 补全算法、期
-```
-
-**场景C**（模糊信息）
-```
-IntentAgent → 识别路径 推断data_source_type
-InterpreterAgent → 检查文件夹结构 生成适配config
-```
-
----
-
-### 实验3：参数自适应优化
-
-**流程**
-```
-IntentAgent → task_type="iterative_optimization"
-    
-TaskPlanner → 拆解为Phase1 + Phase2（条件依赖）
-    
-Phase 1:
-  InterpreterAgent → config (宽泛范围, rep=500)
-  RunnerAgent → 执行
-  DeveloperAgent → 检测边界效
-    
-  If boundary_detected:
-    Phase 2:
-      TaskPlanner → 调整提示词（包含边界信息
-      InterpreterAgent → 新config (调整范围, rep=2000)
-      RunnerAgent → 执行
-      DeveloperAgent → 对比NSE提升
-```
-
----
-
-### 实验4：代码生成与工具扩展
-
-**流程**
-```
-IntentAgent → task_type="extended_analysis", needs=["runoff_coefficient", "FDC"]
-    
-TaskPlanner → 拆解为Task1(标准率定) + Task2(扩展分析)
-    
-Task 1:
-  InterpreterAgent → config
-  RunnerAgent → 执行率定
-    
-Task 2:
-  DeveloperAgent → 识别需要代码生
-  DeveloperAgent → LLM生成 calc_runoff_coef.py, plot_fdc.py
-  RunnerAgent → 执行额外脚本
-  DeveloperAgent → 汇总果
-```
-
----
-
-### 实验5：稳定性证
-
-**流程**
-```
-IntentAgent → task_type="repeated_experiment", n_repeats=10
-    
-TaskPlanner → 拆解0个子任务（不同随机种子）
-    
-For each task:
-  InterpreterAgent → config (random_seed=i)
-  RunnerAgent → 执行
-    
-DeveloperAgent → 计算mean_NSE, std_NSE
-```
-
----
-
-## 7. 实施计划
-
-### Phase 1: IntentAgent增强-3天）
-
-**Day 1-2**:
-- [ ] 实现任务类型决策逻辑
-- [ ] 实现信息补全功能
-- [ ] 单元测试 → 个实验场景的intent识别
-
-**Day 3**:
-- [ ] 集成测试
-- [ ] 文档更新
-
----
-
-### Phase 2: TaskPlanner（原ConfigAgent重构-4天）
-
-**Day 4-5**:
-- [ ] 重命名ConfigAgent → TaskPlanner
-- [ ] 实现任务拆解逻辑 → 个task_type
-- [ ] 实现提示词生
-
-**Day 6-7**:
-- [ ] 实现Prompt Pool（简化版
-- [ ] 单元测试
-- [ ] 集成测试
-
----
-
-### Phase 3: InterpreterAgent（新组件-3天）
-
-**Day 8-9**:
-- [ ] 创建InterpreterAgent
-- [ ] 实现LLM生成config
-- [ ] 实现验证和自我修
-
-**Day 10**:
-- [ ] 单元测试
-- [ ] 与TaskPlanner集成测试
-
----
-
-### Phase 4: RunnerAgent & DeveloperAgent增强-3天）
-
-**Day 11-12**:
-- [ ] RunnerAgent支持执行额外脚本
-- [ ] DeveloperAgent实现代码生成
-- [ ] DeveloperAgent实现统计分析
-- [ ] DeveloperAgent实现边界索
-
-**Day 13**:
-- [ ] 单元测试
-- [ ] 集成测试
-
----
-
-### Phase 5: 端到端验证（3-5天）
-
-**Day 14-18**:
-- [ ] 实验1：标准流域证
-- [ ] 实验2：通用性鲁棒性（3个场景）
-- [ ] 实验3：参数自适应优化
-- [ ] 实验4：代码生成展
-- [ ] 实验5：稳定性证
-- [ ] 性能调优
-- [ ] 文档完善
-
----
-
-## 8. 已知问题与修复记录
-
-### 8.1 实验4: Custom Analysis任务路由问题（ 2025-01-24修复）
-
-#### 问题现象
-- RunnerAgent误将custom_analysis识别为"calibrate"模式
-- hydromodel报错：`ValueError: Unsupported data_type: custom`
-- 代码生成功能未被触发
-
-#### 修复内容
-1. **TaskPlanner**: 为custom_analysis任务添加`task_type`字段到parameters (task_planner.py:397)
-2. **InterpreterAgent**: 支持最小化配置生成 (interpreter_agent.py:93-189, 393-405, 270-272)
-3. **RunnerAgent**: 添加custom_analysis模式日志处理 (runner_agent.py:267-276)
-
-#### 测试验证
-`test/test_exp4_fixes.py` 全部通过
-
----
-
-### 8.2 实验3: 迭代优化架构问题（ 2025-01-22修复）
-
-#### 问题现象
-两次率定使用相同参数范围，NSE值相同
-
-#### 修复方案
-TaskPlanner创建单一iterative任务，RunnerAgent内部循环处理
-
-详见：`docs/ITERATIVE_OPTIMIZATION_REDESIGN.md`
-
----
-
-### 8.3 实验1: JSON解析和Config使用（ 2025-01-22修复）
-
-#### 问题1: JSON解析失败
-LLM返回markdown包裹的JSON
-
-**修复**: llm_interface.py添加markdown提取逻辑
-
-#### 问题2: 硬编码参数
-InterpreterAgent使用hardcoded "rep: 5000"
-
-**修复**: 动态加载config.py参数
-
----
-
-## 9. 总结
-
-### 核心改进
-
-| 改进| 旧构| 新构|
-|--------|--------|--------|
-| **IntentAgent** | 只提取息| 提取 + **决策任务类型** |
-| **ConfigAgent** | 规则生成config | **TaskPlanner** (任务拆解) |
-| **(** | - | **InterpreterAgent** (LLM生成config) |
-| **Prompt Pool** | 静态件| 动态存+ 历史索|
-| **DeveloperAgent** | 分析 | 分析 + **代码生成** + 统计 |
-| **错误反馈** | | TaskPlanner/Interpreter → Runner |
-
-### 设计优势
-
-1. **职责清晰**：战略（IntentAgent）→ 战术（TaskPlanner）→ 配置（Interpreter）→ 执行（Runner
-2. **复杂性隔离：逻辑复杂性（TaskPlanner）与执行复杂性（Runner）分离
-3. **实验驱动**：所有设计围 → 个核心验
-4. **可扩展：新增任务类型只需扩展TaskPlanner的拆解逻辑
-
----
-
-**END OF DOCUMENT**
+**最后更新**: 2025-11-26
+**架构版本**: v4.0
+**文档维护**: HydroAgent Team

@@ -372,3 +372,210 @@ class ErrorHandler:
         logger.info("[ErrorHandler] Generated retry configuration")
 
         return retry_config
+
+
+class GracefulErrorHandler:
+    """
+    优雅的错误处理器，提供简洁的终端输出和详细的日志记录。
+
+    Purpose:
+    - Format errors for clean terminal display (user-friendly)
+    - Log detailed error information (developer-friendly)
+    - Generate standardized error responses
+    - Centralize error handling logic in hydroagent core
+    """
+
+    @staticmethod
+    def format_error_for_terminal(
+        error: Exception,
+        context: str = "执行过程",
+        max_length: int = 150
+    ) -> str:
+        """
+        格式化错误信息供终端显示（简洁版）。
+
+        Args:
+            error: 捕获的异常
+            context: 错误发生的上下文描述
+            max_length: 错误信息最大长度
+
+        Returns:
+            格式化的简洁错误信息
+        """
+        error_type = type(error).__name__
+        error_msg = str(error)
+
+        # 截断过长的错误信息
+        if len(error_msg) > max_length:
+            error_msg = error_msg[:max_length] + "..."
+
+        return f"[{error_type}] {error_msg}"
+
+    @staticmethod
+    def log_detailed_error(
+        error: Exception,
+        context: str = "执行过程",
+        phase: Optional[str] = None,
+        task_id: Optional[str] = None
+    ) -> None:
+        """
+        记录详细的错误信息到日志（包含完整堆栈）。
+
+        Args:
+            error: 捕获的异常
+            context: 错误发生的上下文
+            phase: 当前执行阶段（如 "intent", "runner"）
+            task_id: 当前任务ID
+        """
+        error_type = type(error).__name__
+        error_msg = str(error)
+
+        log_prefix = f"[{context}]"
+        if phase:
+            log_prefix += f" [Phase: {phase}]"
+        if task_id:
+            log_prefix += f" [Task: {task_id}]"
+
+        # 记录错误摘要
+        logger.error(f"{log_prefix} {error_type}: {error_msg}")
+
+        # 记录完整堆栈（exc_info=True 自动包含堆栈）
+        logger.error(f"{log_prefix} Full traceback:", exc_info=True)
+
+    @staticmethod
+    def create_error_response(
+        error: Exception,
+        context: str = "pipeline",
+        session_id: Optional[str] = None,
+        workspace = None,
+        additional_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        创建标准化的错误响应字典。
+
+        Args:
+            error: 捕获的异常
+            context: 错误发生的上下文
+            session_id: 会话ID
+            workspace: 工作目录 (Path or str)
+            additional_info: 额外信息
+
+        Returns:
+            标准化的错误响应
+        """
+        error_response = {
+            "success": False,
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "context": context
+        }
+
+        if session_id:
+            error_response["session_id"] = session_id
+
+        if workspace:
+            error_response["workspace"] = str(workspace)
+
+        if additional_info:
+            error_response.update(additional_info)
+
+        return error_response
+
+    @staticmethod
+    def print_terminal_error(
+        error: Exception,
+        context: str = "执行过程",
+        log_file = None,
+        workspace = None,
+        elapsed_time: Optional[float] = None,
+        checkpoint_file = None
+    ) -> None:
+        """
+        打印格式化的错误信息到终端（用户友好）。
+
+        Args:
+            error: 捕获的异常
+            context: 错误发生的上下文
+            log_file: 日志文件路径 (Path or str)
+            workspace: 工作目录 (Path or str)
+            elapsed_time: 已执行时长（秒）
+            checkpoint_file: Checkpoint文件路径 (Path or str)
+        """
+        error_type = type(error).__name__
+        error_msg = str(error)
+
+        # 截断过长的错误信息
+        max_length = 150
+        if len(error_msg) > max_length:
+            error_msg = error_msg[:max_length] + "..."
+
+        # 格式化输出
+        print("\n" + "=" * 70)
+        print(f"执行中断: {context}")
+        print("=" * 70)
+        print(f"\n错误类型: {error_type}")
+        print(f"错误信息: {error_msg}")
+
+        if log_file:
+            print(f"\n详细日志: {log_file}")
+
+        if workspace:
+            print(f"工作目录: {workspace}")
+
+        if checkpoint_file:
+            print(f"Checkpoint: {checkpoint_file}")
+
+        if elapsed_time is not None:
+            print(f"已执行时长: {elapsed_time:.1f}s")
+
+        print("\n" + "=" * 70)
+
+
+def handle_pipeline_error(
+    error: Exception,
+    phase: str,
+    session_id: Optional[str] = None,
+    workspace = None,
+    checkpoint_manager = None
+) -> Dict[str, Any]:
+    """
+    处理 pipeline 执行错误的便捷函数。
+
+    This is a convenience function that:
+    1. Logs detailed error information
+    2. Marks checkpoint as failed (if checkpoint_manager provided)
+    3. Returns standardized error response
+
+    Args:
+        error: 捕获的异常
+        phase: 当前执行阶段 (e.g., "intent", "planner", "runner")
+        session_id: 会话ID
+        workspace: 工作目录 (Path or str)
+        checkpoint_manager: Checkpoint管理器实例
+
+    Returns:
+        标准化的错误响应字典
+    """
+    handler = GracefulErrorHandler()
+
+    # 记录详细日志
+    handler.log_detailed_error(
+        error=error,
+        context="Orchestrator Pipeline",
+        phase=phase
+    )
+
+    # 标记 checkpoint 失败
+    if checkpoint_manager:
+        try:
+            checkpoint_manager.mark_experiment_failed(str(error))
+        except Exception as e:
+            logger.warning(f"Failed to mark checkpoint as failed: {e}")
+
+    # 创建错误响应
+    return handler.create_error_response(
+        error=error,
+        context=f"pipeline_phase_{phase}",
+        session_id=session_id,
+        workspace=workspace
+    )

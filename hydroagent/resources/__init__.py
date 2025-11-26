@@ -1,7 +1,7 @@
 """
 Author: Claude & zhuanglaihong
-Date: 2025-01-20 20:00:00
-LastEditTime: 2025-01-20 20:00:00
+Date: 2025-11-20 20:00:00
+LastEditTime: 2025-11-20 20:00:00
 LastEditors: Claude
 Description: Resources module - RAG static files and knowledge base (Tech 4.6)
              资源模块 - RAG 静态文件和知识库

@@ -1,7 +1,7 @@
 """
 Author: Claude & zhuanglaihong
-Date: 2025-01-20 19:55:00
-LastEditTime: 2025-01-20 19:55:00
+Date: 2025-11-20 19:55:00
+LastEditTime: 2025-11-20 19:55:00
 LastEditors: Claude
 Description: Base agent class defining common interfaces and prompt handling for all agents
              智能体基类 - 定义所有智能体的通用接口和提示词处理

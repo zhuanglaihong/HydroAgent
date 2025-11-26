@@ -1,7 +1,7 @@
 """
 Author: Claude & zhuanglaihong
-Date: 2025-01-20 19:55:00
-LastEditTime: 2025-01-20 19:55:00
+Date: 2025-11-20 19:55:00
+LastEditTime: 2025-11-20 19:55:00
 LastEditors: Claude
 Description: Agents module initialization - 智能体层模块
 FilePath: \HydroAgent\hydroagent\agents\__init__.py

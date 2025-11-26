@@ -1,7 +1,7 @@
 """
 Author: Claude
-Date: 2025-01-22 15:00:00
-LastEditTime: 2025-01-22 15:00:00
+Date: 2025-11-22 15:00:00
+LastEditTime: 2025-11-22 15:00:00
 LastEditors: Claude
 Description: Simplified Prompt Pool for task prompt storage and history management
              简化版提示词池 - 用于任务提示词存储和历史管理
@@ -14,6 +14,9 @@ from pathlib import Path
 import json
 import logging
 from datetime import datetime
+
+# Import NumpyJSONEncoder from checkpoint_manager
+from .checkpoint_manager import NumpyJSONEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +292,7 @@ class PromptPool:
         history_file = self.pool_dir / "history.json"
         try:
             with open(history_file, 'w', encoding='utf-8') as f:
-                json.dump(self.history, f, indent=2, ensure_ascii=False)
+                json.dump(self.history, f, indent=2, ensure_ascii=False, cls=NumpyJSONEncoder)
         except Exception as e:
             logger.error(f"[PromptPool] Failed to save history: {e}")
 

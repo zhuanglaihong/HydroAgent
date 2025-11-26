@@ -46,40 +46,27 @@ DEFAULT_WARMUP_DAYS = 365
 
 # SCE-UA (Shuffled Complex Evolution) default parameters
 DEFAULT_SCE_UA_PARAMS = {
-    "rep": 500,          # Number of evolution steps (迭代轮数)
-    "ngs": 200,           # Number of complexes (复合体数量)
+    "rep": 1000,          # Number of evolution steps (迭代轮数)
+    "ngs": 300,           # Number of complexes (复合体数量)
     "kstop": 500,         # Convergence criterion (收敛判据)
     "peps": 0.1,          # Convergence threshold (收敛阈值)
     "pcento": 0.1,        # Percentage change (百分比变化)
     "random_seed": 1234,  # Random seed for reproducibility
 }
 
-# Differential Evolution (DE) default parameters
-DEFAULT_DE_PARAMS = {
-    "max_generations": 1000,
-    "pop_size": 50,
-    "mutation_factor": 0.8,
-    "crossover_prob": 0.7,
-    "random_seed": 1234,
-}
-
-# Particle Swarm Optimization (PSO) default parameters
-DEFAULT_PSO_PARAMS = {
-    "max_iterations": 1000,
-    "swarm_size": 50,
-    "inertia_weight": 0.9,
-    "cognitive_coef": 2.0,
-    "social_coef": 2.0,
-    "random_seed": 1234,
+# Scipy optimizer default parameters
+DEFAULT_scipy_PARAMS = {
+    "method": "SLSQP",                # Optimization method (default: SLSQP, options: L-BFGS-B, TNC, etc.)
+    "max_iterations": 500             # Maximum number of iterations (default: 500)
 }
 
 # Genetic Algorithm (GA) default parameters
 DEFAULT_GA_PARAMS = {
-    "generations": 1000,
-    "population_size": 50,
-    "mutation_rate": 0.1,
-    "crossover_rate": 0.8,
-    "random_seed": 1234,
+    "pop_size": 80,                    # Population size (default: 80)
+    "n_generations": 50,               # Number of generations (default: 50, recommended: 100+ for production)
+    "cx_prob": 0.7,                    # Crossover probability (default: 0.7)
+    "mut_prob": 0.2,                   # Mutation probability (default: 0.2)
+    "random_seed": 1234,               # Random seed for reproducibility (default: 1234)
 }
 
 # ============================================================================
@@ -88,8 +75,6 @@ DEFAULT_GA_PARAMS = {
 
 # Supported hydrological models
 SUPPORTED_MODELS = [
-    "gr1y",      # GR1Y - 1 parameter
-    "gr2m",      # GR2M - 2 parameters
     "gr4j",      # GR4J - 4 parameters (most common)
     "gr5j",      # GR5J - 5 parameters
     "gr6j",      # GR6J - 6 parameters
@@ -99,8 +84,7 @@ SUPPORTED_MODELS = [
 # Supported calibration algorithms
 SUPPORTED_ALGORITHMS = [
     "SCE_UA",    # Shuffled Complex Evolution
-    "DE",        # Differential Evolution
-    "PSO",       # Particle Swarm Optimization
+    "scipy",     # Scipy optimizer
     "GA",        # Genetic Algorithm
 ]
 
@@ -112,7 +96,7 @@ AVAILABLE_OBJECTIVES = [
     "RMSE",      # Root Mean Square Error
     "NSE",       # Nash-Sutcliffe Efficiency
     "KGE",       # Kling-Gupta Efficiency
-    "MAE",       # Mean Absolute Error
+    "PBIAS"      # Percent bias pbias
 ]
 
 # ============================================================================
@@ -139,7 +123,7 @@ SAVE_CALIBRATION_RESULTS = True
 SAVE_EVALUATION_RESULTS = True
 
 # Result file format
-RESULT_FORMAT = "json"  # json, yaml, csv
+RESULT_FORMAT = "json"  
 
 # NetCDF output for time series
 SAVE_NETCDF = True
@@ -181,11 +165,60 @@ ANALYSIS_DETAIL_LEVEL = "detailed"  # brief, normal, detailed
 # ============================================================================
 
 # NSE quality thresholds
-NSE_EXCELLENT = 0.75   # 优秀
-NSE_GOOD = 0.65        # 良好
-NSE_FAIR = 0.50        # 一般
-NSE_POOR = 0.35        # 较差
+NSE_EXCELLENT = 0.7   # 优秀
+NSE_GOOD = 0.5        # 良好
+NSE_FAIR = 0.3        # 一般
+NSE_POOR = 0.1        # 较差
 # Below NSE_POOR is considered unsatisfactory (不合格)
+
+# ============================================================================
+# Post-Processing and Visualization Configuration
+# ============================================================================
+
+# Enable post-processing after model execution
+ENABLE_POST_PROCESSING = True
+
+# Enable visualization/plotting
+ENABLE_VISUALIZATION = True
+
+# Plot types to generate (set to empty list to disable all plots)
+PLOT_TYPES = [
+    "hydrograph",          # 流量过程线（观测vs模拟）
+    "scatter",             # 散点图（观测vs模拟）
+    "residual",            # 残差图
+    "flow_duration_curve", # 流量历时曲线（FDC）
+]
+
+# Plot format (png, pdf, svg)
+PLOT_FORMAT = "png"
+
+# Plot DPI (resolution)
+PLOT_DPI = 300
+
+# Save plots to result directory
+SAVE_PLOTS = True
+
+# ============================================================================
+# Iterative Optimization Configuration (Experiment 3)
+# ============================================================================
+
+# 边界检测阈值（参数收敛到边界的判定标准）
+BOUNDARY_THRESHOLD = 0.05  # 5% of parameter range
+
+# NSE达标阈值（达到此值时停止迭代优化）
+NSE_THRESHOLD_FOR_ITERATION = 0.65  # 降低此值以触发更多迭代
+
+# 最大迭代次数
+MAX_ITERATIONS = 5
+
+# 最小NSE改善幅度（低于此值视为无改善）
+MIN_NSE_IMPROVEMENT = 0.01
+
+# 初始参数范围缩放比例（第一次迭代时）
+INITIAL_RANGE_SCALE = 0.6  # 60% of original range
+
+# 自动保存调整后的参数范围文件
+SAVE_ADJUSTED_PARAM_RANGE = True
 
 # ============================================================================
 # Experimental Features (Future)
@@ -193,9 +226,6 @@ NSE_POOR = 0.35        # 较差
 
 # Enable RAG system (when implemented)
 ENABLE_RAG = False
-
-# Enable visualization (when implemented)
-ENABLE_VISUALIZATION = False
 
 # Enable multi-basin parallel processing (when implemented)
 ENABLE_PARALLEL_BASINS = False

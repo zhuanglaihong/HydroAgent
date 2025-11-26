@@ -1,7 +1,7 @@
 """
 Author: Claude & zhuanglaihong
-Date: 2025-01-20 21:00:00
-LastEditTime: 2025-01-20 21:00:00
+Date: 2025-11-20 21:00:00
+LastEditTime: 2025-11-20 21:00:00
 LastEditors: Claude
 Description: Configuration generation agent - generates hydromodel config dict
              配置生成智能体 - 生成 hydromodel 配置字典
