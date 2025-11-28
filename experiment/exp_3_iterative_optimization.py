@@ -31,7 +31,7 @@ if sys.platform == "win32":
 
 from base_experiment import BaseExperiment
 
-QUERY = "用xaj模型率定流域01013500,如果参数收敛到边界,自动调整范围重新率定" # basin_id：12025000,01013500,14301000
+QUERY = "用xaj模型率定流域14301000,如果参数收敛到边界,自动调整范围重新率定" # basin_id：12025000,01013500,14301000
 
 
 def main():

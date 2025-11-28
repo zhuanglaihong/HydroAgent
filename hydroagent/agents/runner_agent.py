@@ -20,6 +20,7 @@ import numpy as np
 
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
+from ..utils.path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
@@ -430,6 +431,19 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             else:
                 logger.warning("[RunnerAgent] 未获得率定输出目录，跳过评估")
 
+            # ✅ 自动绘图（率定-评估-可视化三步走）
+            plot_files = []
+            if calibration_dir:
+                try:
+                    from configs import config as global_config
+                    if global_config.ENABLE_AUTO_PLOT:
+                        logger.info("[RunnerAgent] 开始自动绘图...")
+                        plot_files = self._auto_plot_results(calibration_dir, config)
+                        if plot_files:
+                            logger.info(f"[RunnerAgent] 生成了 {len(plot_files)} 个图表")
+                except Exception as e:
+                    logger.warning(f"[RunnerAgent] 自动绘图失败: {str(e)}", exc_info=True)
+
             return {
                 "status": "success",
                 "calibration_result": result,
@@ -439,6 +453,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 "evaluation_result": eval_result,
                 "metrics": eval_metrics,  # ✅ 使用评估期的metrics（更准确）
                 "output_files": parsed_result.get("output_files", []),
+                "plot_files": plot_files,  # ✅ 新增：绘图文件列表
                 "output_captured": True
             }
 
@@ -953,16 +968,18 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             logger.info("🚀 Iteration 0: 初始率定（使用默认参数范围）")
             logger.info("=" * 70)
 
-            # ⭐ 为初始率定设置唯一的输出目录
+            # ⭐ 为初始率定设置唯一的输出目录（使用PathManager）
             initial_config = config.copy()
-            if "training_cfgs" in initial_config:
+            if "training_cfgs" in initial_config and self.workspace_dir:
                 initial_config["training_cfgs"] = config["training_cfgs"].copy()
-                # 设置输出目录名为 calibration_iter0
-                if self.workspace_dir:
-                    initial_config["training_cfgs"]["output_dir"] = str(self.workspace_dir / "calibration_iter0")
-                    # ⭐ 清空 experiment_name，避免 hydromodel 创建额外的子目录
-                    initial_config["training_cfgs"]["experiment_name"] = ""
-                    logger.info(f"[RunnerAgent] Iteration 0 输出目录: {initial_config['training_cfgs']['output_dir']}")
+                # 使用 PathManager 配置路径（扁平结构，避免嵌套）
+                initial_config = PathManager.configure_hydromodel_output(
+                    config=initial_config,
+                    session_dir=self.workspace_dir,
+                    task_id="calibration_iter0",
+                    use_flat_structure=True
+                )
+                logger.info(f"[RunnerAgent] Iteration 0 输出目录: {initial_config['training_cfgs']['output_dir']}")
 
             initial_result = self._run_calibration(initial_config)
 
@@ -1000,7 +1017,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     "total_iterations": 0,
                     "final_nse": initial_nse,
                     "final_metrics": initial_result.get("metrics", {}),
-                    "message": f"Initial NSE {initial_nse:.4f} already meets threshold {nse_threshold}"
+                    "message": f"Initial NSE {initial_nse:.4f} already meets threshold {nse_threshold}",
+                    "output_dir": str(self.workspace_dir) if self.workspace_dir else None
                 }
 
             # 开始迭代优化
@@ -1049,7 +1067,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 # ⭐ 保存到 model_cfgs 用于记录（在 calibration_config.yaml 中）
                 new_config["model_cfgs"]["param_range_file"] = adjust_result["output_file"]
 
-                # ⭐ 为每次迭代设置唯一的输出目录
+                # ⭐ 为每次迭代设置唯一的输出目录（使用PathManager）
                 if "training_cfgs" in new_config:
                     new_config["training_cfgs"] = config["training_cfgs"].copy()
                     # 🔧 FIX: hydromodel 只从 training_cfgs 读取 param_range_file
@@ -1057,11 +1075,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     new_config["training_cfgs"]["param_range_file"] = adjust_result["output_file"]
                     logger.info(f"[RunnerAgent] 设置参数范围文件: {adjust_result['output_file']}")
 
-                    # 设置输出目录名为 calibration_iter{N}
+                    # 使用 PathManager 配置路径（扁平结构，避免嵌套）
                     if self.workspace_dir:
-                        new_config["training_cfgs"]["output_dir"] = str(self.workspace_dir / f"calibration_iter{iteration}")
-                        # ⭐ 清空 experiment_name，避免 hydromodel 创建额外的子目录
-                        new_config["training_cfgs"]["experiment_name"] = ""
+                        new_config = PathManager.configure_hydromodel_output(
+                            config=new_config,
+                            session_dir=self.workspace_dir,
+                            task_id=f"calibration_iter{iteration}",
+                            use_flat_structure=True
+                        )
                         logger.info(f"[RunnerAgent] Iteration {iteration} 输出目录: {new_config['training_cfgs']['output_dir']}")
 
                 # 执行率定
@@ -1118,7 +1139,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                             "best_iteration": best_iteration,
                             "final_nse": current_nse,
                             "final_metrics": iter_result.get("metrics", {}),
-                            "message": f"Converged at iteration {iteration} with NSE {current_nse:.4f}"
+                            "message": f"Converged at iteration {iteration} with NSE {current_nse:.4f}",
+                            "output_dir": str(self.workspace_dir) if self.workspace_dir else None
                         }
                 else:
                     consecutive_no_improvement += 1
@@ -1137,7 +1159,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                             "final_nse": best_nse,
                             "final_metrics": iteration_history[best_iteration]["metrics"],
                             "message": f"No improvement after {consecutive_no_improvement} iterations. Best NSE: {best_nse:.4f} at iteration {best_iteration}",
-                            "recommendation": "建议人工设置更合理的参数范围或检查模型配置"
+                            "recommendation": "建议人工设置更合理的参数范围或检查模型配置",
+                            "output_dir": str(self.workspace_dir) if self.workspace_dir else None
                         }
 
             # 达到最大迭代次数
@@ -1154,7 +1177,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     "final_nse": best_nse,
                     "final_metrics": iteration_history[best_iteration]["metrics"],
                     "message": f"Reached max iterations. Best NSE: {best_nse:.4f} at iteration {best_iteration}",
-                    "recommendation": "建议人工设置更合理的参数范围或检查模型配置"
+                    "recommendation": "建议人工设置更合理的参数范围或检查模型配置",
+                    "output_dir": str(self.workspace_dir) if self.workspace_dir else None
                 }
             else:
                 return {
@@ -1164,7 +1188,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     "best_iteration": best_iteration,
                     "final_nse": best_nse,
                     "final_metrics": iteration_history[best_iteration]["metrics"],
-                    "message": f"Converged at max iterations. Best NSE: {best_nse:.4f}"
+                    "message": f"Converged at max iterations. Best NSE: {best_nse:.4f}",
+                    "output_dir": str(self.workspace_dir) if self.workspace_dir else None
                 }
 
         except Exception as e:
@@ -1178,7 +1203,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         input_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        统计分析多次重复实验的结果（实验5）。
+        统计分析多次重复实验的结果（实验4）。
         Statistical analysis of repeated experiments (Experiment 5).
 
         Args:
@@ -1203,36 +1228,18 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             import json
             import numpy as np
 
+            # ⭐ Use PathManager to collect results
             workspace_dir = Path(config.get("training_cfgs", {}).get("output_dir", ".")).parent
-            logger.info(f"[RunnerAgent] 从 {workspace_dir} 收集重复实验结果...")
+            logger.info(f"[RunnerAgent] 使用PathManager从 {workspace_dir} 收集重复实验结果...")
 
-            # 收集所有重复任务的结果
-            all_metrics = []
-            all_params = {}
+            # 使用PathManager收集所有重复任务的结果
+            collection_result = PathManager.collect_repeated_calibration_results(
+                session_dir=workspace_dir,
+                n_repeats=n_repeats,
+                task_id_pattern="task_{i}_repeat"
+            )
 
-            for i in range(n_repeats):
-                task_dir = workspace_dir / f"task_{i+1}_repeat"
-                result_file = task_dir / "calibration_results.json"
-
-                if result_file.exists():
-                    with open(result_file, 'r', encoding='utf-8') as f:
-                        result = json.load(f)
-
-                    metrics = result.get("metrics", {})
-                    best_params = result.get("best_params", {})
-
-                    all_metrics.append(metrics)
-
-                    # 收集参数值
-                    for param_name, param_value in best_params.items():
-                        if param_name not in all_params:
-                            all_params[param_name] = []
-                        all_params[param_name].append(param_value)
-
-                else:
-                    logger.warning(f"[RunnerAgent] 结果文件不存在: {result_file}")
-
-            if not all_metrics:
+            if collection_result["found_count"] == 0:
                 logger.warning("[RunnerAgent] 没有找到任何重复实验结果")
                 return {
                     "status": "no_data",
@@ -1240,7 +1247,25 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     "found_results": 0
                 }
 
-            logger.info(f"[RunnerAgent] 收集到 {len(all_metrics)} 个结果")
+            logger.info(f"[RunnerAgent] 找到 {collection_result['found_count']}/{collection_result['total_count']} 个结果")
+
+            # 提取指标和参数
+            all_metrics = []
+            all_params = {}
+
+            for item in collection_result["results"]:
+                data = item["data"]
+                metrics = data.get("metrics", {})
+                best_params = data.get("best_params", {})
+
+                all_metrics.append(metrics)
+
+                # 收集参数值
+                for param_name, param_value in best_params.items():
+                    if param_name not in all_params:
+                        all_params[param_name] = []
+                    all_params[param_name].append(param_value)
+
 
             # 计算统计指标
             stats = {}
@@ -2206,3 +2231,119 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
             "iteration_history": iteration_history,
             "message": message
         }
+
+    # ========================================================================
+    # Automatic Plotting (使用hydromodel的绘图接口)
+    # ========================================================================
+
+    def _auto_plot_results(
+        self,
+        calibration_dir: str,
+        config: Dict[str, Any]
+    ) -> list[str]:
+        """
+        自动绘制率定/评估结果图（使用hydromodel的绘图接口）
+
+        Args:
+            calibration_dir: 率定结果目录
+            config: 配置字典
+
+        Returns:
+            生成的图表文件路径列表
+        """
+        try:
+            from hydromodel.datasets.data_visualize import plot_sim_and_obs
+            from configs import config as global_config
+            from pathlib import Path
+            import xarray as xr
+
+            logger.info(f"[RunnerAgent] 从 {calibration_dir} 加载结果进行绘图")
+
+            plot_files = []
+            calibration_path = Path(calibration_dir)
+
+            # 查找模拟结果NetCDF文件
+            nc_files = list(calibration_path.glob("*.nc"))
+            if not nc_files:
+                logger.warning("[RunnerAgent] 未找到NetCDF文件，无法绘图")
+                return []
+
+            # 通常有两个nc文件：训练期和测试期
+            for nc_file in nc_files:
+                logger.info(f"[RunnerAgent] 处理文件: {nc_file.name}")
+
+                try:
+                    # 读取NetCDF数据
+                    ds = xr.open_dataset(nc_file)
+
+                    # 提取数据
+                    # hydromodel的NetCDF格式：time, basin, qobs, qsim, prcp等
+                    if "time" in ds.coords and "qobs" in ds.variables and "qsim" in ds.variables:
+                        # ✅ 转换numpy.datetime64为pandas DatetimeIndex（hydromodel绘图兼容）
+                        import pandas as pd
+                        time = pd.to_datetime(ds["time"].values)
+                        obs = ds["qobs"].values.flatten()
+                        sim = ds["qsim"].values.flatten()
+
+                        # 检查是否有降水数据
+                        prcp = None
+                        if "prcp" in ds.variables and global_config.PLOT_WITH_PRECIPITATION:
+                            prcp = ds["prcp"].values.flatten()
+
+                        # 确定绘图文件名
+                        period_name = nc_file.stem  # 如 "eval_test_period"
+                        if prcp is not None:
+                            plot_filename = f"{period_name}_with_prcp.{global_config.PLOT_FORMAT}"
+                        else:
+                            plot_filename = f"{period_name}_streamflow.{global_config.PLOT_FORMAT}"
+
+                        plot_path = calibration_path / plot_filename
+
+                        # 调用hydromodel的绘图函数
+                        if prcp is not None:
+                            # 带降水的对比图
+                            plot_sim_and_obs(
+                                date=time,
+                                prcp=prcp,
+                                sim=sim,
+                                obs=obs,
+                                save_fig=str(plot_path),
+                                basin_id=config.get("data_cfgs", {}).get("basin_ids", [""])[0],
+                                title_suffix=period_name
+                            )
+                        else:
+                            # 仅径流对比图（使用简单版本）
+                            from hydromodel.datasets.data_visualize import plot_sim_and_obs_streamflow
+                            import matplotlib.pyplot as plt
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            plot_sim_and_obs_streamflow(
+                                date=time,
+                                sim=sim,
+                                obs=obs,
+                                ax=ax,
+                                basin_id=config.get("data_cfgs", {}).get("basin_ids", [""])[0],
+                                title_suffix=period_name
+                            )
+                            plt.savefig(plot_path, dpi=global_config.PLOT_DPI, bbox_inches='tight')
+                            plt.close(fig)
+
+                        plot_files.append(str(plot_path))
+                        logger.info(f"[RunnerAgent] 图表已保存: {plot_path}")
+
+                    else:
+                        logger.warning(f"[RunnerAgent] NetCDF文件缺少必要变量: {nc_file.name}")
+
+                    ds.close()
+
+                except Exception as e:
+                    logger.error(f"[RunnerAgent] 处理 {nc_file.name} 时出错: {str(e)}", exc_info=True)
+
+            return plot_files
+
+        except ImportError as e:
+            logger.warning(f"[RunnerAgent] 无法导入绘图模块: {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"[RunnerAgent] 绘图失败: {str(e)}", exc_info=True)
+            return []

@@ -119,7 +119,7 @@ def main():
             print("❌ API key未配置，请设置configs/definitions_private.py")
             return 1
 
-        model = args.model or "qwen-turbo"
+        model = args.model or "qwen3-max"
         llm = create_llm_interface("openai", model, api_key=api_key, base_url=base_url)
         print(f"✅ LLM接口初始化完成 (API: {model})\n")
 

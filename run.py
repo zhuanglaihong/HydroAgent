@@ -20,7 +20,7 @@ from datetime import datetime
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from hydroagent.system import HydroAgentSystem, setup_logging
+from hydroagent.system import HydroAgent, setup_logging
 
 
 def parse_args():
@@ -135,7 +135,7 @@ def main():
     setup_logging(log_level=args.log_level, log_file=log_file)
 
     # 创建系统实例
-    system = HydroAgentSystem(
+    system = HydroAgent(
         backend=args.backend,
         workspace_dir=args.workspace,
         enable_checkpoint=not args.no_checkpoint

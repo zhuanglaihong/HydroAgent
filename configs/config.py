@@ -164,16 +164,55 @@ ANALYSIS_DETAIL_LEVEL = "detailed"  # brief, normal, detailed
 # Performance Thresholds
 # ============================================================================
 
-# NSE quality thresholds
-NSE_EXCELLENT = 0.7   # 优秀
-NSE_GOOD = 0.5        # 良好
-NSE_FAIR = 0.3        # 一般
-NSE_POOR = 0.1        # 较差
+# NSE quality thresholds (used by DeveloperAgent for quality assessment)
+NSE_EXCELLENT = 0.75   # 优秀 (Excellent)
+NSE_GOOD = 0.65        # 良好 (Good)
+NSE_FAIR = 0.50        # 一般 (Fair)
+NSE_POOR = 0.35        # 较差 (Poor)
 # Below NSE_POOR is considered unsatisfactory (不合格)
 
 # ============================================================================
-# Post-Processing and Visualization Configuration
+# Visualization Configuration (绘图配置)
 # ============================================================================
+
+# Enable automatic plotting after calibration/evaluation
+# 是否在率定/评估后自动绘图
+ENABLE_AUTO_PLOT = True
+
+# Plot types to generate
+# 要生成的图表类型
+PLOT_STREAMFLOW_COMPARISON = True  # 径流对比图 (observed vs simulated)
+PLOT_WITH_PRECIPITATION = True     # 包含降水的对比图
+
+# Plot output format
+PLOT_FORMAT = "png"  # Options: png, pdf, svg
+PLOT_DPI = 300       # Resolution for publication quality
+
+# Plot save location
+# 图表保存位置：与calibration_results.json同目录
+SAVE_PLOTS_IN_RESULT_DIR = True
+
+# ============================================================================
+# Post-Processing Analysis Configuration (后处理分析配置)
+# ============================================================================
+
+# Metrics to analyze in post-processing
+# 后处理分析的指标（DeveloperAgent会提取这些指标）
+POST_ANALYSIS_METRICS = [
+    "NSE",      # Nash-Sutcliffe Efficiency
+    "RMSE",     # Root Mean Square Error
+    "KGE",      # Kling-Gupta Efficiency
+    "PBIAS",    # Percent Bias
+    "R2",       # Coefficient of Determination
+]
+
+# Enable intelligent analysis with LLM
+# 是否使用LLM进行智能分析
+ENABLE_LLM_ANALYSIS = True
+
+# Analysis detail level
+# 分析详细程度：brief, normal, detailed
+ANALYSIS_DETAIL_LEVEL = "normal"
 
 # Enable post-processing after model execution
 ENABLE_POST_PROCESSING = True

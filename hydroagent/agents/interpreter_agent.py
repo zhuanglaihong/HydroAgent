@@ -17,6 +17,7 @@ import re
 
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
+from ..utils.path_manager import PathManager
 from configs import config
 
 logger = logging.getLogger(__name__)
@@ -108,9 +109,9 @@ Your role is to generate hydromodel-compatible configuration dictionaries from t
 3. For custom_analysis tasks, generate MINIMAL config (see below)
 4. All required fields must be present
 5. Use exact field names (case-sensitive)
-6. **experiment_name**: MUST be descriptive, not "exp_name"!
-   - Format: "{{model_name}}_{{algorithm}}_{{task_type}}"
-   - Example: "xaj_SCE_UA_calibration", "gr4j_GA_evaluation"
+6. **experiment_name**: MUST be empty string "" to avoid nested directories
+   - Use "" for flat structure (recommended)
+   - OLD (deprecated): "{{model_name}}_{{algorithm}}_{{task_type}}" creates nested dirs
 
 **Configuration Structure**:
 
@@ -144,7 +145,7 @@ Your role is to generate hydromodel-compatible configuration dictionaries from t
     }},
     "param_range_file": null,
     "output_dir": "results",
-    "experiment_name": "{{model_name}}_{{algorithm}}_{{task_type}}",  // Generate descriptive name based on task
+    "experiment_name": "",  // MUST be empty string to avoid nested directories
     "random_seed": 1234,
     "save_config": true
   }},
@@ -271,8 +272,15 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
                 }
 
             # Step 4: Apply workspace directory (only for hydromodel tasks)
+            # ⭐ Use PathManager for unified path handling
             if self.workspace_dir and "training_cfgs" in config:
-                config["training_cfgs"]["output_dir"] = str(self.workspace_dir)
+                config = PathManager.configure_hydromodel_output(
+                    config=config,
+                    session_dir=self.workspace_dir,
+                    task_id=task_id,
+                    use_flat_structure=True  # 使用扁平结构，避免嵌套
+                )
+                logger.info(f"[InterpreterAgent] Path configured by PathManager")
 
             # Step 5: Add parameters to config for RunnerAgent to detect task type
             # ⭐ CRITICAL: RunnerAgent needs config["parameters"]["task_type"] to route correctly

@@ -99,6 +99,9 @@ class BaseExperiment:
         print(f"模式: {'Mock (模拟)' if use_mock else 'Real (真实hydromodel)'}")
         print()
 
+        # 设置日志记录
+        log_file = self.setup_logging()
+
         # 创建实验工作目录根路径
         experiment_workspace_root = (
             self.project_root
@@ -184,7 +187,7 @@ class BaseExperiment:
                     print(f"      {i}. {rec}")
 
             # Timing
-            print(f"\n⏱️  总耗时: {total_elapsed:.1f}s")
+            print(f"\n  总耗时: {total_elapsed:.1f}s")
             print(f"   工作目录: {result['workspace']}")
 
             # Checkpoint info

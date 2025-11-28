@@ -14,7 +14,7 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 - 要求: Config生成正确, NSE > 0.6
 
 测试查询:
-"率定流域 01013500，使用 GR4J 模型，SCE-UA 算法，rep=500"
+"率定流域 14301000，使用 GR4J 模型，SCE-UA 算法，rep=500"
 """
 
 import sys
@@ -35,7 +35,7 @@ from base_experiment import BaseExperiment
 
 
 # 实验查询 - 完整信息
-QUERY = "率定流域 01013500，使用 GR4J 模型，SCE-UA 算法，rep=500"
+QUERY = "率定流域 14301000，使用 GR4J 模型，SCE-UA 算法，rep=500"
 
 
 def main():

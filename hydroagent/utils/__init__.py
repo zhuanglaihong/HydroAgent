@@ -13,6 +13,10 @@ from .result_parser import ResultParser
 from .error_handler import ErrorHandler
 from .code_sandbox import CodeSandbox
 from .prompt_manager import PromptManager, AgentContext
+from .path_manager import PathManager
+from .plotting import PlottingToolkit
+from .data_loader import DataLoader
+from .report_generator import ReportGenerator
 
 __all__ = [
     'SchemaValidator',
@@ -21,4 +25,8 @@ __all__ = [
     'CodeSandbox',
     'PromptManager',
     'AgentContext',
+    'PathManager',
+    'PlottingToolkit',
+    'DataLoader',
+    'ReportGenerator',
 ]

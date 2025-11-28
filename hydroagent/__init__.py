@@ -34,6 +34,9 @@ from .utils import (
     ResultParser,
     ErrorHandler,
     CodeSandbox,
+    PathManager,
+    PlottingToolkit,
+    DataLoader,
 )
 
 # Resources
@@ -72,6 +75,9 @@ __all__ = [
     'ResultParser',
     'ErrorHandler',
     'CodeSandbox',
+    'PathManager',
+    'PlottingToolkit',
+    'DataLoader',
 
     # Resources
     'RESOURCE_DIR',

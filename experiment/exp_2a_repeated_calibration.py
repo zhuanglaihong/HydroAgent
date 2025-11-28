@@ -14,7 +14,7 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 - 一次对话，20个独立任务，每次使用不同随机种子
 
 测试查询:
-"对流域 01013500 重复执行20次率定，使用 GR4J 模型和 SCE-UA 算法"
+"对流域  14301000 重复执行20次率定，使用 XAJ 模型和 SCE-UA 算法"
 
 成功标准:
 - 20次率定全部成功执行（成功率100%）
@@ -40,7 +40,7 @@ from base_experiment import BaseExperiment
 
 
 # 实验查询 - 重复20次率定
-QUERY = "对流域 01013500 重复执行20次率定，使用 GR4J 模型和 SCE-UA 算法"
+QUERY = "对流域  14301000 重复执行10次率定，使用 XAJ 模型和 SCE-UA 算法，每次率定设置rep=100"
 
 
 def main():
@@ -103,12 +103,12 @@ def main():
             print("❌ API key未配置，请设置configs/definitions_private.py")
             return 1
 
-        model = args.model or "qwen-turbo"
+        model = args.model or "qwen3-max"
         llm = create_llm_interface("openai", model, api_key=api_key, base_url=base_url)
         print(f"✅ LLM接口初始化完成 (API: {model})\n")
 
     # Adjust query with actual repetition count
-    query = f"对流域 01013500 重复执行{args.repetitions}次率定，使用 GR4J 模型和 SCE-UA 算法"
+    query = f"对流域  14301000 重复执行{args.repetitions}次率定，使用 XAJ 模型和 SCE-UA 算法，每次率定设置rep=100"
 
     # Run experiment
     print(f"📋 测试查询: {query}\n")

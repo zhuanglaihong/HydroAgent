@@ -337,6 +337,18 @@ Always explain your analysis and provide actionable recommendations."""
             elif mode == "auto_iterative":
                 # 🆕 v4.0: 处理自动迭代率定结果
                 analysis = self._analyze_auto_iterative_result(result_data)
+            elif mode == "boundary_check":
+                # 🆕 实验3: boundary_check本质上也是迭代优化
+                # 字段名略有不同 (iterations vs iteration_history)，需要做字段映射
+                logger.info("[DeveloperAgent] 检测到boundary_check模式，映射为迭代优化分析")
+                mapped_data = result_data.copy()
+                if "iterations" in mapped_data and "iteration_history" not in mapped_data:
+                    mapped_data["iteration_history"] = mapped_data["iterations"]
+                    logger.info(f"[DeveloperAgent] 已将'iterations'字段映射为'iteration_history' ({len(mapped_data['iteration_history'])}条记录)")
+                analysis = self._analyze_auto_iterative_result(mapped_data)
+            elif mode == "statistical_analysis":
+                # 🆕 统计分析模式（实验2a重复率定）
+                analysis = self._analyze_statistical_result(result_data)
             else:
                 analysis = {"warning": f"未知模式: {mode}"}
 
@@ -544,7 +556,8 @@ Always explain your analysis and provide actionable recommendations."""
 
         # 2. 收敛性分析
         if iteration_history:
-            nse_values = [h.get("nse", 0.0) for h in iteration_history]
+            # 过滤掉None值，确保所有NSE值都是数字
+            nse_values = [h.get("nse", 0.0) or 0.0 for h in iteration_history]
             initial_nse = nse_values[0] if nse_values else 0.0
             final_nse = nse_values[-1] if nse_values else 0.0
             best_nse = max(nse_values) if nse_values else 0.0
@@ -590,17 +603,31 @@ Always explain your analysis and provide actionable recommendations."""
 
         analysis["summary"]["quality"] = quality
 
-        # 4. 生成NSE收敛图
+        # 4. 生成NSE收敛图（使用PlottingToolkit）
         if iteration_history and output_dir:
             try:
+                from hydroagent.utils import PlottingToolkit
                 output_path = Path(output_dir)
-                plot_file = self.plot_nse_convergence(
-                    iteration_history=iteration_history,
-                    nse_threshold=nse_threshold,
-                    output_path=output_path
+
+                # 提取NSE值用于绘图
+                nse_values = [h.get("nse", 0.0) for h in iteration_history]
+                iterations = [h.get("iteration", i) for i, h in enumerate(iteration_history)]
+
+                # 使用PlottingToolkit绘制时间序列图
+                success = PlottingToolkit.plot_time_series(
+                    data={"NSE": nse_values},
+                    x_label="Iteration",
+                    y_label="NSE",
+                    title="NSE Convergence during Auto-Iterative Calibration",
+                    output_path=output_path / "nse_convergence.png",
+                    x_values=iterations,
+                    show_stats=False
                 )
-                analysis["plot_files"].append(plot_file)
-                logger.info(f"[DeveloperAgent] NSE收敛图已生成: {plot_file}")
+
+                if success:
+                    plot_file = str(output_path / "nse_convergence.png")
+                    analysis["plot_files"].append(plot_file)
+                    logger.info(f"[DeveloperAgent] NSE收敛图已生成: {plot_file}")
             except Exception as e:
                 logger.error(f"[DeveloperAgent] 生成NSE收敛图失败: {str(e)}")
                 analysis["plot_error"] = str(e)
@@ -661,6 +688,23 @@ Always explain your analysis and provide actionable recommendations."""
             )
 
         analysis["recommendations"] = recommendations
+
+        # 🆕 使用ReportGenerator生成文字分析报告
+        try:
+            from hydroagent.utils import ReportGenerator
+            report_path = ReportGenerator.generate_iterative_optimization_report(
+                analysis=analysis,
+                iteration_history=iteration_history,
+                plots=analysis.get("plot_files", []),
+                converged=converged,
+                total_iterations=total_iterations,
+                output_path=output_dir if output_dir else self.workspace_dir
+            )
+            analysis["report_path"] = str(report_path)
+            logger.info(f"[DeveloperAgent] 迭代优化分析报告已保存: {report_path}")
+        except Exception as e:
+            logger.warning(f"[DeveloperAgent] 报告生成失败: {str(e)}")
+            analysis["report_path"] = None
 
         logger.info(
             f"[DeveloperAgent] 自动迭代率定分析完成: "
@@ -952,10 +996,20 @@ Format: Return a JSON array of recommendation strings."""
         }
 
     # ========================================================================
-    # 🆕 v4.0: Visualization Methods
+    # 🚫 REMOVED in refactoring: Hardcoded plotting methods
+    # 所有绘图功能已迁移到 hydroagent/utils/plotting.py 的 PlottingToolkit
     # ========================================================================
 
-    def plot_streamflow_fit(
+    # ========================================================================
+    # 🚫 REMOVED in refactoring: Hardcoded report generation methods
+    # 所有报告生成功能已迁移到 hydroagent/utils/report_generator.py 的 ReportGenerator
+    # ========================================================================
+
+    # ========================================================================
+    # Utility Methods (Kept)
+    # ========================================================================
+
+    def _load_streamflow_data_DEPRECATED(
         self,
         obs_data: 'np.ndarray',
         sim_data: 'np.ndarray',
@@ -1296,3 +1350,296 @@ Format: Return a JSON array of recommendation strings."""
                 )
 
         return warnings
+
+    # ========================================================================
+    # Intelligent Analysis with LLM + Generic Plotting Tools
+    # ========================================================================
+
+    def _analyze_statistical_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        使用LLM智能分析统计结果（重复率定实验）。
+        Intelligently analyze statistical result using LLM.
+
+        新架构：
+        1. 使用DataLoader加载数据
+        2. LLM分析数据并给出建议（包括绘图建议）
+        3. 根据LLM建议调用PlottingToolkit绘图
+
+        Args:
+            result: RunnerAgent统计分析结果
+
+        Returns:
+            分析结果，包括可视化图表路径
+        """
+        logger.info("[DeveloperAgent] 使用LLM智能分析统计结果...")
+
+        try:
+            from hydroagent.utils.data_loader import DataLoader
+            from hydroagent.utils.plotting import PlottingToolkit
+
+            # Step 1: 加载数据
+            n_repeats = result.get("n_repeats", 20)
+            data = DataLoader.load_repeated_calibration_data(
+                workspace_dir=self.workspace_dir,
+                n_repeats=n_repeats
+            )
+
+            # Step 2: 生成数据摘要供LLM分析
+            data_summary = DataLoader.summarize_data_for_llm(data)
+
+            # Step 3: 使用LLM分析
+            analysis_prompt = f"""你是一位水文模型专家。请分析以下重复率定实验的结果数据，并给出专业建议。
+
+实验数据摘要：
+{data_summary}
+
+请以JSON格式返回分析结果，包含以下字段：
+{{
+    "stability_level": "优秀/良好/不稳定",
+    "stability_comment": "简短评价",
+    "key_findings": ["发现1", "发现2", ...],
+    "recommendations": ["建议1", "建议2", ...],
+    "suggested_plots": [
+        {{
+            "plot_type": "time_series",  // or "boxplot", "histogram"
+            "data_key": "NSE",  // 使用哪个指标
+            "filename": "nse_stability_curve.png",
+            "title": "NSE Stability Across Repetitions",
+            "description": "展示NSE随任务ID的变化"
+        }},
+        ...
+    ]
+}}
+
+注意：
+1. 根据数据特点决定需要哪些图表，建议2-4个图表，避免信息重复
+2. 图表类型选择原则：
+   - time_series（时间序列）：展示指标随重复ID的变化趋势，适合观察稳定性
+   - histogram（直方图）：展示指标的分布形态
+   - boxplot（箱线图）：展示参数分布的统计特征
+   注意：对于同一个指标（如NSE），只选择一种最合适的可视化方式，不要重复
+3. stability_level基于NSE的变异系数(CV)判断：<0.05为优秀，<0.10为良好，>=0.10为不稳定
+4. 给出实际可操作的建议
+"""
+
+            # 修复：使用正确的LLM接口方法
+            system_prompt = "你是一位水文模型专家，擅长分析重复率定实验的稳定性和参数分布。"
+            llm_response = self.llm.generate(
+                system_prompt=system_prompt,
+                user_prompt=analysis_prompt,
+                temperature=0.1
+            )
+
+            # 解析LLM响应
+            import json
+            import re
+            json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+            if json_match:
+                llm_analysis = json.loads(json_match.group())
+            else:
+                raise ValueError("LLM未返回有效的JSON格式")
+
+            # Step 4: 根据LLM建议绘图
+            plots = []
+            for plot_spec in llm_analysis.get("suggested_plots", []):
+                plot_type = plot_spec.get("plot_type")
+                data_key = plot_spec.get("data_key")
+                filename = plot_spec.get("filename", f"{data_key}_plot.png")
+                output_path = self.workspace_dir / filename
+
+                success = False
+                if plot_type == "time_series" and data_key in data.get("metrics", {}):
+                    # 绘制时间序列（NSE随任务ID变化）
+                    success = PlottingToolkit.plot_time_series(
+                        data={data_key: data["metrics"][data_key]},
+                        x_label="Repetition ID",
+                        y_label=data_key,
+                        title=plot_spec.get("title", f"{data_key} Stability"),
+                        output_path=output_path,
+                        x_values=data["task_ids"],
+                        show_stats=True
+                    )
+
+                elif plot_type == "boxplot" and "parameters" in data:
+                    # 绘制参数分布箱线图
+                    success = PlottingToolkit.plot_boxplot(
+                        data=data["parameters"],
+                        x_label="Parameters",
+                        y_label="Parameter Values",
+                        title=plot_spec.get("title", "Parameter Distribution"),
+                        output_path=output_path
+                    )
+
+                elif plot_type == "histogram" and data_key in data.get("metrics", {}):
+                    # 绘制直方图
+                    success = PlottingToolkit.plot_histogram(
+                        data=data["metrics"][data_key],
+                        x_label=data_key,
+                        y_label="Frequency",
+                        title=plot_spec.get("title", f"{data_key} Distribution"),
+                        output_path=output_path
+                    )
+
+                if success:
+                    plots.append(str(output_path))
+                    logger.info(f"[DeveloperAgent] 图表已保存: {output_path}")
+
+            # 🆕 使用ReportGenerator生成文字分析报告
+            from hydroagent.utils import ReportGenerator
+            report_path = ReportGenerator.generate_repeated_calibration_report(
+                analysis=llm_analysis,
+                data_summary=data_summary,
+                plots=plots,
+                n_repeats=n_repeats,
+                output_path=self.workspace_dir
+            )
+            logger.info(f"[DeveloperAgent] 文字报告已保存: {report_path}")
+
+            # 返回分析结果
+            return {
+                "success": True,
+                "analysis": llm_analysis,
+                "plots": plots,
+                "data_summary": data_summary,
+                "report_path": str(report_path)
+            }
+
+        except Exception as e:
+            logger.error(f"[DeveloperAgent] 智能分析失败: {str(e)}", exc_info=True)
+            # 降级到简单分析
+            return self._fallback_statistical_analysis(result)
+
+    def _fallback_statistical_analysis(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        降级分析方法（当LLM分析失败时使用）
+
+        Args:
+            result: 统计分析结果
+
+        Returns:
+            简单的分析结果
+        """
+        logger.warning("[DeveloperAgent] 使用降级分析方法")
+
+        nse_cv = result.get("nse_cv", 0)
+        if nse_cv < 0.05:
+            stability = "优秀"
+        elif nse_cv < 0.10:
+            stability = "良好"
+        else:
+            stability = "不稳定"
+
+        # ✅ 降级模式也生成基本图表
+        plots = []
+        try:
+            from hydroagent.utils.data_loader import DataLoader
+            from hydroagent.utils.plotting import PlottingToolkit
+            import numpy as np
+
+            # 从session目录加载数据
+            data = DataLoader.load_repeated_calibration_data(
+                workspace_dir=self.workspace_dir,
+                n_repeats=result.get("n_repeats", 20)
+            )
+
+            if data["found_count"] > 0:
+                logger.info(f"[DeveloperAgent] 降级模式：生成基本统计图表（{data['found_count']}个任务）")
+
+                # 1. NSE分布直方图
+                if "NSE" in data.get("metrics", {}):
+                    nse_values = data["metrics"]["NSE"]
+                    output_path = self.workspace_dir / "nse_distribution.png"
+                    success = PlottingToolkit.plot_histogram(
+                        data=nse_values,  # ✅ 修正：传入List而不是Dict
+                        x_label="NSE Value",
+                        y_label="Frequency",
+                        title=f"NSE Distribution (n={len(nse_values)})",
+                        output_path=str(output_path),
+                        bins=20
+                    )
+                    if success:
+                        plots.append(str(output_path))
+                        logger.info(f"[DeveloperAgent] 生成NSE分布图: {output_path}")
+
+                # 2. 参数分布箱线图（如果有多个参数）
+                if data.get("parameters"):
+                    # 选择前4个参数（通常是x1-x4或类似）
+                    param_names = list(data["parameters"].keys())[:4]
+                    param_data = {name: data["parameters"][name] for name in param_names}
+
+                    output_path = self.workspace_dir / "parameter_distribution.png"
+                    success = PlottingToolkit.plot_boxplot(
+                        data=param_data,
+                        x_label="Parameters",
+                        y_label="Normalized Value",
+                        title=f"Parameter Distribution (n={data['found_count']})",
+                        output_path=str(output_path)
+                    )
+                    if success:
+                        plots.append(str(output_path))
+                        logger.info(f"[DeveloperAgent] 生成参数分布图: {output_path}")
+
+                # 3. 保存统计摘要JSON
+                summary_path = self.workspace_dir / "stability_summary.json"
+                import json
+                summary_data = {
+                    "n_repeats": data["n_repeats"],
+                    "found_count": data["found_count"],
+                    "metrics_stats": {},
+                    "parameter_stats": {}
+                }
+
+                # 计算指标统计
+                for metric_name, values in data.get("metrics", {}).items():
+                    summary_data["metrics_stats"][metric_name] = {
+                        "mean": float(np.mean(values)),
+                        "std": float(np.std(values)),
+                        "min": float(np.min(values)),
+                        "max": float(np.max(values)),
+                        "cv": float(np.std(values) / np.mean(values)) if np.mean(values) != 0 else 0
+                    }
+
+                # 计算参数统计
+                for param_name, values in data.get("parameters", {}).items():
+                    summary_data["parameter_stats"][param_name] = {
+                        "mean": float(np.mean(values)),
+                        "std": float(np.std(values))
+                    }
+
+                with open(summary_path, 'w', encoding='utf-8') as f:
+                    json.dump(summary_data, f, indent=2, ensure_ascii=False)
+                logger.info(f"[DeveloperAgent] 保存统计摘要: {summary_path}")
+
+        except Exception as e:
+            logger.warning(f"[DeveloperAgent] 降级模式绘图失败: {str(e)}", exc_info=True)
+
+        # 构建分析结果
+        analysis_result = {
+            "stability_level": stability,
+            "stability_comment": f"基于NSE变异系数({nse_cv:.4f})的简单评估",
+            "key_findings": [f"完成了{result.get('found_results', 0)}/{result.get('n_repeats', 0)}次重复"],
+            "recommendations": ["建议查看详细日志了解更多信息"]
+        }
+
+        # 🆕 使用ReportGenerator生成文字分析报告（降级模式）
+        try:
+            from hydroagent.utils import ReportGenerator
+            report_path = ReportGenerator.generate_repeated_calibration_report(
+                analysis=analysis_result,
+                data_summary=f"重复次数: {result.get('n_repeats', 0)}\n完成任务: {result.get('found_results', 0)}\nNSE变异系数: {nse_cv:.4f}",
+                plots=plots,
+                n_repeats=result.get('n_repeats', 0),
+                output_path=self.workspace_dir
+            )
+            logger.info(f"[DeveloperAgent] 降级模式报告已保存: {report_path}")
+        except Exception as e:
+            logger.warning(f"[DeveloperAgent] 降级模式报告生成失败: {str(e)}")
+            report_path = None
+
+        return {
+            "success": True,
+            "analysis": analysis_result,
+            "plots": plots,  # ✅ 包含生成的图表路径
+            "report_path": str(report_path) if report_path else None,
+            "fallback_mode": True
+        }

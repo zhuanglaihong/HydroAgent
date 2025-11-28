@@ -22,7 +22,7 @@ from hydroagent.core.llm_interface import LLMInterface
 logger = logging.getLogger(__name__)
 
 
-class HydroAgentSystem:
+class HydroAgent:
     """
     HydroAgent 系统主类
     提供用户友好的交互界面和会话管理
@@ -477,3 +477,93 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[Path] = None):
         format=log_format,
         handlers=handlers
     )
+
+
+def create_hydro_agent(
+    backend: str = "api",
+    workspace_dir: Optional[Path] = None,
+    enable_checkpoint: bool = True
+) -> HydroAgent:
+    """
+    创建 HydroAgent 实例的便捷工厂函数
+
+    Args:
+        backend: LLM后端 ("api" 或 "ollama")
+        workspace_dir: 工作目录
+        enable_checkpoint: 是否启用checkpoint功能
+
+    Returns:
+        HydroAgent 实例
+
+    Example:
+        >>> agent = create_hydro_agent(backend="api")
+        >>> agent.initialize()
+        >>> agent.run_interactive()
+    """
+    return HydroAgent(
+        backend=backend,
+        workspace_dir=workspace_dir,
+        enable_checkpoint=enable_checkpoint
+    )
+
+
+def run_query(
+    query: str,
+    backend: str = "api",
+    workspace_dir: Optional[Path] = None,
+    resume_from: Optional[str] = None,
+    log_level: str = "INFO"
+) -> Dict[str, Any]:
+    """
+    一站式查询处理函数
+
+    Args:
+        query: 用户查询
+        backend: LLM后端 ("api" 或 "ollama")
+        workspace_dir: 工作目录
+        resume_from: 从指定会话恢复
+        log_level: 日志级别
+
+    Returns:
+        执行结果字典
+
+    Example:
+        >>> result = run_query("率定GR4J模型，流域01013500", backend="api")
+        >>> print(result["summary"])
+    """
+    # 配置日志
+    if not logging.getLogger().handlers:
+        setup_logging(log_level=log_level)
+
+    # 创建系统实例
+    system = HydroAgent(
+        backend=backend,
+        workspace_dir=workspace_dir,
+        enable_checkpoint=True
+    )
+
+    # 初始化
+    if not system.initialize():
+        return {
+            "success": False,
+            "error": "System initialization failed"
+        }
+
+    # 执行查询
+    try:
+        if resume_from:
+            result = system.orchestrator.process(
+                query="",
+                resume_from=Path(resume_from)
+            )
+        else:
+            result = system.orchestrator.process(query=query)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Query execution failed: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e)
+        }
