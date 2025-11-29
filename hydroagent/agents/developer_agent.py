@@ -245,6 +245,8 @@ Always explain your analysis and provide actionable recommendations."""
         分析Orchestrator的多任务输出结果。
         Analyze Orchestrator's multi-task output.
 
+        🆕 v4.1 Enhancement: Added unified multi-task post-processing logic
+
         Args:
             orchestrator_output: Orchestrator的输出
                 {
@@ -259,6 +261,8 @@ Always explain your analysis and provide actionable recommendations."""
         logger.info("[DeveloperAgent] 分析Orchestrator多任务输出...")
 
         subtask_results = orchestrator_output.get("subtask_results", [])
+        task_plan = orchestrator_output.get("task_plan", {})
+        intent = orchestrator_output.get("intent", {})
 
         if not subtask_results:
             logger.warning("[DeveloperAgent] No subtask results to analyze")
@@ -267,15 +271,26 @@ Always explain your analysis and provide actionable recommendations."""
                 "error": "No subtask results provided"
             }
 
-        # 如果只有一个subtask，直接分析它
+        # ========== 单任务：直接分析（保持原有逻辑）==========
         if len(subtask_results) == 1:
             logger.info("[DeveloperAgent] Single subtask detected, analyzing directly")
             return self._analyze_runner_output(subtask_results[0])
 
-        # 多个subtask：分别分析并汇总
+        # ========== 多任务：检测类型 + 后处理 ==========
         logger.info(f"[DeveloperAgent] Analyzing {len(subtask_results)} subtasks")
-        analyses = []
 
+        # Step 1: 🆕 检测任务类型
+        from hydroagent.utils.task_detector import TaskTypeDetector
+
+        task_type = TaskTypeDetector.detect_task_type(
+            subtask_results=subtask_results,
+            task_plan=task_plan,
+            intent=intent
+        )
+        logger.info(f"[DeveloperAgent] Detected task type: {task_type}")
+
+        # Step 2: 分析各子任务（保留原有逻辑）
+        analyses = []
         for i, subtask_result in enumerate(subtask_results, 1):
             logger.info(f"[DeveloperAgent] Analyzing subtask {i}/{len(subtask_results)}")
             analysis = self._analyze_runner_output(subtask_result)
@@ -284,11 +299,46 @@ Always explain your analysis and provide actionable recommendations."""
         # 汇总所有分析结果
         all_success = all(a.get("success", False) for a in analyses)
 
+        # Step 3: 🆕 后处理 - 生成汇总文件
+        post_processing_result = {}
+
+        if task_type != "single_task":
+            try:
+                from hydroagent.utils.post_processor import PostProcessingEngine
+
+                post_processor = PostProcessingEngine(
+                    workspace_dir=self.workspace_dir
+                )
+
+                post_processing_result = post_processor.process(
+                    task_type=task_type,
+                    subtask_results=subtask_results,
+                    task_plan=task_plan,
+                    intent=intent
+                )
+
+                if post_processing_result.get("success"):
+                    logger.info("[DeveloperAgent] ✅ Post-processing completed")
+                    logger.info(f"[DeveloperAgent] Generated files: {post_processing_result.get('summary_files')}")
+                else:
+                    logger.warning(f"[DeveloperAgent] ⚠️ Post-processing failed: {post_processing_result.get('error')}")
+
+            except Exception as e:
+                logger.error(f"[DeveloperAgent] ❌ Post-processing error: {str(e)}", exc_info=True)
+                post_processing_result = {
+                    "success": False,
+                    "error": str(e),
+                    "fallback_mode": True
+                }
+
+        # Step 4: 汇总返回
         return {
-            "success": all_success,
-            "subtask_analyses": analyses,
+            "success": all_success and post_processing_result.get("success", True),
+            "task_type": task_type,  # 🆕 添加任务类型
+            "subtask_analyses": analyses,  # 保留原有字段
             "total_subtasks": len(subtask_results),
-            "successful_subtasks": sum(1 for a in analyses if a.get("success"))
+            "successful_subtasks": sum(1 for a in analyses if a.get("success")),
+            "post_processing": post_processing_result  # 🆕 后处理结果
         }
 
     def _analyze_runner_output(self, runner_output: Dict[str, Any]) -> Dict[str, Any]:

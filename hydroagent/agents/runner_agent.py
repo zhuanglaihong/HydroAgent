@@ -21,6 +21,12 @@ import numpy as np
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
 from ..utils.path_manager import PathManager
+from ..utils import result_parser
+from ..utils import error_handler
+from ..utils import param_range_adjuster
+from ..utils import code_generator
+from ..utils.prompt_manager import build_code_generation_prompt
+from ..utils.path_manager import scan_output_files
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +331,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 "task_id": task_id,
                 "mode": mode,
                 "error": str(e),
-                "traceback": self._format_traceback(),
+                "traceback": error_handler.format_traceback(),
                 "execution_log": self.last_execution_log
             }
 
@@ -380,6 +386,8 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                         "dynamic data already exists",  # 数据存在提示
                         "Remote service setup failed",  # 远程服务错误（不重要）
                         "Remote service setup failed: Invalid endpoint:",
+                        "🧬 ====== ",
+                        "🧬 Starting ",
                     ]
 
                     # 使用TeeIO同时显示进度和保存日志，过滤装饰性输出
@@ -409,7 +417,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             logger.info("[RunnerAgent] 率定完成")
 
             # 解析率定结果 - calibrate()会保存参数到文件，不直接返回
-            parsed_result = self._parse_calibration_result(result, config)
+            parsed_result = result_parser.parse_calibration_result(result, config)
 
             # ✅ 自动在测试期进行评估（标准水文模型流程）
             eval_result = None
@@ -543,7 +551,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 logger.info(f"[RunnerAgent] result['{first_key}']的keys: {list(result[first_key].keys()) if isinstance(result[first_key], dict) else 'N/A'}")
 
             # 解析结果
-            parsed_result = self._parse_evaluation_result(result)
+            parsed_result = result_parser.parse_evaluation_result(result)
 
             return {
                 "status": "success",
@@ -612,7 +620,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             logger.info("[RunnerAgent] 评估完成")
 
             # 解析结果
-            parsed_result = self._parse_evaluation_result(result)
+            parsed_result = result_parser.parse_evaluation_result(result)
 
             return {
                 "status": "success",
@@ -702,124 +710,24 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             logger.error(f"[RunnerAgent] 模拟失败: {str(e)}", exc_info=True)
             raise
 
-    def _parse_calibration_result(self, result: Any, config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        解析率定结果。
-        Parse calibration result.
-
-        Args:
-            result: hydromodel calibrate() 的返回值
-            config: 原始配置（用于获取输出目录）
-
-        Returns:
-            解析后的结果字典，包含calibration_dir
-        """
-        parsed = {
-            "metrics": {},
-            "best_params": {},
-            "output_files": [],
-            "calibration_dir": None
-        }
-
-        try:
-            # hydromodel的calibrate()会保存结果到output_dir，并返回结果字典
-            logger.info(f"[RunnerAgent] calibrate()返回类型: {type(result)}")
-
-            # 获取输出目录
-            output_dir = config.get("training_cfgs", {}).get("output_dir")
-            if output_dir:
-                from pathlib import Path
-                import json
-
-                output_path = Path(output_dir)
-                logger.info(f"[RunnerAgent] 查找率定输出目录: {output_path}")
-
-                # 🔧 FIX: 支持两种情况
-                # 1. 有子目录: output_dir/experiment_name/calibration_results.json (旧版)
-                # 2. 无子目录: output_dir/calibration_results.json (experiment_name="" 时)
-                if output_path.exists():
-                    # 先检查是否直接在 output_path 中有 calibration_results.json
-                    results_file_direct = output_path / "calibration_results.json"
-
-                    if results_file_direct.exists():
-                        # 情况2：直接保存在 output_dir（experiment_name=""）
-                        calibration_dir = str(output_path)
-                        logger.info(f"[RunnerAgent] 找到率定目录（直接模式）: {calibration_dir}")
-                        parsed["calibration_dir"] = calibration_dir
-
-                        # 读取 calibration_results.json
-                        with open(results_file_direct, 'r') as f:
-                            calib_results = json.load(f)
-                            logger.info(f"[RunnerAgent] 读取calibration_results.json")
-
-                            # 提取第一个basin的参数
-                            if calib_results:
-                                basin_id = list(calib_results.keys())[0]
-                                basin_data = calib_results[basin_id]
-
-                                if "best_params" in basin_data:
-                                    # best_params格式: {"gr4j": {"x1": ..., "x2": ...}}
-                                    model_params = basin_data["best_params"]
-                                    # 提取第一个模型的参数
-                                    if model_params:
-                                        model_name = list(model_params.keys())[0]
-                                        parsed["best_params"] = model_params[model_name]
-                                        logger.info(f"[RunnerAgent] 提取参数: {parsed['best_params']}")
-                    else:
-                        # 情况1：查找最新的实验子目录（旧版逻辑）
-                        experiment_dirs = sorted([d for d in output_path.iterdir() if d.is_dir()],
-                                               key=lambda x: x.stat().st_mtime,
-                                               reverse=True)
-
-                        if experiment_dirs:
-                            calibration_dir = str(experiment_dirs[0])
-                            logger.info(f"[RunnerAgent] 找到率定目录（子目录模式）: {calibration_dir}")
-                            parsed["calibration_dir"] = calibration_dir
-
-                            # 尝试读取calibration_results.json
-                            results_file = Path(calibration_dir) / "calibration_results.json"
-                            if results_file.exists():
-                                with open(results_file, 'r') as f:
-                                    calib_results = json.load(f)
-                                    logger.info(f"[RunnerAgent] 读取calibration_results.json")
-
-                                    # 提取第一个basin的参数
-                                    if calib_results:
-                                        basin_id = list(calib_results.keys())[0]
-                                        basin_data = calib_results[basin_id]
-
-                                        if "best_params" in basin_data:
-                                            # best_params格式: {"gr4j": {"x1": ..., "x2": ...}}
-                                            model_params = basin_data["best_params"]
-                                            # 提取第一个模型的参数
-                                            if model_params:
-                                                model_name = list(model_params.keys())[0]
-                                                parsed["best_params"] = model_params[model_name]
-                                                logger.info(f"[RunnerAgent] 提取参数: {parsed['best_params']}")
-                            else:
-                                logger.warning(f"[RunnerAgent] 未找到calibration_results.json: {results_file}")
-                        else:
-                            logger.warning(f"[RunnerAgent] 输出目录中没有实验目录或结果文件: {output_path}")
-                else:
-                    logger.warning(f"[RunnerAgent] 输出目录不存在: {output_path}")
-            else:
-                logger.warning("[RunnerAgent] 配置中没有output_dir")
-
-            # 如果result是dict，也尝试从中提取信息
-            if isinstance(result, dict):
-                logger.info(f"[RunnerAgent] result的keys: {list(result.keys())}")
-
-                if "metrics" in result:
-                    parsed["metrics"] = result["metrics"]
-                elif "performance" in result:
-                    parsed["metrics"] = result["performance"]
-
-            logger.info(f"[RunnerAgent] 解析结果: calibration_dir={parsed['calibration_dir']}, best_params={len(parsed['best_params'])}个")
-
-        except Exception as e:
-            logger.error(f"[RunnerAgent] 解析率定结果时出错: {str(e)}", exc_info=True)
-
-        return parsed
+    # ========================================================================
+    # DEPRECATED: Methods migrated to hydroagent/utils (Phase 1 Refactoring)
+    #
+    # The following methods have been moved to utils modules for better
+    # separation of concerns between agent decision logic and tool functions:
+    #
+    # - _parse_calibration_result() → result_parser.parse_calibration_result()
+    # - _parse_evaluation_result() → result_parser.parse_evaluation_result()
+    # - _format_traceback() → error_handler.format_traceback()
+    # - adjust_param_range_from_previous_calibration() → param_range_adjuster.adjust_from_previous_calibration()
+    # - _scan_output_files() → path_manager.scan_output_files()
+    # - _analyze_execution_error() → error_handler.analyze_execution_error()
+    # - _generate_analysis_code() → code_generator.generate_analysis_code()
+    # - _execute_generated_code() → code_generator.execute_generated_code()
+    # - _build_code_generation_prompt() → prompt_manager.build_code_generation_prompt()
+    #
+    # See: RunnerAgent Refactoring Plan (2025-01-28)
+    # ========================================================================
 
     def _parse_evaluation_result(self, result: Any) -> Dict[str, Any]:
         """
@@ -1042,10 +950,11 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 # 调整参数范围
                 logger.info(f"📂 基于上次结果调整范围: {prev_calib_dir}")
 
-                adjust_result = self.adjust_param_range_from_previous_calibration(
+                adjust_result = param_range_adjuster.adjust_from_previous_calibration(
                     prev_calibration_dir=prev_calib_dir,
                     range_scale=range_scale,
-                    output_yaml_path=str(Path(self.workspace_dir) / f"param_range_iter{iteration}.yaml") if self.workspace_dir else None
+                    output_yaml_path=str(Path(self.workspace_dir) / f"param_range_iter{iteration}.yaml") if self.workspace_dir else None,
+                    workspace_dir=self.workspace_dir
                 )
 
                 if not adjust_result["success"]:
@@ -1719,7 +1628,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                     "status": "success",
                     "stdout": result.stdout,
                     "stderr": result.stderr,
-                    "output_files": self._scan_output_files()
+                    "output_files": scan_output_files(self.workspace_dir)
                 }
             else:
                 logger.error(f"[RunnerAgent] Code execution failed with return code {result.returncode}")
@@ -2045,7 +1954,13 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
             # 1. 生成代码（第一次用原始prompt，后续附带错误信息）
             if attempt == 1:
                 # 初次生成
-                code_result = self._generate_analysis_code(analysis_type, params)
+                prompt = build_code_generation_prompt(analysis_type, params)
+                code_result = code_generator.generate_analysis_code(
+                    code_llm=self.code_llm,
+                    analysis_type=analysis_type,
+                    params=params,
+                    prompt=prompt
+                )
             else:
                 # 重新生成，附带错误信息
                 last_error = error_history[-1]
@@ -2054,7 +1969,13 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
                 enhanced_params["error_analysis"] = last_error["analysis"]
                 enhanced_params["retry_attempt"] = attempt
 
-                code_result = self._generate_analysis_code(analysis_type, enhanced_params)
+                prompt = build_code_generation_prompt(analysis_type, enhanced_params)
+                code_result = code_generator.generate_analysis_code(
+                    code_llm=self.code_llm,
+                    analysis_type=analysis_type,
+                    params=enhanced_params,
+                    prompt=prompt
+                )
 
             if "error" in code_result:
                 logger.error(f"[RunnerAgent] 代码生成失败: {code_result['error']}")
@@ -2068,7 +1989,11 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
             code_content = code_result["code"]
 
             # 2. 执行代码
-            exec_result = self._execute_generated_code(code_file)
+            exec_result = code_generator.execute_generated_code(
+                code_file=code_file,
+                workspace_dir=self.workspace_dir,
+                timeout=self.timeout
+            )
 
             # 3. 检查执行结果
             if exec_result.get("status") == "success":
@@ -2086,7 +2011,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
             error_msg = exec_result.get("error", "") or exec_result.get("stderr", "")
             logger.warning(f"[RunnerAgent] 代码执行失败（尝试 {attempt}/{max_retries}）")
 
-            error_analysis = self._analyze_execution_error(
+            error_analysis = error_handler.analyze_execution_error(
                 error_message=error_msg,
                 code_content=code_content,
                 execution_context=params

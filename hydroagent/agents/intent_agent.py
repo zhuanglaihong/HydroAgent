@@ -452,6 +452,16 @@ Respond with ONLY valid JSON, no extra text."""
             "confidence": response.get("confidence", 0.8)
         }
 
+        # Normalize basin_id (handle both single and multi-basin from LLM)
+        if normalized["basin_id"]:
+            # If LLM returns a list, take the first element
+            if isinstance(normalized["basin_id"], list):
+                normalized["basin_id"] = normalized["basin_id"][0] if normalized["basin_id"] else None
+                logger.debug(f"[IntentAgent] Normalized basin_id list to first element: {normalized['basin_id']}")
+            # Convert non-string to string
+            elif not isinstance(normalized["basin_id"], str):
+                normalized["basin_id"] = str(normalized["basin_id"])
+
         # Normalize model_name to lowercase
         if normalized["model_name"]:
             normalized["model_name"] = str(normalized["model_name"]).lower()
@@ -593,13 +603,20 @@ Respond with ONLY valid JSON, no extra text."""
             logger.debug("[IntentAgent] Detected: custom_data")
             return "custom_data"
 
-        # 5. 批量处理（多流域/多算法）
-        # 检测是否有多个流域或多个算法
+        # 5. 批量处理（多流域/多算法/多模型）
         basins = self._extract_multiple_basins(query, intent_result)
         algorithms = self._extract_multiple_algorithms(query, intent_result)
+        models = self._extract_multiple_models(query, intent_result)
 
-        if len(basins) > 1 or len(algorithms) > 1:
-            logger.debug(f"[IntentAgent] Detected: batch_processing (basins={len(basins)}, algorithms={len(algorithms)})")
+        if len(basins) > 1 or len(algorithms) > 1 or len(models) > 1:
+            logger.debug(f"[IntentAgent] Detected: batch_processing (basins={len(basins)}, algorithms={len(algorithms)}, models={len(models)})")
+
+            # Store multi-basin/algorithm/model data for TaskPlanner
+            intent_result["basin_ids"] = basins
+            intent_result["algorithms"] = algorithms
+            intent_result["model_names"] = models
+            logger.info(f"[IntentAgent] Stored basin_ids={basins}, algorithms={algorithms}, model_names={models}")
+
             return "batch_processing"
 
         # 6. 信息补全（实验2B）
@@ -651,11 +668,12 @@ Respond with ONLY valid JSON, no extra text."""
         basin_id = intent_result.get("basin_id", "")
         if basin_id and "data_source" not in intent_result:
             # 判断流域ID格式
-            if basin_id.startswith("0") and len(basin_id) == 8 and basin_id.isdigit():
+            # Type check to prevent crash on list objects
+            if isinstance(basin_id, str) and basin_id.startswith("0") and len(basin_id) == 8 and basin_id.isdigit():
                 # CAMELS_US格式：8位数字，以0开头
                 intent_result["data_source"] = "camels_us"
                 logger.info(f"[IntentAgent] Inferred data_source: camels_us (basin_id={basin_id})")
-            elif "camels_" in basin_id.lower():
+            elif isinstance(basin_id, str) and "camels_" in basin_id.lower():
                 intent_result["data_source"] = "camels_us"
                 logger.info(f"[IntentAgent] Inferred data_source: camels_us (contains 'camels_')")
             else:
@@ -829,18 +847,35 @@ Respond with ONLY valid JSON, no extra text."""
         """
         algorithms = []
 
-        # 先从intent_result获取单一algorithm
-        if intent_result.get("algorithm"):
-            algorithms.append(intent_result["algorithm"])
+        # 先从intent_result获取algorithm（可能是单个值或列表）
+        algo_value = intent_result.get("algorithm")
+        if algo_value:
+            # 情况1：algorithm是一个列表
+            if isinstance(algo_value, list):
+                algorithms.extend(algo_value)
+            # 情况2：algorithm是一个字符串形式的列表（如"['SCE_UA', 'GA']"）
+            elif isinstance(algo_value, str) and algo_value.startswith("[") and algo_value.endswith("]"):
+                try:
+                    import ast
+                    parsed_list = ast.literal_eval(algo_value)
+                    if isinstance(parsed_list, list):
+                        algorithms.extend(parsed_list)
+                    else:
+                        algorithms.append(algo_value)
+                except (ValueError, SyntaxError):
+                    # 如果解析失败，作为单个算法处理
+                    algorithms.append(algo_value)
+            # 情况3：algorithm是单个字符串
+            else:
+                algorithms.append(algo_value)
 
         query_lower = query.lower()
 
-        # 检测查询中的多个算法
+        # 检测查询中的多个算法（只添加不重复的）
         algorithm_keywords = {
-            "SCE_UA": ["sce-ua", "sce_ua", "sceua"],
+            "SCE_UA": ["sce-ua", "sce_ua", "sceua", "sce"],
             "GA": ["ga", "genetic", "遗传"],
-            "DE": ["de", "differential evolution"],
-            "PSO": ["pso", "particle swarm"]
+            "SCIPY": ["scipy"]
         }
 
         for algo, keywords in algorithm_keywords.items():
@@ -849,4 +884,76 @@ Respond with ONLY valid JSON, no extra text."""
                     algorithms.append(algo)
                     break
 
-        return algorithms
+        # 去重并保持顺序
+        seen = set()
+        unique_algorithms = []
+        for algo in algorithms:
+            if algo not in seen:
+                seen.add(algo)
+                unique_algorithms.append(algo)
+
+        return unique_algorithms
+
+    def _extract_multiple_models(self, query: str, intent_result: Dict[str, Any]) -> List[str]:
+        """
+        提取多个模型。
+
+        Args:
+            query: 用户查询
+            intent_result: 意图结果
+
+        Returns:
+            模型列表
+        """
+        models = []
+
+        # 先从intent_result获取model_name（可能是单个值或列表）
+        model_value = intent_result.get("model_name")
+        if model_value:
+            # 情况1：model_name是一个列表
+            if isinstance(model_value, list):
+                models.extend(model_value)
+            # 情况2：model_name是一个字符串形式的列表（如"['xaj', 'gr4j']"）
+            elif isinstance(model_value, str) and model_value.startswith("[") and model_value.endswith("]"):
+                try:
+                    import ast
+                    parsed_list = ast.literal_eval(model_value)
+                    if isinstance(parsed_list, list):
+                        models.extend(parsed_list)
+                    else:
+                        models.append(model_value)
+                except (ValueError, SyntaxError):
+                    # 如果解析失败，作为单个模型处理
+                    models.append(model_value)
+            # 情况3：model_name是单个字符串
+            else:
+                models.append(model_value)
+
+        query_lower = query.lower()
+
+        # 检测查询中的多个模型（只添加不重复的）
+        model_keywords = {
+            "xaj": ["xaj", "新安江"],
+            "xaj_mz": ["xaj_mz", "xaj-mz"],
+            "gr4j": ["gr4j", "gr-4j"],
+            "gr5j": ["gr5j", "gr-5j"],
+            "gr6j": ["gr6j", "gr-6j"],
+            "gr1y": ["gr1y", "gr-1y"],
+            "gr2m": ["gr2m", "gr-2m"]
+        }
+
+        for model, keywords in model_keywords.items():
+            for kw in keywords:
+                if kw in query_lower and model not in models:
+                    models.append(model)
+                    break
+
+        # 去重并保持顺序
+        seen = set()
+        unique_models = []
+        for model in models:
+            if model not in seen:
+                seen.add(model)
+                unique_models.append(model)
+
+        return unique_models

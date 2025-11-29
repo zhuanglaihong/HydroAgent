@@ -579,3 +579,100 @@ def handle_pipeline_error(
         session_id=session_id,
         workspace=workspace
     )
+
+
+# ============================================================================
+#   Utility Functions for Code Execution Error Analysis
+#   从RunnerAgent提取的工具函数，用于分析生成代码的执行错误
+# ============================================================================
+
+def format_traceback() -> str:
+    """
+    Format current exception traceback.
+    格式化当前异常回溯。
+
+    Returns:
+        Formatted traceback string
+    """
+    return traceback.format_exc()
+
+
+def analyze_execution_error(
+    error_message: str,
+    code_content: str,
+    execution_context: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    分析代码执行错误并提供修复建议（v4.0）。
+    Analyze code execution error and provide fix suggestions.
+
+    Args:
+        error_message: 错误信息（stderr）
+        code_content: 原始代码内容
+        execution_context: 执行上下文（参数、数据路径等）
+
+    Returns:
+        错误分析结果
+        {
+            "error_type": str,  # import_error, runtime_error, data_error, etc.
+            "root_cause": str,  # 根本原因
+            "fix_suggestions": List[str],  # 修复建议
+            "needs_config_update": bool,  # 是否需要更新config
+            "needs_code_regeneration": bool  # 是否需要重新生成代码
+        }
+    """
+    logger.info("[ErrorAnalyzer] 分析执行错误...")
+
+    analysis = {
+        "error_type": "unknown",
+        "root_cause": "",
+        "fix_suggestions": [],
+        "needs_config_update": False,
+        "needs_code_regeneration": False
+    }
+
+    error_lower = error_message.lower()
+
+    # 1. 导入错误
+    if "importerror" in error_lower or "modulenotfounderror" in error_lower:
+        analysis["error_type"] = "import_error"
+        analysis["root_cause"] = "缺少必要的Python库"
+        analysis["fix_suggestions"].append("安装缺失的依赖包")
+        analysis["needs_code_regeneration"] = True
+
+    # 2. 文件未找到错误
+    elif "filenotfounderror" in error_lower or "no such file" in error_lower:
+        analysis["error_type"] = "data_error"
+        analysis["root_cause"] = "数据文件路径不正确或文件不存在"
+        analysis["fix_suggestions"].append("检查数据文件路径")
+        analysis["fix_suggestions"].append("确认calibration已完成并生成了结果文件")
+        analysis["needs_config_update"] = True  # 可能需要更新数据路径
+
+    # 3. KeyError / IndexError
+    elif "keyerror" in error_lower or "indexerror" in error_lower:
+        analysis["error_type"] = "data_structure_error"
+        analysis["root_cause"] = "数据结构不匹配或字段缺失"
+        analysis["fix_suggestions"].append("检查数据文件格式")
+        analysis["fix_suggestions"].append("更新代码以适配实际数据结构")
+        analysis["needs_code_regeneration"] = True
+
+    # 4. ValueError / TypeError
+    elif "valueerror" in error_lower or "typeerror" in error_lower:
+        analysis["error_type"] = "runtime_error"
+        analysis["root_cause"] = "数据类型或值不符合预期"
+        analysis["fix_suggestions"].append("检查输入数据的类型和范围")
+        analysis["fix_suggestions"].append("添加数据验证和类型转换")
+        analysis["needs_code_regeneration"] = True
+
+    # 5. 其他运行时错误
+    else:
+        analysis["error_type"] = "general_runtime_error"
+        analysis["root_cause"] = "代码执行过程中发生未预期的错误"
+        analysis["fix_suggestions"].append("检查完整的错误堆栈信息")
+        analysis["fix_suggestions"].append("可能需要重新生成代码")
+        analysis["needs_code_regeneration"] = True
+
+    logger.info(f"[ErrorAnalyzer] 错误类型: {analysis['error_type']}")
+    logger.info(f"[ErrorAnalyzer] 根本原因: {analysis['root_cause']}")
+
+    return analysis

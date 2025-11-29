@@ -72,7 +72,7 @@ class TaskPlanner(BaseAgent):
     3. iterative_optimization: Two-phase calibration (Exp 3)
     4. repeated_experiment: Multiple runs with different seeds (Exp 5)
     5. extended_analysis: Calibration + custom analysis (Exp 4)
-    6. batch_processing: Multiple basins/algorithms
+    6. batch_processing: Multiple basins/algorithms/models
     7. custom_data: Use custom data path
     """
 
@@ -420,44 +420,48 @@ Always create structured, actionable task plans."""
 
     def _decompose_batch_processing(self, intent: Dict[str, Any]) -> List[SubTask]:
         """
-        批量处理 - 多流域/多算法
+        批量处理 - 多流域/多算法/多模型
         Decompose batch processing task.
 
-        Flow: Multiple calibrations for different basins/algorithms
+        Flow: Multiple calibrations for basins × algorithms × models
         """
         basins = intent.get("basin_ids", [intent.get("basin_id")])
         algorithms = intent.get("algorithms", [intent.get("algorithm")])
+        models = intent.get("model_names", [intent.get("model_name")])
 
-        # Handle single basin/algorithm case
+        # Handle single basin/algorithm/model case
         if isinstance(basins, str):
             basins = [basins]
         if isinstance(algorithms, str):
             algorithms = [algorithms]
+        if isinstance(models, str):
+            models = [models]
 
         subtasks = []
         task_counter = 1
 
-        # Create combinations of basins × algorithms
+        # Create combinations of basins × algorithms × models
         for basin in basins:
             for algorithm in algorithms:
-                subtasks.append(
-                    SubTask(
-                        task_id=f"task_{task_counter}",
-                        task_type="calibration",
-                        description=f"Calibrate basin {basin} with {algorithm}",
-                        prompt="",
-                        parameters={
-                            "model_name": intent.get("model_name"),
-                            "basin_id": basin,
-                            "algorithm": algorithm,
-                            "time_period": intent.get("time_period"),
-                            "extra_params": intent.get("extra_params", {}),
-                            "auto_evaluate": True
-                        },
-                        dependencies=[]  # All can run in parallel
+                for model in models:
+                    subtasks.append(
+                        SubTask(
+                            task_id=f"task_{task_counter}",
+                            task_type="calibration",
+                            description=f"Calibrate basin {basin} with {model} using {algorithm}",
+                            prompt="",
+                            parameters={
+                                "model_name": model,
+                                "basin_id": basin,
+                                "algorithm": algorithm,
+                                "time_period": intent.get("time_period"),
+                                "extra_params": intent.get("extra_params", {}),
+                                "auto_evaluate": True
+                            },
+                            dependencies=[]  # All can run in parallel
+                        )
                     )
-                )
-                task_counter += 1
+                    task_counter += 1
 
         return subtasks
 

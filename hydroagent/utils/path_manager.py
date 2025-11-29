@@ -249,6 +249,36 @@ class PathManager:
         }
 
 
+# ============================================================================
+#   Utility Functions for File Scanning
+#   从RunnerAgent提取的工具函数，用于扫描生成的输出文件
+# ============================================================================
+
+def scan_output_files(workspace_dir: Optional[Path] = None) -> list[str]:
+    """
+    扫描生成的输出文件。
+    Scan generated output files.
+
+    Args:
+        workspace_dir: 工作目录（可选）
+
+    Returns:
+        输出文件路径列表
+    """
+    output_files = []
+    if workspace_dir:
+        workspace_path = Path(workspace_dir)
+        for ext in ['.csv', '.png', '.pdf', '.json', '.txt']:
+            output_files.extend(
+                [str(f) for f in workspace_path.glob(f'*{ext}')]
+            )
+    return output_files
+
+
+# ============================================================================
+#   Backward Compatibility Functions
+# ============================================================================
+
 # Convenience function for backward compatibility
 def configure_task_output_dir(
     config: Dict[str, Any],

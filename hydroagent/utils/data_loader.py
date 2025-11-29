@@ -129,11 +129,23 @@ class DataLoader:
         tasks_data = {}
         all_metrics = []
 
-        # 遍历session目录下的所有子目录
-        for task_dir in sorted(session_dir.iterdir()):
-            if not task_dir.is_dir():
-                continue
+        # 遍历session目录下的所有子目录，只处理以"task_"开头的任务目录
+        # 使用自然排序（按任务编号排序）
+        task_dirs = [d for d in session_dir.iterdir() if d.is_dir() and d.name.startswith("task_")]
 
+        # 自然排序：提取task_后的数字部分进行排序
+        def natural_sort_key(path):
+            task_name = path.name
+            # 提取task_后的部分，分离数字和文本
+            parts = task_name.replace("task_", "").split("_")
+            try:
+                # 第一部分是数字
+                return (int(parts[0]), task_name)
+            except (ValueError, IndexError):
+                # 如果不是数字，使用字符串排序
+                return (float('inf'), task_name)
+
+        for task_dir in sorted(task_dirs, key=natural_sort_key):
             task_id = task_dir.name
 
             # 查找calibration_results.json

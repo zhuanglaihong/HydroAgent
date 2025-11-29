@@ -303,6 +303,176 @@ class PromptManager:
 
 
 # =============================================================================
+#   Code Generation Prompt Builder (v4.0)
+#   从RunnerAgent提取的代码生成提示词构建工具
+# =============================================================================
+
+def build_code_generation_prompt(
+    analysis_type: str,
+    params: Dict[str, Any]
+) -> str:
+    """
+    构建代码生成提示词（实验4：代码生成）。
+    Build code generation prompt.
+
+    Args:
+        analysis_type: 分析类型 (runoff_coefficient, FDC, water_balance, seasonal_analysis)
+        params: 参数字典 (包含 basin_id, model_name 等)
+
+    Returns:
+        完整的代码生成提示词
+    """
+    basin_id = params.get("basin_id", "N/A")
+    model_name = params.get("model_name", "N/A")
+
+    # 预定义的分析类型模板
+    templates = {
+        "runoff_coefficient": f"""
+请生成Python代码，计算流域 {basin_id} 的径流系数。
+
+具体要求：
+1. 从率定结果目录读取流量和降水数据
+2. 计算总径流量和总降水量
+3. 径流系数 = 总径流量 / 总降水量
+4. 打印结果，保存到CSV文件（runoff_coefficient.csv）
+5. 如果可能，绘制时间序列对比图
+
+数据源：
+- 从 calibration_results.json 或 NetCDF 文件读取
+- 或使用 hydrodataset 加载原始数据
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+- 打印进度信息
+
+🔧 **CRITICAL: 中文显示配置**
+如果使用 matplotlib 绘图，必须在代码开头添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+""",
+
+        "FDC": f"""
+请生成Python代码，绘制流域 {basin_id} 的流量历时曲线（Flow Duration Curve, FDC）。
+
+具体要求：
+1. 从率定结果读取流量数据（观测值和模拟值）
+2. 对流量数据进行降序排序
+3. 计算超越概率（exceedance probability）
+4. 绘制FDC曲线（使用对数坐标）
+5. 同时绘制观测值和模拟值的FDC，进行对比
+6. 保存高分辨率图片（fdc_curve.png, 300 DPI）
+
+🔧 **CRITICAL: matplotlib 中文显示配置**
+必须在导入matplotlib后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+
+绘图要求：
+- 使用 matplotlib 并配置中文字体
+- 图表清晰美观，包含图例、网格
+- 保存为PNG格式
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+""",
+
+        "water_balance": f"""
+请生成Python代码，分析流域 {basin_id} 的水量平衡。
+
+具体要求：
+1. 读取降水、蒸散发、径流数据
+2. 计算水量平衡：P = ET + Q + ΔS
+3. 分析各项占比（降水、蒸散发、径流）
+4. 绘制水量平衡饼图或柱状图
+5. 计算和显示误差项
+6. 保存结果到CSV和图片
+
+🔧 **CRITICAL: matplotlib 中文显示配置**
+必须在导入matplotlib后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+""",
+
+        "seasonal_analysis": f"""
+请生成Python代码，进行流域 {basin_id} 的季节性分析。
+
+具体要求：
+1. 读取多年流量数据
+2. 按季节（春夏秋冬）分组统计
+3. 计算每个季节的平均流量、最大流量、最小流量
+4. 绘制季节性变化箱线图
+5. 分析径流的季节性特征
+6. 保存统计结果和图表
+
+🔧 **CRITICAL: matplotlib 中文显示配置**
+必须在导入matplotlib后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+"""
+    }
+
+    # 获取对应的模板，如果没有则使用通用模板
+    if analysis_type in templates:
+        return templates[analysis_type]
+    else:
+        # 通用模板
+        return f"""
+请生成Python代码，进行流域 {basin_id} 的 {analysis_type} 分析。
+
+具体要求：
+1. 从率定结果目录读取必要的数据
+2. 进行 {analysis_type} 相关的计算和分析
+3. 如果适用，生成可视化图表
+4. 将结果保存到文件（CSV或图片）
+5. 打印清晰的分析结果
+
+数据源：
+- 从 workspace_dir 中的 calibration_results.json 或 NetCDF 文件读取
+- 使用 {model_name} 模型的输出结果
+
+🔧 **CRITICAL: matplotlib 中文显示配置**
+如果使用 matplotlib 绘图，必须在导入后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+
+代码要求：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理
+- 打印进度信息
+"""
+
+
+# =============================================================================
 # Example Usage
 # =============================================================================
 

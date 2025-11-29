@@ -56,7 +56,7 @@ BASIN_IDS = [
 ]
 
 # 实验查询 - 批量率定10个流域
-QUERY = f"批量率定以下流域：{', '.join(BASIN_IDS)}，使用 GR4J 模型"
+QUERY = f"批量率定以下流域：{', '.join(BASIN_IDS)}，使用 GR4J 模型,使用SUE-UA算法，轮次设置200轮"
 
 
 def main():

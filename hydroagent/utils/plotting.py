@@ -403,6 +403,78 @@ class PlottingToolkit:
             logger.error(f"[PlottingToolkit] 绘图失败: {str(e)}", exc_info=True)
             return False
 
+    @staticmethod
+    def plot_metrics_comparison(
+        basin_ids: List[str],
+        nse_values: List[float],
+        rmse_values: List[float],
+        kge_values: List[float],
+        output_path: Path,
+        **kwargs
+    ) -> bool:
+        """
+        绘制多指标对比柱状图（NSE, RMSE, KGE）
+
+        Args:
+            basin_ids: 流域ID列表
+            nse_values: NSE值列表
+            rmse_values: RMSE值列表
+            kge_values: KGE值列表
+            output_path: 输出路径
+            **kwargs: 其他参数
+
+        Returns:
+            是否成功
+        """
+        try:
+            import matplotlib.pyplot as plt
+            import matplotlib
+            matplotlib.use('Agg')
+            import numpy as np
+
+            fig, axes = plt.subplots(1, 3, figsize=kwargs.get('figsize', (18, 6)))
+
+            # NSE柱状图
+            axes[0].bar(range(len(basin_ids)), nse_values, color='skyblue', alpha=0.8)
+            axes[0].set_xlabel('Basin ID', fontsize=12)
+            axes[0].set_ylabel('NSE', fontsize=12)
+            axes[0].set_title('Nash-Sutcliffe Efficiency (NSE)', fontsize=14, fontweight='bold')
+            axes[0].set_xticks(range(len(basin_ids)))
+            axes[0].set_xticklabels(basin_ids, rotation=45, ha='right')
+            axes[0].grid(axis='y', alpha=0.3)
+
+            # RMSE柱状图
+            axes[1].bar(range(len(basin_ids)), rmse_values, color='lightcoral', alpha=0.8)
+            axes[1].set_xlabel('Basin ID', fontsize=12)
+            axes[1].set_ylabel('RMSE', fontsize=12)
+            axes[1].set_title('Root Mean Square Error (RMSE)', fontsize=14, fontweight='bold')
+            axes[1].set_xticks(range(len(basin_ids)))
+            axes[1].set_xticklabels(basin_ids, rotation=45, ha='right')
+            axes[1].grid(axis='y', alpha=0.3)
+
+            # KGE柱状图
+            axes[2].bar(range(len(basin_ids)), kge_values, color='lightgreen', alpha=0.8)
+            axes[2].set_xlabel('Basin ID', fontsize=12)
+            axes[2].set_ylabel('KGE', fontsize=12)
+            axes[2].set_title('Kling-Gupta Efficiency (KGE)', fontsize=14, fontweight='bold')
+            axes[2].set_xticks(range(len(basin_ids)))
+            axes[2].set_xticklabels(basin_ids, rotation=45, ha='right')
+            axes[2].grid(axis='y', alpha=0.3)
+
+            plt.tight_layout()
+            plt.savefig(output_path, dpi=kwargs.get('dpi', 300), bbox_inches='tight')
+            plt.close()
+
+            logger.info(f"[PlottingToolkit] 指标对比图已保存: {output_path}")
+            return True
+
+        except ImportError:
+            logger.warning("[PlottingToolkit] matplotlib未安装")
+            return False
+        except Exception as e:
+            logger.error(f"[PlottingToolkit] 绘图失败: {str(e)}", exc_info=True)
+            return False
+
 
 # 便捷函数别名
 plot_line = PlottingToolkit.plot_time_series
