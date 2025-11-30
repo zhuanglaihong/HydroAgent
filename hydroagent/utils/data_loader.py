@@ -89,8 +89,7 @@ class DataLoader:
 
     @staticmethod
     def extract_metrics_from_session(
-        session_dir: Path,
-        metrics_to_extract: Optional[List[str]] = None
+        session_dir: Path, metrics_to_extract: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         从session目录中提取所有任务的指标数据
@@ -131,7 +130,11 @@ class DataLoader:
 
         # 遍历session目录下的所有子目录，只处理以"task_"开头的任务目录
         # 使用自然排序（按任务编号排序）
-        task_dirs = [d for d in session_dir.iterdir() if d.is_dir() and d.name.startswith("task_")]
+        task_dirs = [
+            d
+            for d in session_dir.iterdir()
+            if d.is_dir() and d.name.startswith("task_")
+        ]
 
         # 自然排序：提取task_后的数字部分进行排序
         def natural_sort_key(path):
@@ -143,7 +146,7 @@ class DataLoader:
                 return (int(parts[0]), task_name)
             except (ValueError, IndexError):
                 # 如果不是数字，使用字符串排序
-                return (float('inf'), task_name)
+                return (float("inf"), task_name)
 
         for task_dir in sorted(task_dirs, key=natural_sort_key):
             task_id = task_dir.name
@@ -153,11 +156,13 @@ class DataLoader:
 
             if calib_result_file:
                 try:
-                    with open(calib_result_file, 'r', encoding='utf-8') as f:
+                    with open(calib_result_file, "r", encoding="utf-8") as f:
                         result_data = json.load(f)
 
                     # 提取指标和参数（兼容两种结构）
-                    metrics, best_params = DataLoader._extract_metrics_and_params(result_data)
+                    metrics, best_params = DataLoader._extract_metrics_and_params(
+                        result_data
+                    )
 
                     # 如果calibration_results.json没有metrics，尝试从basins_metrics.csv加载
                     if not metrics:
@@ -168,12 +173,17 @@ class DataLoader:
                                 if not df.empty:
                                     # 取第一行数据（通常只有一个流域）
                                     metrics = df.iloc[0].to_dict()
-                                    logger.debug(f"[DataLoader] 从basins_metrics.csv加载指标: {task_id}")
+                                    logger.debug(
+                                        f"[DataLoader] 从basins_metrics.csv加载指标: {task_id}"
+                                    )
                             except Exception as csv_e:
-                                logger.warning(f"[DataLoader] 无法读取basins_metrics.csv: {csv_e}")
+                                logger.warning(
+                                    f"[DataLoader] 无法读取basins_metrics.csv: {csv_e}"
+                                )
 
                     filtered_metrics = {
-                        k: v for k, v in metrics.items()
+                        k: v
+                        for k, v in metrics.items()
                         if k in metrics_to_extract or not metrics_to_extract
                     }
 
@@ -181,7 +191,7 @@ class DataLoader:
                         "metrics": filtered_metrics,
                         "best_params": best_params,
                         "result_file": str(calib_result_file),
-                        "status": "success"
+                        "status": "success",
                     }
 
                     # 记录到矩阵（用于后续分析）
@@ -191,7 +201,9 @@ class DataLoader:
                     logger.debug(f"[DataLoader] Loaded metrics from {task_id}")
 
                 except Exception as e:
-                    logger.warning(f"[DataLoader] Failed to load {calib_result_file}: {e}")
+                    logger.warning(
+                        f"[DataLoader] Failed to load {calib_result_file}: {e}"
+                    )
                     tasks_data[task_id] = {"status": "failed", "error": str(e)}
             else:
                 logger.debug(f"[DataLoader] No calibration results found in {task_dir}")
@@ -202,25 +214,27 @@ class DataLoader:
 
         summary = {
             "total_tasks": len(tasks_data),
-            "successful_tasks": sum(1 for t in tasks_data.values() if t.get("status") == "success"),
-            "failed_tasks": sum(1 for t in tasks_data.values() if t.get("status") == "failed"),
-            "no_results_tasks": sum(1 for t in tasks_data.values() if t.get("status") == "no_results"),
-            "metrics_matrix": metrics_df
+            "successful_tasks": sum(
+                1 for t in tasks_data.values() if t.get("status") == "success"
+            ),
+            "failed_tasks": sum(
+                1 for t in tasks_data.values() if t.get("status") == "failed"
+            ),
+            "no_results_tasks": sum(
+                1 for t in tasks_data.values() if t.get("status") == "no_results"
+            ),
+            "metrics_matrix": metrics_df,
         }
 
         logger.info(
             f"[DataLoader] Extracted metrics from {summary['successful_tasks']}/{summary['total_tasks']} tasks"
         )
 
-        return {
-            "tasks": tasks_data,
-            "summary": summary
-        }
+        return {"tasks": tasks_data, "summary": summary}
 
     @staticmethod
     def load_repeated_calibration_data(
-        workspace_dir: Path,
-        n_repeats: int
+        workspace_dir: Path, n_repeats: int
     ) -> Dict[str, Any]:
         """
         加载重复率定实验的数据（基于extract_metrics_from_session）
@@ -285,13 +299,12 @@ class DataLoader:
             "metrics": metrics_data,
             "parameters": params_data,
             "task_ids": sorted(task_ids),
-            "session_data": session_data  # 完整数据供调试
+            "session_data": session_data,  # 完整数据供调试
         }
 
     @staticmethod
     def load_multi_basin_data(
-        workspace_dir: Path,
-        basin_ids: List[str]
+        workspace_dir: Path, basin_ids: List[str]
     ) -> Dict[str, Any]:
         """
         加载多流域实验数据
@@ -303,32 +316,28 @@ class DataLoader:
         Returns:
             数据字典
         """
-        data = {
-            "task_type": "multi_basin",
-            "basins": {},
-            "metrics_summary": {}
-        }
+        data = {"task_type": "multi_basin", "basins": {}, "metrics_summary": {}}
 
         for i, basin_id in enumerate(basin_ids, 1):
             task_id = f"task_{i}"
             from hydroagent.utils.path_manager import PathManager
+
             paths = PathManager.get_standard_paths(workspace_dir, task_id)
 
             if paths["calibration_results"] and paths["calibration_results"].exists():
-                with open(paths["calibration_results"], 'r') as f:
+                with open(paths["calibration_results"], "r") as f:
                     result = json.load(f)
 
                 data["basins"][basin_id] = {
                     "metrics": result.get("metrics", {}),
-                    "best_params": result.get("best_params", {})
+                    "best_params": result.get("best_params", {}),
                 }
 
         return data
 
     @staticmethod
     def load_iterative_calibration_data(
-        workspace_dir: Path,
-        n_iterations: int
+        workspace_dir: Path, n_iterations: int
     ) -> Dict[str, Any]:
         """
         加载迭代率定数据
@@ -344,22 +353,23 @@ class DataLoader:
             "task_type": "iterative_calibration",
             "iterations": [],
             "metrics_progression": {},
-            "parameter_progression": {}
+            "parameter_progression": {},
         }
 
         for i in range(n_iterations):
             task_id = f"calibration_iter{i}"
             from hydroagent.utils.path_manager import PathManager
+
             paths = PathManager.get_standard_paths(workspace_dir, task_id)
 
             if paths["calibration_results"] and paths["calibration_results"].exists():
-                with open(paths["calibration_results"], 'r') as f:
+                with open(paths["calibration_results"], "r") as f:
                     result = json.load(f)
 
                 iter_data = {
                     "iteration": i,
                     "metrics": result.get("metrics", {}),
-                    "best_params": result.get("best_params", {})
+                    "best_params": result.get("best_params", {}),
                 }
                 data["iterations"].append(iter_data)
 
@@ -394,7 +404,9 @@ class DataLoader:
         summary_lines = [f"Task Type: {task_type}", ""]
 
         if task_type == "repeated_calibration":
-            summary_lines.append(f"Repetitions: {data['found_count']}/{data['n_repeats']}")
+            summary_lines.append(
+                f"Repetitions: {data['found_count']}/{data['n_repeats']}"
+            )
             summary_lines.append("\nMetrics Statistics:")
 
             for metric_name, values in data.get("metrics", {}).items():
@@ -413,7 +425,9 @@ class DataLoader:
             for param_name, values in data.get("parameters", {}).items():
                 mean_val = np.mean(values)
                 std_val = np.std(values)
-                summary_lines.append(f"  {param_name}: mean={mean_val:.4f}, std={std_val:.4f}")
+                summary_lines.append(
+                    f"  {param_name}: mean={mean_val:.4f}, std={std_val:.4f}"
+                )
 
         elif task_type == "multi_basin":
             summary_lines.append(f"Number of Basins: {len(data.get('basins', {}))}")
@@ -425,10 +439,14 @@ class DataLoader:
                 summary_lines.append(f"  {basin_id}: NSE={nse}")
 
         elif task_type == "iterative_calibration":
-            summary_lines.append(f"Number of Iterations: {len(data.get('iterations', []))}")
+            summary_lines.append(
+                f"Number of Iterations: {len(data.get('iterations', []))}"
+            )
             summary_lines.append("\nMetrics Progression:")
 
             for metric_name, values in data.get("metrics_progression", {}).items():
-                summary_lines.append(f"  {metric_name}: {' → '.join([f'{v:.4f}' for v in values])}")
+                summary_lines.append(
+                    f"  {metric_name}: {' → '.join([f'{v:.4f}' for v in values])}"
+                )
 
         return "\n".join(summary_lines)

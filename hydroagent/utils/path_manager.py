@@ -64,7 +64,7 @@ class PathManager:
         config: Dict[str, Any],
         session_dir: Path,
         task_id: str,
-        use_flat_structure: bool = True
+        use_flat_structure: bool = True,
     ) -> Dict[str, Any]:
         """
         配置 hydromodel 的输出路径（避免嵌套）
@@ -103,7 +103,9 @@ class PathManager:
             config["training_cfgs"]["output_dir"] = str(session_dir)
             # experiment_name 保持不变（LLM 生成的）
 
-            logger.info(f"[PathManager] 使用旧版结构: {session_dir}/{config['training_cfgs'].get('experiment_name', 'N/A')}")
+            logger.info(
+                f"[PathManager] 使用旧版结构: {session_dir}/{config['training_cfgs'].get('experiment_name', 'N/A')}"
+            )
 
         return config
 
@@ -125,7 +127,9 @@ class PathManager:
         # 方式1：扁平结构（推荐）
         flat_result = task_dir / "calibration_results.json"
         if flat_result.exists():
-            logger.debug(f"[PathManager] Found calibration results (flat): {flat_result}")
+            logger.debug(
+                f"[PathManager] Found calibration results (flat): {flat_result}"
+            )
             return flat_result
 
         # 方式2：嵌套结构（向后兼容）
@@ -133,7 +137,9 @@ class PathManager:
         if nested_results:
             result = nested_results[0]  # 取第一个匹配
             logger.debug(f"[PathManager] Found calibration results (nested): {result}")
-            logger.warning(f"[PathManager] 检测到嵌套结构，建议使用扁平结构（experiment_name=''）")
+            logger.warning(
+                f"[PathManager] 检测到嵌套结构，建议使用扁平结构（experiment_name=''）"
+            )
             return result
 
         logger.debug(f"[PathManager] No calibration results found in {task_dir}")
@@ -158,9 +164,7 @@ class PathManager:
 
     @staticmethod
     def collect_repeated_calibration_results(
-        session_dir: Path,
-        n_repeats: int,
-        task_id_pattern: str = "task_{i}_repeat"
+        session_dir: Path, n_repeats: int, task_id_pattern: str = "task_{i}_repeat"
     ) -> Dict[str, Any]:
         """
         收集重复率定实验的所有结果（用于统计分析）
@@ -196,14 +200,12 @@ class PathManager:
 
             if result_file and result_file.exists():
                 try:
-                    with open(result_file, 'r', encoding='utf-8') as f:
+                    with open(result_file, "r", encoding="utf-8") as f:
                         data = json.load(f)
 
-                    results.append({
-                        "task_id": task_id,
-                        "result_file": result_file,
-                        "data": data
-                    })
+                    results.append(
+                        {"task_id": task_id, "result_file": result_file, "data": data}
+                    )
 
                     logger.debug(f"[PathManager] Loaded result from {task_id}")
                 except Exception as e:
@@ -214,7 +216,7 @@ class PathManager:
         return {
             "found_count": len(results),
             "total_count": n_repeats,
-            "results": results
+            "results": results,
         }
 
     @staticmethod
@@ -244,8 +246,16 @@ class PathManager:
             "task_dir": task_dir,
             "calibration_results": calibration_results,
             "calibration_dir": calibration_dir,
-            "basins_metrics": task_dir / "basins_metrics.csv" if (task_dir / "basins_metrics.csv").exists() else None,
-            "param_range_yaml": task_dir / "param_range.yaml" if (task_dir / "param_range.yaml").exists() else None
+            "basins_metrics": (
+                task_dir / "basins_metrics.csv"
+                if (task_dir / "basins_metrics.csv").exists()
+                else None
+            ),
+            "param_range_yaml": (
+                task_dir / "param_range.yaml"
+                if (task_dir / "param_range.yaml").exists()
+                else None
+            ),
         }
 
 
@@ -253,6 +263,7 @@ class PathManager:
 #   Utility Functions for File Scanning
 #   从RunnerAgent提取的工具函数，用于扫描生成的输出文件
 # ============================================================================
+
 
 def scan_output_files(workspace_dir: Optional[Path] = None) -> list[str]:
     """
@@ -268,10 +279,8 @@ def scan_output_files(workspace_dir: Optional[Path] = None) -> list[str]:
     output_files = []
     if workspace_dir:
         workspace_path = Path(workspace_dir)
-        for ext in ['.csv', '.png', '.pdf', '.json', '.txt']:
-            output_files.extend(
-                [str(f) for f in workspace_path.glob(f'*{ext}')]
-            )
+        for ext in [".csv", ".png", ".pdf", ".json", ".txt"]:
+            output_files.extend([str(f) for f in workspace_path.glob(f"*{ext}")])
     return output_files
 
 
@@ -279,16 +288,19 @@ def scan_output_files(workspace_dir: Optional[Path] = None) -> list[str]:
 #   Backward Compatibility Functions
 # ============================================================================
 
+
 # Convenience function for backward compatibility
 def configure_task_output_dir(
-    config: Dict[str, Any],
-    session_dir: Path,
-    task_id: str
+    config: Dict[str, Any], session_dir: Path, task_id: str
 ) -> Dict[str, Any]:
     """
     向后兼容的便捷函数
 
     Deprecated: 请使用 PathManager.configure_hydromodel_output()
     """
-    logger.warning("[PathManager] configure_task_output_dir() is deprecated, use PathManager.configure_hydromodel_output()")
-    return PathManager.configure_hydromodel_output(config, session_dir, task_id, use_flat_structure=True)
+    logger.warning(
+        "[PathManager] configure_task_output_dir() is deprecated, use PathManager.configure_hydromodel_output()"
+    )
+    return PathManager.configure_hydromodel_output(
+        config, session_dir, task_id, use_flat_structure=True
+    )

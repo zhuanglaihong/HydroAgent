@@ -29,7 +29,7 @@ class AgentContext:
         agent_name: str,
         user_query: str = "",
         workspace_dir: Optional[Path] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize agent context.
@@ -64,7 +64,7 @@ class AgentContext:
             "workspace_dir": str(self.workspace_dir) if self.workspace_dir else None,
             "feedback": self.feedback,
             "iteration": self.iteration,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
 
 
@@ -91,6 +91,7 @@ class PromptManager:
         if resources_dir is None:
             # 默认使用项目中的resources目录
             from pathlib import Path
+
             project_root = Path(__file__).parent.parent.parent
             resources_dir = project_root / "hydroagent" / "resources"
 
@@ -139,7 +140,7 @@ class PromptManager:
             file_path = self.resources_dir / f"{schema_type}_schema.txt"
 
         if file_path.exists():
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
                 self.schemas[schema_type] = content
                 logger.info(f"Loaded schema '{schema_type}' from {file_path}")
@@ -162,7 +163,7 @@ class PromptManager:
         context: AgentContext,
         include_schema: bool = True,
         include_feedback: bool = True,
-        **kwargs
+        **kwargs,
     ) -> str:
         """
         动态构建完整的提示词。
@@ -211,7 +212,9 @@ class PromptManager:
         if kwargs:
             final_prompt = final_prompt.format(**kwargs)
 
-        logger.debug(f"Built prompt for {agent_name} (length: {len(final_prompt)} chars)")
+        logger.debug(
+            f"Built prompt for {agent_name} (length: {len(final_prompt)} chars)"
+        )
         return final_prompt
 
     def _build_schema_section(self, agent_name: str) -> str:
@@ -221,7 +224,7 @@ class PromptManager:
             "IntentAgent": "algorithm_params",  # IntentAgent需要算法参数Schema
             "ConfigAgent": "config",
             "RunnerAgent": "api",
-            "DeveloperAgent": None  # DeveloperAgent不需要Schema
+            "DeveloperAgent": None,  # DeveloperAgent不需要Schema
         }
 
         schema_type = schema_mapping.get(agent_name)
@@ -280,7 +283,7 @@ class PromptManager:
         agent_name: str,
         user_query: str = "",
         workspace_dir: Optional[Path] = None,
-        **kwargs
+        **kwargs,
     ) -> AgentContext:
         """
         便捷方法：创建AgentContext。
@@ -298,7 +301,7 @@ class PromptManager:
             agent_name=agent_name,
             user_query=user_query,
             workspace_dir=workspace_dir,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -307,10 +310,8 @@ class PromptManager:
 #   从RunnerAgent提取的代码生成提示词构建工具
 # =============================================================================
 
-def build_code_generation_prompt(
-    analysis_type: str,
-    params: Dict[str, Any]
-) -> str:
+
+def build_code_generation_prompt(analysis_type: str, params: Dict[str, Any]) -> str:
     """
     构建代码生成提示词（实验4：代码生成）。
     Build code generation prompt.
@@ -355,7 +356,6 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode M
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 ```
 """,
-
         "FDC": f"""
 请生成Python代码，绘制流域 {basin_id} 的流量历时曲线（Flow Duration Curve, FDC）。
 
@@ -385,7 +385,6 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 - 添加详细注释
 - 包含错误处理
 """,
-
         "water_balance": f"""
 请生成Python代码，分析流域 {basin_id} 的水量平衡。
 
@@ -410,7 +409,6 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 - 添加详细注释
 - 包含错误处理
 """,
-
         "seasonal_analysis": f"""
 请生成Python代码，进行流域 {basin_id} 的季节性分析。
 
@@ -434,7 +432,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 - 使用 type hints
 - 添加详细注释
 - 包含错误处理
-"""
+""",
     }
 
     # 获取对应的模板，如果没有则使用通用模板
@@ -476,6 +474,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 # Example Usage
 # =============================================================================
 
+
 def example_usage():
     """示例：如何使用PromptManager"""
     from pathlib import Path
@@ -484,7 +483,9 @@ def example_usage():
     pm = PromptManager()
 
     # 2. 注册静态提示词
-    pm.register_static_prompt("IntentAgent", """你是一个水文模型意图分析助手。
+    pm.register_static_prompt(
+        "IntentAgent",
+        """你是一个水文模型意图分析助手。
 从用户查询中提取结构化信息。
 
 **任务**: 分析水文模型查询，提取意图、模型、流域、时间、算法等信息
@@ -495,13 +496,14 @@ def example_usage():
 - simulation (中文: 模拟/预测/计算)
 
 **输出格式**: 必须返回有效JSON
-""")
+""",
+    )
 
     # 3. 创建上下文
     context = pm.create_context(
         agent_name="IntentAgent",
         user_query="率定GR4J模型，流域01013500，迭代500次",
-        workspace_dir=Path("/workspace/session_001")
+        workspace_dir=Path("/workspace/session_001"),
     )
 
     # 4. 第一轮：初始请求

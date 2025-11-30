@@ -1,10 +1,10 @@
 """
 Author: Claude & zhuanglaihong
 Date: 2025-11-20 19:55:00
-LastEditTime: 2025-11-20 19:55:00
+LastEditTime: 2025-11-29 14:00:00
 LastEditors: Claude
-Description: Developer agent for result analysis and code generation (Exp 3)
-             开发者智能体 - 负责结果分析和代码生成
+Description: Developer agent for result analysis (v4.0)
+             开发者智能体 - 负责结果分析
 FilePath: \HydroAgent\hydroagent\agents\developer_agent.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
@@ -17,6 +17,7 @@ import json
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
 from ..utils.prompt_manager import PromptManager
+from ..utils.error_handler import format_traceback
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class DeveloperAgent(BaseAgent):
 
     Similar to OpenFOAMGPT's Post-processing Agent.
 
-    🆕 v4.0 Changes:
+     v4.0 Changes:
     - **Removed** code generation (moved to RunnerAgent)
     - **Added** visualization plotting methods
     - **Focus** on analysis, reporting, and visualization
@@ -37,7 +38,7 @@ class DeveloperAgent(BaseAgent):
     - Result analysis: Parse results/ directory (JSON, CSV)
     - Calculate NSE improvement rate (for Experiment 2)
     - Detect boundary effects in parameter optimization
-    - 🆕 Visualization: Generate publication-quality plots
+    -  Visualization: Generate publication-quality plots
       * Streamflow fit plots
       * NSE convergence plots
       * Parameter distribution plots
@@ -50,7 +51,7 @@ class DeveloperAgent(BaseAgent):
         llm_interface: LLMInterface,
         workspace_dir: Optional[Path] = None,
         use_dynamic_prompt: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize DeveloperAgent (v4.0 simplified).
@@ -69,7 +70,7 @@ class DeveloperAgent(BaseAgent):
             name="DeveloperAgent",
             llm_interface=llm_interface,
             workspace_dir=workspace_dir,
-            **kwargs
+            **kwargs,
         )
 
         self.use_dynamic_prompt = use_dynamic_prompt
@@ -81,11 +82,17 @@ class DeveloperAgent(BaseAgent):
             # Load static prompt from file
             prompt_text = self._load_prompt_from_file("developer_agent_prompt.txt")
             if prompt_text:
-                self.prompt_manager.register_static_prompt("DeveloperAgent", prompt_text)
+                self.prompt_manager.register_static_prompt(
+                    "DeveloperAgent", prompt_text
+                )
                 logger.info("[DeveloperAgent] Dynamic prompt system enabled")
             else:
-                logger.warning("[DeveloperAgent] Failed to load prompt file, using default")
-                self.prompt_manager.register_static_prompt("DeveloperAgent", self._get_default_system_prompt())
+                logger.warning(
+                    "[DeveloperAgent] Failed to load prompt file, using default"
+                )
+                self.prompt_manager.register_static_prompt(
+                    "DeveloperAgent", self._get_default_system_prompt()
+                )
 
     def _get_default_system_prompt(self) -> str:
         """Return default system prompt for DeveloperAgent (v4.0)."""
@@ -104,7 +111,7 @@ Your tasks:
    - Recommend range expansions or adjustments
    - Calculate convergence metrics
 
-3. **🆕 Visualization** (v4.0): Generate publication-quality plots
+3. ** Visualization** (v4.0): Generate publication-quality plots
    - Streamflow fit plots (observed vs simulated)
    - NSE convergence curves (for iterative calibration)
    - Parameter distribution plots (for stability validation)
@@ -151,11 +158,12 @@ Always explain your analysis and provide actionable recommendations."""
         """
         try:
             from pathlib import Path
+
             project_root = Path(__file__).parent.parent.parent
             prompt_file = project_root / "hydroagent" / "resources" / filename
 
             if prompt_file.exists():
-                with open(prompt_file, 'r', encoding='utf-8') as f:
+                with open(prompt_file, "r", encoding="utf-8") as f:
                     return f.read()
             else:
                 logger.warning(f"[DeveloperAgent] Prompt file not found: {prompt_file}")
@@ -228,24 +236,20 @@ Always explain your analysis and provide actionable recommendations."""
             else:
                 raise ValueError(f"Unknown mode: {mode}")
 
-            return {
-                "success": True,
-                "result": result
-            }
+            return {"success": True, "result": result}
 
         except Exception as e:
             logger.error(f"[DeveloperAgent] Processing failed: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
-    def _analyze_orchestrator_output(self, orchestrator_output: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_orchestrator_output(
+        self, orchestrator_output: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         分析Orchestrator的多任务输出结果。
         Analyze Orchestrator's multi-task output.
 
-        🆕 v4.1 Enhancement: Added unified multi-task post-processing logic
+         v4.1 Enhancement: Added unified multi-task post-processing logic
 
         Args:
             orchestrator_output: Orchestrator的输出
@@ -266,10 +270,7 @@ Always explain your analysis and provide actionable recommendations."""
 
         if not subtask_results:
             logger.warning("[DeveloperAgent] No subtask results to analyze")
-            return {
-                "success": False,
-                "error": "No subtask results provided"
-            }
+            return {"success": False, "error": "No subtask results provided"}
 
         # ========== 单任务：直接分析（保持原有逻辑）==========
         if len(subtask_results) == 1:
@@ -279,66 +280,71 @@ Always explain your analysis and provide actionable recommendations."""
         # ========== 多任务：检测类型 + 后处理 ==========
         logger.info(f"[DeveloperAgent] Analyzing {len(subtask_results)} subtasks")
 
-        # Step 1: 🆕 检测任务类型
+        # Step 1:  检测任务类型
         from hydroagent.utils.task_detector import TaskTypeDetector
 
         task_type = TaskTypeDetector.detect_task_type(
-            subtask_results=subtask_results,
-            task_plan=task_plan,
-            intent=intent
+            subtask_results=subtask_results, task_plan=task_plan, intent=intent
         )
         logger.info(f"[DeveloperAgent] Detected task type: {task_type}")
 
         # Step 2: 分析各子任务（保留原有逻辑）
         analyses = []
         for i, subtask_result in enumerate(subtask_results, 1):
-            logger.info(f"[DeveloperAgent] Analyzing subtask {i}/{len(subtask_results)}")
+            logger.info(
+                f"[DeveloperAgent] Analyzing subtask {i}/{len(subtask_results)}"
+            )
             analysis = self._analyze_runner_output(subtask_result)
             analyses.append(analysis)
 
         # 汇总所有分析结果
         all_success = all(a.get("success", False) for a in analyses)
 
-        # Step 3: 🆕 后处理 - 生成汇总文件
+        # Step 3:  后处理 - 生成汇总文件
         post_processing_result = {}
 
         if task_type != "single_task":
             try:
                 from hydroagent.utils.post_processor import PostProcessingEngine
 
-                post_processor = PostProcessingEngine(
-                    workspace_dir=self.workspace_dir
-                )
+                post_processor = PostProcessingEngine(workspace_dir=self.workspace_dir)
 
                 post_processing_result = post_processor.process(
                     task_type=task_type,
                     subtask_results=subtask_results,
                     task_plan=task_plan,
-                    intent=intent
+                    intent=intent,
                 )
 
                 if post_processing_result.get("success"):
                     logger.info("[DeveloperAgent] ✅ Post-processing completed")
-                    logger.info(f"[DeveloperAgent] Generated files: {post_processing_result.get('summary_files')}")
+                    logger.info(
+                        f"[DeveloperAgent] Generated files: {post_processing_result.get('summary_files')}"
+                    )
                 else:
-                    logger.warning(f"[DeveloperAgent] ⚠️ Post-processing failed: {post_processing_result.get('error')}")
+                    logger.warning(
+                        f"[DeveloperAgent] ⚠️ Post-processing failed: {post_processing_result.get('error')}"
+                    )
 
             except Exception as e:
-                logger.error(f"[DeveloperAgent] ❌ Post-processing error: {str(e)}", exc_info=True)
+                logger.error(
+                    f"[DeveloperAgent] ❌ Post-processing error: {str(e)}",
+                    exc_info=True,
+                )
                 post_processing_result = {
                     "success": False,
                     "error": str(e),
-                    "fallback_mode": True
+                    "fallback_mode": True,
                 }
 
         # Step 4: 汇总返回
         return {
             "success": all_success and post_processing_result.get("success", True),
-            "task_type": task_type,  # 🆕 添加任务类型
+            "task_type": task_type,  #  添加任务类型
             "subtask_analyses": analyses,  # 保留原有字段
             "total_subtasks": len(subtask_results),
             "successful_subtasks": sum(1 for a in analyses if a.get("success")),
-            "post_processing": post_processing_result  # 🆕 后处理结果
+            "post_processing": post_processing_result,  #  后处理结果
         }
 
     def _analyze_runner_output(self, runner_output: Dict[str, Any]) -> Dict[str, Any]:
@@ -365,7 +371,7 @@ Always explain your analysis and provide actionable recommendations."""
             return {
                 "success": False,
                 "error": "RunnerAgent execution failed",
-                "runner_error": runner_output.get("error")
+                "runner_error": runner_output.get("error"),
             }
 
         mode = runner_output.get("mode", "unknown")
@@ -382,22 +388,29 @@ Always explain your analysis and provide actionable recommendations."""
             elif mode == "simulate":
                 analysis = self._analyze_simulation_result(result_data)
             elif mode == "custom_analysis":
-                # 🆕 v4.0: 分析 RunnerAgent 已执行的自定义代码结果
+                #  v4.0: 分析 RunnerAgent 已执行的自定义代码结果
                 analysis = self._analyze_custom_analysis_result(result_data)
             elif mode == "auto_iterative":
-                # 🆕 v4.0: 处理自动迭代率定结果
+                #  v4.0: 处理自动迭代率定结果
                 analysis = self._analyze_auto_iterative_result(result_data)
             elif mode == "boundary_check":
-                # 🆕 实验3: boundary_check本质上也是迭代优化
+                #  实验3: boundary_check本质上也是迭代优化
                 # 字段名略有不同 (iterations vs iteration_history)，需要做字段映射
-                logger.info("[DeveloperAgent] 检测到boundary_check模式，映射为迭代优化分析")
+                logger.info(
+                    "[DeveloperAgent] 检测到boundary_check模式，映射为迭代优化分析"
+                )
                 mapped_data = result_data.copy()
-                if "iterations" in mapped_data and "iteration_history" not in mapped_data:
+                if (
+                    "iterations" in mapped_data
+                    and "iteration_history" not in mapped_data
+                ):
                     mapped_data["iteration_history"] = mapped_data["iterations"]
-                    logger.info(f"[DeveloperAgent] 已将'iterations'字段映射为'iteration_history' ({len(mapped_data['iteration_history'])}条记录)")
+                    logger.info(
+                        f"[DeveloperAgent] 已将'iterations'字段映射为'iteration_history' ({len(mapped_data['iteration_history'])}条记录)"
+                    )
                 analysis = self._analyze_auto_iterative_result(mapped_data)
             elif mode == "statistical_analysis":
-                # 🆕 统计分析模式（实验2a重复率定）
+                #  统计分析模式（实验2a重复率定）
                 analysis = self._analyze_statistical_result(result_data)
             else:
                 analysis = {"warning": f"未知模式: {mode}"}
@@ -411,16 +424,12 @@ Always explain your analysis and provide actionable recommendations."""
                 "success": True,
                 "mode": mode,
                 "analysis": analysis,
-                "timestamp": self._get_timestamp()
+                "timestamp": self._get_timestamp(),
             }
 
         except Exception as e:
             logger.error(f"[DeveloperAgent] 分析失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "traceback": self._format_traceback()
-            }
+            return {"success": False, "error": str(e), "traceback": format_traceback()}
 
     def _analyze_calibration_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -440,7 +449,7 @@ Always explain your analysis and provide actionable recommendations."""
             "metrics": {},
             "parameters": {},
             "quality": "unknown",
-            "recommendations": []
+            "recommendations": [],
         }
 
         # Initialize quality with default value
@@ -477,7 +486,9 @@ Always explain your analysis and provide actionable recommendations."""
         if metrics.get("NSE", 0) < 0.65:
             recommendations.append("NSE较低，建议增加训练时期长度或调整参数范围")
         if metrics.get("PBIAS", 0) and abs(metrics.get("PBIAS", 0)) > 25:
-            recommendations.append(f"PBIAS={metrics.get('PBIAS'):.2f}%偏高，模型存在系统性偏差")
+            recommendations.append(
+                f"PBIAS={metrics.get('PBIAS'):.2f}%偏高，模型存在系统性偏差"
+            )
 
         analysis["recommendations"] = recommendations
 
@@ -502,7 +513,7 @@ Always explain your analysis and provide actionable recommendations."""
             "metrics": {},
             "performance": {},
             "quality": "unknown",
-            "recommendations": []
+            "recommendations": [],
         }
 
         # Initialize quality with default value
@@ -545,10 +556,7 @@ Always explain your analysis and provide actionable recommendations."""
         """
         logger.info("[DeveloperAgent] 分析模拟结果...")
 
-        analysis = {
-            "summary": {},
-            "status": result.get("status", "unknown")
-        }
+        analysis = {"summary": {}, "status": result.get("status", "unknown")}
 
         # TODO: 添加更详细的模拟结果分析
 
@@ -587,7 +595,7 @@ Always explain your analysis and provide actionable recommendations."""
             "final_metrics": {},
             "final_params": {},
             "recommendations": [],
-            "plot_files": []
+            "plot_files": [],
         }
 
         # 1. 提取基本信息
@@ -618,7 +626,8 @@ Always explain your analysis and provide actionable recommendations."""
             analysis["convergence"]["improvement"] = final_nse - initial_nse
             analysis["convergence"]["improvement_rate"] = (
                 (final_nse - initial_nse) / abs(initial_nse) * 100
-                if initial_nse != 0 else 0.0
+                if initial_nse != 0
+                else 0.0
             )
 
             # 检测NSE趋势
@@ -657,11 +666,14 @@ Always explain your analysis and provide actionable recommendations."""
         if iteration_history and output_dir:
             try:
                 from hydroagent.utils import PlottingToolkit
+
                 output_path = Path(output_dir)
 
                 # 提取NSE值用于绘图
                 nse_values = [h.get("nse", 0.0) for h in iteration_history]
-                iterations = [h.get("iteration", i) for i, h in enumerate(iteration_history)]
+                iterations = [
+                    h.get("iteration", i) for i, h in enumerate(iteration_history)
+                ]
 
                 # 使用PlottingToolkit绘制时间序列图
                 success = PlottingToolkit.plot_time_series(
@@ -671,7 +683,7 @@ Always explain your analysis and provide actionable recommendations."""
                     title="NSE Convergence during Auto-Iterative Calibration",
                     output_path=output_path / "nse_convergence.png",
                     x_values=iterations,
-                    show_stats=False
+                    show_stats=False,
                 )
 
                 if success:
@@ -739,16 +751,17 @@ Always explain your analysis and provide actionable recommendations."""
 
         analysis["recommendations"] = recommendations
 
-        # 🆕 使用ReportGenerator生成文字分析报告
+        #  使用ReportGenerator生成文字分析报告
         try:
             from hydroagent.utils import ReportGenerator
+
             report_path = ReportGenerator.generate_iterative_optimization_report(
                 analysis=analysis,
                 iteration_history=iteration_history,
                 plots=analysis.get("plot_files", []),
                 converged=converged,
                 total_iterations=total_iterations,
-                output_path=output_dir if output_dir else self.workspace_dir
+                output_path=output_dir if output_dir else self.workspace_dir,
             )
             analysis["report_path"] = str(report_path)
             logger.info(f"[DeveloperAgent] 迭代优化分析报告已保存: {report_path}")
@@ -778,9 +791,9 @@ Always explain your analysis and provide actionable recommendations."""
         stderr = exec_log.get("stderr", "")
 
         summary = {
-            "stdout_lines": len(stdout.split('\n')) if stdout else 0,
-            "stderr_lines": len(stderr.split('\n')) if stderr else 0,
-            "has_errors": bool(stderr and len(stderr.strip()) > 0)
+            "stdout_lines": len(stdout.split("\n")) if stdout else 0,
+            "stderr_lines": len(stderr.split("\n")) if stderr else 0,
+            "has_errors": bool(stderr and len(stderr.strip()) > 0),
         }
 
         return summary
@@ -788,12 +801,8 @@ Always explain your analysis and provide actionable recommendations."""
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""
         from datetime import datetime
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def _format_traceback(self) -> str:
-        """格式化异常回溯"""
-        import traceback
-        return traceback.format_exc()
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def _analyze_results(self, result_dir: Path) -> Dict[str, Any]:
         """
@@ -824,7 +833,7 @@ Always explain your analysis and provide actionable recommendations."""
             "summary": {},
             "boundary_warnings": [],
             "recommendations": [],
-            "files_analyzed": []
+            "files_analyzed": [],
         }
 
         # Analyze JSON results
@@ -864,7 +873,7 @@ Always explain your analysis and provide actionable recommendations."""
         Returns:
             Analysis summary
         """
-        with open(json_path, 'r', encoding='utf-8') as f:
+        with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         # Extract key metrics
@@ -903,10 +912,7 @@ Always explain your analysis and provide actionable recommendations."""
 
         logger.info(f"[DeveloperAgent] Analyzed CSV: {csv_path}")
 
-        return {
-            "convergence_variance": 0.0,
-            "warnings": warnings
-        }
+        return {"convergence_variance": 0.0, "warnings": warnings}
 
     def _generate_recommendations(self, analysis: Dict[str, Any]) -> List[str]:
         """
@@ -939,7 +945,7 @@ Format: Return a JSON array of recommendation strings."""
             response = self.llm.generate_json(
                 system_prompt=self.system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.5
+                temperature=0.5,
             )
 
             if isinstance(response, dict) and "recommendations" in response:
@@ -953,7 +959,9 @@ Format: Return a JSON array of recommendation strings."""
             logger.error(f"Failed to generate recommendations: {str(e)}")
             return ["Unable to generate recommendations"]
 
-    def _analyze_custom_analysis_result(self, result_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _analyze_custom_analysis_result(
+        self, result_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         分析 RunnerAgent 执行的自定义代码分析结果 (v4.0)
 
@@ -988,7 +996,9 @@ Format: Return a JSON array of recommendation strings."""
             # 提取输出
             if "stdout" in result_data:
                 analysis["output"] = result_data["stdout"]
-                logger.info(f"[DeveloperAgent] 代码输出长度: {len(result_data['stdout'])} 字符")
+                logger.info(
+                    f"[DeveloperAgent] 代码输出长度: {len(result_data['stdout'])} 字符"
+                )
 
             # 提取生成的文件
             if "output_files" in result_data:
@@ -1013,350 +1023,6 @@ Format: Return a JSON array of recommendation strings."""
         return analysis
 
     # ========================================================================
-    # 🚫 DEPRECATED (v4.0): Code generation methods moved to RunnerAgent
-    # ========================================================================
-    # The following methods have been removed in v4.0:
-    # - _handle_custom_analysis_and_generate_code()
-    # - _build_task_description()
-    # - _generate_code()
-    #
-    # These functionalities are now handled by RunnerAgent with code_llm_interface.
-    # DeveloperAgent now focuses on analysis, reporting, and visualization.
-    # ========================================================================
-
-    def _handle_custom_analysis_and_generate_code(self, result_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        🚫 DEPRECATED in v4.0: This method has been moved to RunnerAgent.
-
-        Code generation functionality is now handled by RunnerAgent with code_llm_interface.
-        DeveloperAgent now focuses on analysis, reporting, and visualization.
-
-        Returns:
-            Error message indicating method has been deprecated
-        """
-        logger.error("[DeveloperAgent] _handle_custom_analysis_and_generate_code() is DEPRECATED in v4.0")
-        logger.error("[DeveloperAgent] Code generation has been moved to RunnerAgent")
-        logger.error("[DeveloperAgent] Please configure RunnerAgent with code_llm_interface parameter")
-
-        return {
-            "status": "method_deprecated",
-            "error": "Code generation has been moved to RunnerAgent in v4.0",
-            "message": "请使用RunnerAgent的code_llm_interface参数进行代码生成",
-            "migration_guide": "See CLAUDE.md v4.0 Architecture section for migration instructions"
-        }
-
-    # ========================================================================
-    # 🚫 REMOVED in refactoring: Hardcoded plotting methods
-    # 所有绘图功能已迁移到 hydroagent/utils/plotting.py 的 PlottingToolkit
-    # ========================================================================
-
-    # ========================================================================
-    # 🚫 REMOVED in refactoring: Hardcoded report generation methods
-    # 所有报告生成功能已迁移到 hydroagent/utils/report_generator.py 的 ReportGenerator
-    # ========================================================================
-
-    # ========================================================================
-    # Utility Methods (Kept)
-    # ========================================================================
-
-    def _load_streamflow_data_DEPRECATED(
-        self,
-        obs_data: 'np.ndarray',
-        sim_data: 'np.ndarray',
-        dates: 'np.ndarray',
-        basin_id: str,
-        metrics: Dict[str, float],
-        output_path: Path,
-        period_type: str = "test"
-    ) -> str:
-        """
-        绘制径流拟合图（观测值 vs 模拟值）。
-        Plot streamflow fit (observed vs simulated).
-
-        Args:
-            obs_data: 观测流量数组
-            sim_data: 模拟流量数组
-            dates: 日期数组
-            basin_id: 流域ID
-            metrics: 性能指标字典（NSE, RMSE等）
-            output_path: 输出目录路径
-            period_type: 时期类型（train/test/iter1等）
-
-        Returns:
-            图片文件路径
-        """
-        try:
-            import matplotlib.pyplot as plt
-            import matplotlib.dates as mdates
-            import numpy as np
-
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
-
-            # 子图1：时间序列
-            ax1.plot(dates, obs_data, label='Observed', color='black', linewidth=1)
-            ax1.plot(dates, sim_data, label='Simulated', color='red', linewidth=1, alpha=0.7)
-            ax1.set_ylabel('Streamflow (mm/day)', fontsize=12)
-            ax1.legend(loc='upper right')
-            ax1.grid(True, alpha=0.3)
-            ax1.set_title(
-                f'Basin {basin_id} - {period_type.capitalize()} Period',
-                fontsize=14,
-                fontweight='bold'
-            )
-
-            # 添加指标标注
-            metrics_text = f"NSE = {metrics.get('NSE', 0):.3f}\nRMSE = {metrics.get('RMSE', 0):.3f}"
-            ax1.text(
-                0.02, 0.98, metrics_text,
-                transform=ax1.transAxes,
-                verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            )
-
-            # 子图2：散点图
-            ax2.scatter(obs_data, sim_data, alpha=0.5, s=10)
-            ax2.plot(
-                [obs_data.min(), obs_data.max()],
-                [obs_data.min(), obs_data.max()],
-                'r--', linewidth=2, label='1:1 line'
-            )
-            ax2.set_xlabel('Observed Streamflow (mm/day)', fontsize=12)
-            ax2.set_ylabel('Simulated Streamflow (mm/day)', fontsize=12)
-            ax2.legend()
-            ax2.grid(True, alpha=0.3)
-
-            plt.tight_layout()
-
-            # 保存高分辨率图片
-            output_file = output_path / f"streamflow_fit_{basin_id}_{period_type}.png"
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close()
-
-            logger.info(f"[DeveloperAgent] Saved plot: {output_file}")
-            return str(output_file)
-
-        except Exception as e:
-            logger.error(f"[DeveloperAgent] Failed to plot streamflow fit: {str(e)}", exc_info=True)
-            raise
-
-    def plot_nse_convergence(
-        self,
-        iteration_history: List[Dict],
-        nse_threshold: float,
-        output_path: Path
-    ) -> str:
-        """
-        绘制NSE收敛曲线（自动迭代率定）。
-        Plot NSE convergence curve (auto-iterative calibration).
-
-        Args:
-            iteration_history: 迭代历史列表
-                [{"iteration": 1, "nse": 0.65, ...}, ...]
-            nse_threshold: NSE达标阈值
-            output_path: 输出目录路径
-
-        Returns:
-            图片文件路径
-        """
-        try:
-            import matplotlib.pyplot as plt
-
-            iterations = [h["iteration"] for h in iteration_history]
-            nse_values = [h["nse"] for h in iteration_history]
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-            # 绘制NSE曲线
-            ax.plot(
-                iterations, nse_values,
-                marker='o', linewidth=2, markersize=8,
-                color='blue', label='NSE'
-            )
-
-            # 绘制阈值线
-            ax.axhline(
-                y=nse_threshold,
-                color='red', linestyle='--', linewidth=2,
-                label=f'Threshold (NSE = {nse_threshold})'
-            )
-
-            # 标注最佳点
-            best_idx = nse_values.index(max(nse_values))
-            ax.scatter(
-                iterations[best_idx], nse_values[best_idx],
-                s=200, color='green', marker='*', zorder=5,
-                label=f'Best NSE = {nse_values[best_idx]:.3f}'
-            )
-
-            ax.set_xlabel('Iteration', fontsize=12)
-            ax.set_ylabel('NSE', fontsize=12)
-            ax.set_title(
-                'NSE Convergence during Auto-Iterative Calibration',
-                fontsize=14,
-                fontweight='bold'
-            )
-            ax.legend(loc='lower right', fontsize=10)
-            ax.grid(True, alpha=0.3)
-
-            plt.tight_layout()
-
-            output_file = output_path / "nse_convergence.png"
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close()
-
-            logger.info(f"[DeveloperAgent] Saved NSE convergence plot: {output_file}")
-            return str(output_file)
-
-        except Exception as e:
-            logger.error(f"[DeveloperAgent] Failed to plot NSE convergence: {str(e)}", exc_info=True)
-            raise
-
-    def plot_parameter_distribution(
-        self,
-        param_stats: Dict[str, Dict],
-        output_path: Path
-    ) -> str:
-        """
-        绘制参数分布图（稳定性验证）。
-        Plot parameter distribution (stability validation).
-
-        Args:
-            param_stats: 参数统计字典
-                {"x1": {"mean": 0.5, "std": 0.05, ...}, ...}
-            output_path: 输出目录路径
-
-        Returns:
-            图片文件路径
-        """
-        try:
-            import matplotlib.pyplot as plt
-
-            param_names = list(param_stats.keys())
-            means = [param_stats[p]["mean"] for p in param_names]
-            stds = [param_stats[p]["std"] for p in param_names]
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-            x_pos = range(len(param_names))
-            ax.bar(x_pos, means, yerr=stds, capsize=5, alpha=0.7, color='steelblue')
-            ax.set_xticks(x_pos)
-            ax.set_xticklabels(param_names, fontsize=11)
-            ax.set_ylabel('Parameter Value', fontsize=12)
-            ax.set_title(
-                'Parameter Distribution from Repeated Experiments',
-                fontsize=14,
-                fontweight='bold'
-            )
-            ax.grid(True, axis='y', alpha=0.3)
-
-            plt.tight_layout()
-
-            output_file = output_path / "parameter_distribution.png"
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close()
-
-            logger.info(f"[DeveloperAgent] Saved parameter distribution plot: {output_file}")
-            return str(output_file)
-
-        except Exception as e:
-            logger.error(f"[DeveloperAgent] Failed to plot parameter distribution: {str(e)}", exc_info=True)
-            raise
-
-    def plot_metrics_comparison(
-        self,
-        results: List[Dict],
-        output_path: Path,
-        metric_names: List[str] = None
-    ) -> str:
-        """
-        绘制性能指标对比图（批量处理）。
-        Plot metrics comparison (batch processing).
-
-        Args:
-            results: 结果列表
-                [{"basin_id": "01013500", "metrics": {...}}, ...]
-            output_path: 输出目录路径
-            metric_names: 要对比的指标名称列表（默认：NSE, RMSE, KGE）
-
-        Returns:
-            图片文件路径
-        """
-        try:
-            import matplotlib.pyplot as plt
-            import numpy as np
-
-            if metric_names is None:
-                metric_names = ["NSE", "RMSE", "KGE"]
-
-            basin_ids = [r["basin_id"] for r in results]
-
-            fig, axes = plt.subplots(1, len(metric_names), figsize=(15, 5))
-            if len(metric_names) == 1:
-                axes = [axes]
-
-            for i, metric in enumerate(metric_names):
-                values = [r["metrics"].get(metric, 0) for r in results]
-                axes[i].bar(range(len(basin_ids)), values, color='steelblue', alpha=0.7)
-                axes[i].set_xticks(range(len(basin_ids)))
-                axes[i].set_xticklabels(basin_ids, rotation=45, ha='right', fontsize=9)
-                axes[i].set_ylabel(metric, fontsize=11)
-                axes[i].set_title(f'{metric} Comparison', fontsize=12, fontweight='bold')
-                axes[i].grid(True, axis='y', alpha=0.3)
-
-            plt.tight_layout()
-
-            output_file = output_path / "metrics_comparison.png"
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close()
-
-            logger.info(f"[DeveloperAgent] Saved metrics comparison plot: {output_file}")
-            return str(output_file)
-
-        except Exception as e:
-            logger.error(f"[DeveloperAgent] Failed to plot metrics comparison: {str(e)}", exc_info=True)
-            raise
-
-    def _load_streamflow_data(self, calibration_dir: str) -> tuple:
-        """
-        从率定目录加载流量数据。
-        Load streamflow data from calibration directory.
-
-        Args:
-            calibration_dir: 率定结果目录路径
-
-        Returns:
-            (obs_data, sim_data, dates) - 观测值、模拟值、日期数组
-        """
-        try:
-            import numpy as np
-            import pandas as pd
-            from pathlib import Path
-
-            calib_path = Path(calibration_dir)
-
-            # TODO: 实现数据加载逻辑
-            # 可以从以下来源读取：
-            # 1. NetCDF files: *.nc
-            # 2. calibration_results.json
-            # 3. CSV files: *_sceua.csv
-
-            # Placeholder implementation
-            logger.warning("[DeveloperAgent] _load_streamflow_data() is not fully implemented yet")
-            logger.warning("[DeveloperAgent] Returning mock data for now")
-
-            # Return mock data (for now)
-            n_points = 365 * 5  # 5 years
-            dates = pd.date_range('2000-01-01', periods=n_points, freq='D')
-            obs_data = np.random.rand(n_points) * 10
-            sim_data = obs_data + np.random.randn(n_points) * 0.5
-
-            return obs_data, sim_data, dates.to_numpy()
-
-        except Exception as e:
-            logger.error(f"[DeveloperAgent] Failed to load streamflow data: {str(e)}", exc_info=True)
-            raise
-
-    # ========================================================================
     # Boundary Effect Detection and Parameter Analysis
     # ========================================================================
 
@@ -1364,7 +1030,7 @@ Format: Return a JSON array of recommendation strings."""
         self,
         params: Dict[str, float],
         param_ranges: Dict[str, List[float]],
-        threshold: float = 0.01
+        threshold: float = 0.01,
     ) -> List[str]:
         """
         Detect if parameters are hitting boundaries.
@@ -1430,8 +1096,7 @@ Format: Return a JSON array of recommendation strings."""
             # Step 1: 加载数据
             n_repeats = result.get("n_repeats", 20)
             data = DataLoader.load_repeated_calibration_data(
-                workspace_dir=self.workspace_dir,
-                n_repeats=n_repeats
+                workspace_dir=self.workspace_dir, n_repeats=n_repeats
             )
 
             # Step 2: 生成数据摘要供LLM分析
@@ -1473,17 +1138,20 @@ Format: Return a JSON array of recommendation strings."""
 """
 
             # 修复：使用正确的LLM接口方法
-            system_prompt = "你是一位水文模型专家，擅长分析重复率定实验的稳定性和参数分布。"
+            system_prompt = (
+                "你是一位水文模型专家，擅长分析重复率定实验的稳定性和参数分布。"
+            )
             llm_response = self.llm.generate(
                 system_prompt=system_prompt,
                 user_prompt=analysis_prompt,
-                temperature=0.1
+                temperature=0.1,
             )
 
             # 解析LLM响应
             import json
             import re
-            json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+
+            json_match = re.search(r"\{.*\}", llm_response, re.DOTALL)
             if json_match:
                 llm_analysis = json.loads(json_match.group())
             else:
@@ -1507,7 +1175,7 @@ Format: Return a JSON array of recommendation strings."""
                         title=plot_spec.get("title", f"{data_key} Stability"),
                         output_path=output_path,
                         x_values=data["task_ids"],
-                        show_stats=True
+                        show_stats=True,
                     )
 
                 elif plot_type == "boxplot" and "parameters" in data:
@@ -1517,7 +1185,7 @@ Format: Return a JSON array of recommendation strings."""
                         x_label="Parameters",
                         y_label="Parameter Values",
                         title=plot_spec.get("title", "Parameter Distribution"),
-                        output_path=output_path
+                        output_path=output_path,
                     )
 
                 elif plot_type == "histogram" and data_key in data.get("metrics", {}):
@@ -1527,21 +1195,22 @@ Format: Return a JSON array of recommendation strings."""
                         x_label=data_key,
                         y_label="Frequency",
                         title=plot_spec.get("title", f"{data_key} Distribution"),
-                        output_path=output_path
+                        output_path=output_path,
                     )
 
                 if success:
                     plots.append(str(output_path))
                     logger.info(f"[DeveloperAgent] 图表已保存: {output_path}")
 
-            # 🆕 使用ReportGenerator生成文字分析报告
+            #  使用ReportGenerator生成文字分析报告
             from hydroagent.utils import ReportGenerator
+
             report_path = ReportGenerator.generate_repeated_calibration_report(
                 analysis=llm_analysis,
                 data_summary=data_summary,
                 plots=plots,
                 n_repeats=n_repeats,
-                output_path=self.workspace_dir
+                output_path=self.workspace_dir,
             )
             logger.info(f"[DeveloperAgent] 文字报告已保存: {report_path}")
 
@@ -1551,7 +1220,7 @@ Format: Return a JSON array of recommendation strings."""
                 "analysis": llm_analysis,
                 "plots": plots,
                 "data_summary": data_summary,
-                "report_path": str(report_path)
+                "report_path": str(report_path),
             }
 
         except Exception as e:
@@ -1588,12 +1257,13 @@ Format: Return a JSON array of recommendation strings."""
 
             # 从session目录加载数据
             data = DataLoader.load_repeated_calibration_data(
-                workspace_dir=self.workspace_dir,
-                n_repeats=result.get("n_repeats", 20)
+                workspace_dir=self.workspace_dir, n_repeats=result.get("n_repeats", 20)
             )
 
             if data["found_count"] > 0:
-                logger.info(f"[DeveloperAgent] 降级模式：生成基本统计图表（{data['found_count']}个任务）")
+                logger.info(
+                    f"[DeveloperAgent] 降级模式：生成基本统计图表（{data['found_count']}个任务）"
+                )
 
                 # 1. NSE分布直方图
                 if "NSE" in data.get("metrics", {}):
@@ -1605,7 +1275,7 @@ Format: Return a JSON array of recommendation strings."""
                         y_label="Frequency",
                         title=f"NSE Distribution (n={len(nse_values)})",
                         output_path=str(output_path),
-                        bins=20
+                        bins=20,
                     )
                     if success:
                         plots.append(str(output_path))
@@ -1615,7 +1285,9 @@ Format: Return a JSON array of recommendation strings."""
                 if data.get("parameters"):
                     # 选择前4个参数（通常是x1-x4或类似）
                     param_names = list(data["parameters"].keys())[:4]
-                    param_data = {name: data["parameters"][name] for name in param_names}
+                    param_data = {
+                        name: data["parameters"][name] for name in param_names
+                    }
 
                     output_path = self.workspace_dir / "parameter_distribution.png"
                     success = PlottingToolkit.plot_boxplot(
@@ -1623,7 +1295,7 @@ Format: Return a JSON array of recommendation strings."""
                         x_label="Parameters",
                         y_label="Normalized Value",
                         title=f"Parameter Distribution (n={data['found_count']})",
-                        output_path=str(output_path)
+                        output_path=str(output_path),
                     )
                     if success:
                         plots.append(str(output_path))
@@ -1632,11 +1304,12 @@ Format: Return a JSON array of recommendation strings."""
                 # 3. 保存统计摘要JSON
                 summary_path = self.workspace_dir / "stability_summary.json"
                 import json
+
                 summary_data = {
                     "n_repeats": data["n_repeats"],
                     "found_count": data["found_count"],
                     "metrics_stats": {},
-                    "parameter_stats": {}
+                    "parameter_stats": {},
                 }
 
                 # 计算指标统计
@@ -1646,40 +1319,49 @@ Format: Return a JSON array of recommendation strings."""
                         "std": float(np.std(values)),
                         "min": float(np.min(values)),
                         "max": float(np.max(values)),
-                        "cv": float(np.std(values) / np.mean(values)) if np.mean(values) != 0 else 0
+                        "cv": (
+                            float(np.std(values) / np.mean(values))
+                            if np.mean(values) != 0
+                            else 0
+                        ),
                     }
 
                 # 计算参数统计
                 for param_name, values in data.get("parameters", {}).items():
                     summary_data["parameter_stats"][param_name] = {
                         "mean": float(np.mean(values)),
-                        "std": float(np.std(values))
+                        "std": float(np.std(values)),
                     }
 
-                with open(summary_path, 'w', encoding='utf-8') as f:
+                with open(summary_path, "w", encoding="utf-8") as f:
                     json.dump(summary_data, f, indent=2, ensure_ascii=False)
                 logger.info(f"[DeveloperAgent] 保存统计摘要: {summary_path}")
 
         except Exception as e:
-            logger.warning(f"[DeveloperAgent] 降级模式绘图失败: {str(e)}", exc_info=True)
+            logger.warning(
+                f"[DeveloperAgent] 降级模式绘图失败: {str(e)}", exc_info=True
+            )
 
         # 构建分析结果
         analysis_result = {
             "stability_level": stability,
             "stability_comment": f"基于NSE变异系数({nse_cv:.4f})的简单评估",
-            "key_findings": [f"完成了{result.get('found_results', 0)}/{result.get('n_repeats', 0)}次重复"],
-            "recommendations": ["建议查看详细日志了解更多信息"]
+            "key_findings": [
+                f"完成了{result.get('found_results', 0)}/{result.get('n_repeats', 0)}次重复"
+            ],
+            "recommendations": ["建议查看详细日志了解更多信息"],
         }
 
-        # 🆕 使用ReportGenerator生成文字分析报告（降级模式）
+        #  使用ReportGenerator生成文字分析报告（降级模式）
         try:
             from hydroagent.utils import ReportGenerator
+
             report_path = ReportGenerator.generate_repeated_calibration_report(
                 analysis=analysis_result,
                 data_summary=f"重复次数: {result.get('n_repeats', 0)}\n完成任务: {result.get('found_results', 0)}\nNSE变异系数: {nse_cv:.4f}",
                 plots=plots,
-                n_repeats=result.get('n_repeats', 0),
-                output_path=self.workspace_dir
+                n_repeats=result.get("n_repeats", 0),
+                output_path=self.workspace_dir,
             )
             logger.info(f"[DeveloperAgent] 降级模式报告已保存: {report_path}")
         except Exception as e:
@@ -1691,5 +1373,5 @@ Format: Return a JSON array of recommendation strings."""
             "analysis": analysis_result,
             "plots": plots,  # ✅ 包含生成的图表路径
             "report_path": str(report_path) if report_path else None,
-            "fallback_mode": True
+            "fallback_mode": True,
         }

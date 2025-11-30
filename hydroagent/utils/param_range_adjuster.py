@@ -22,7 +22,7 @@ def adjust_from_previous_calibration(
     prev_calibration_dir: str,
     range_scale: float = 0.6,
     output_yaml_path: Optional[str] = None,
-    workspace_dir: Optional[Path] = None
+    workspace_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
     从上一次率定结果中智能调整参数范围。
@@ -64,10 +64,10 @@ def adjust_from_previous_calibration(
             logger.error(f"[ParamRangeAdjuster] 参数范围文件不存在: {param_range_file}")
             return {
                 "success": False,
-                "error": f"param_range.yaml not found in {prev_dir}"
+                "error": f"param_range.yaml not found in {prev_dir}",
             }
 
-        with open(param_range_file, 'r', encoding='utf-8') as f:
+        with open(param_range_file, "r", encoding="utf-8") as f:
             param_range_data = yaml.safe_load(f)
 
         # ⭐ BUG FIX: 提取实际的参数范围字典
@@ -77,15 +77,15 @@ def adjust_from_previous_calibration(
         found_model = None
         if isinstance(param_range_data, dict):
             # 检查是否有模型名作为第一层key（如 'xaj', 'gr4j'）
-            model_names = ['xaj', 'gr4j', 'gr5j', 'gr6j', 'lstm']  # 常见模型名
+            model_names = ["xaj", "gr4j", "gr5j", "gr6j", "lstm"]  # 常见模型名
             for model_name in model_names:
                 if model_name in param_range_data:
                     found_model = model_name
                     break
 
-            if found_model and 'param_range' in param_range_data[found_model]:
+            if found_model and "param_range" in param_range_data[found_model]:
                 # 格式1: {model_name: {param_range: {...}}}
-                prev_param_range = param_range_data[found_model]['param_range']
+                prev_param_range = param_range_data[found_model]["param_range"]
                 logger.info(f"[ParamRangeAdjuster] 检测到模型: {found_model}")
             else:
                 # 格式2: 直接就是参数范围字典
@@ -101,12 +101,14 @@ def adjust_from_previous_calibration(
             logger.error(f"[ParamRangeAdjuster] 最佳参数文件不存在: {best_params_file}")
             return {
                 "success": False,
-                "error": f"basins_denorm_params.csv not found in {prev_dir}"
+                "error": f"basins_denorm_params.csv not found in {prev_dir}",
             }
 
         # 读取CSV（通常第一列是basin_id，其余是参数）
         df = pd.read_csv(best_params_file)
-        logger.info(f"[ParamRangeAdjuster] basins_denorm_params.csv columns: {df.columns.tolist()}")
+        logger.info(
+            f"[ParamRangeAdjuster] basins_denorm_params.csv columns: {df.columns.tolist()}"
+        )
 
         # 提取第一个流域的参数
         # 假设格式: basin_id, x1, x2, x3, x4, ...
@@ -119,16 +121,19 @@ def adjust_from_previous_calibration(
 
         # ⭐ BUG FIX: 排除流域ID列（可能的列名变体）
         # hydromodel可能生成的流域ID列名: 'Unnamed: 0', 'basin_id', 'basin', 'id', 'index'
-        id_column_patterns = ['unnamed', 'basin_id', 'basin', 'id', 'index']
+        id_column_patterns = ["unnamed", "basin_id", "basin", "id", "index"]
 
         param_columns = [
-            col for col in df.columns
+            col
+            for col in df.columns
             if not any(pattern in col.lower() for pattern in id_column_patterns)
         ]
 
         # 如果没有找到参数列（所有列都被排除了），使用除第一列外的所有列
         if not param_columns and len(df.columns) > 1:
-            logger.warning("[ParamRangeAdjuster] 无法识别ID列，使用除第一列外的所有列作为参数")
+            logger.warning(
+                "[ParamRangeAdjuster] 无法识别ID列，使用除第一列外的所有列作为参数"
+            )
             param_columns = df.columns[1:].tolist()
 
         best_params = {col: param_row[col] for col in param_columns}
@@ -143,12 +148,16 @@ def adjust_from_previous_calibration(
 
         for param_name, best_value in best_params.items():
             if param_name not in prev_param_range:
-                logger.warning(f"[ParamRangeAdjuster] 参数 {param_name} 不在 param_range.yaml 中，跳过")
+                logger.warning(
+                    f"[ParamRangeAdjuster] 参数 {param_name} 不在 param_range.yaml 中，跳过"
+                )
                 continue
 
             prev_range = prev_param_range[param_name]
             if not isinstance(prev_range, (list, tuple)) or len(prev_range) != 2:
-                logger.warning(f"[ParamRangeAdjuster] 参数 {param_name} 的范围格式不正确: {prev_range}")
+                logger.warning(
+                    f"[ParamRangeAdjuster] 参数 {param_name} 的范围格式不正确: {prev_range}"
+                )
                 continue
 
             prev_min, prev_max = prev_range
@@ -180,12 +189,18 @@ def adjust_from_previous_calibration(
             logger.info(f"[ParamRangeAdjuster] 参数 {param_name}:")
             logger.info(f"  原范围: [{prev_min}, {prev_max}] (长度: {prev_length})")
             logger.info(f"  最佳值: {best_value}")
-            logger.info(f"  新范围: [{new_min:.4f}, {new_max:.4f}] (长度: {new_max - new_min:.4f})")
+            logger.info(
+                f"  新范围: [{new_min:.4f}, {new_max:.4f}] (长度: {new_max - new_min:.4f})"
+            )
 
         # 4. 保存新的参数范围（使用标准格式）
         if output_yaml_path is None:
             # 默认保存在当前工作目录
-            output_yaml_path = workspace_dir / "adjusted_param_range.yaml" if workspace_dir else Path("adjusted_param_range.yaml")
+            output_yaml_path = (
+                workspace_dir / "adjusted_param_range.yaml"
+                if workspace_dir
+                else Path("adjusted_param_range.yaml")
+            )
         else:
             output_yaml_path = Path(output_yaml_path)
 
@@ -197,19 +212,23 @@ def adjust_from_previous_calibration(
             # 格式1: {model_name: {param_name: [...], param_range: {...}}}
             standard_format_yaml = {
                 found_model: {
-                    'param_name': param_name_list,
-                    'param_range': new_param_range
+                    "param_name": param_name_list,
+                    "param_range": new_param_range,
                 }
             }
         else:
             # 格式2: 直接格式（保持向后兼容）
             standard_format_yaml = new_param_range
 
-        with open(output_yaml_path, 'w', encoding='utf-8') as f:
-            yaml.dump(standard_format_yaml, f, default_flow_style=False, allow_unicode=True)
+        with open(output_yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                standard_format_yaml, f, default_flow_style=False, allow_unicode=True
+            )
 
         logger.info(f"[ParamRangeAdjuster] 新参数范围已保存: {output_yaml_path}")
-        logger.info(f"[ParamRangeAdjuster] 使用格式: {'标准格式 (含模型名)' if found_model else '简化格式'}")
+        logger.info(
+            f"[ParamRangeAdjuster] 使用格式: {'标准格式 (含模型名)' if found_model else '简化格式'}"
+        )
 
         return {
             "success": True,
@@ -217,12 +236,9 @@ def adjust_from_previous_calibration(
             "best_params": best_params,
             "new_param_range": new_param_range,
             "output_file": str(output_yaml_path),
-            "scale": range_scale
+            "scale": range_scale,
         }
 
     except Exception as e:
         logger.error(f"[ParamRangeAdjuster] 参数范围调整失败: {str(e)}", exc_info=True)
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}

@@ -42,11 +42,7 @@ class PostProcessingEngine:
         self.workspace_dir = Path(workspace_dir)
 
     def process(
-        self,
-        task_type: str,
-        subtask_results: List[Dict],
-        task_plan: Dict,
-        intent: Dict
+        self, task_type: str, subtask_results: List[Dict], task_plan: Dict, intent: Dict
     ) -> Dict[str, Any]:
         """
         统一入口：根据任务类型分发到对应处理器。
@@ -71,7 +67,9 @@ class PostProcessingEngine:
                 "error": str (if failed)
             }
         """
-        logger.info(f"[PostProcessor] Starting post-processing for task_type={task_type}")
+        logger.info(
+            f"[PostProcessor] Starting post-processing for task_type={task_type}"
+        )
 
         # 处理器映射
         processors = {
@@ -79,7 +77,7 @@ class PostProcessingEngine:
             "multi_algorithm": self._process_multi_algorithm,
             "repeated_calibration": self._process_repeated_calibration,
             "iterative_optimization": self._process_iterative_optimization,
-            "multi_task_generic": self._process_generic
+            "multi_task_generic": self._process_generic,
         }
 
         # 获取对应处理器（兜底到generic）
@@ -91,22 +89,18 @@ class PostProcessingEngine:
             return result
 
         except Exception as e:
-            logger.error(f"[PostProcessor] ❌ Post-processing failed for {task_type}: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "task_type": task_type,
-                "error": str(e)
-            }
+            logger.error(
+                f"[PostProcessor] ❌ Post-processing failed for {task_type}: {str(e)}",
+                exc_info=True,
+            )
+            return {"success": False, "task_type": task_type, "error": str(e)}
 
     # ========================================================================
     #   Core Processors (Phase 2)
     # ========================================================================
 
     def _process_multi_basin(
-        self,
-        subtask_results: List[Dict],
-        task_plan: Dict,
-        intent: Dict
+        self, subtask_results: List[Dict], task_plan: Dict, intent: Dict
     ) -> Dict[str, Any]:
         """
         实验2B：多流域批量率定后处理
@@ -145,7 +139,7 @@ class PostProcessingEngine:
                 analysis={},
                 basin_results=data.get("tasks", {}),
                 plots=plots,
-                output_path=self.workspace_dir
+                output_path=self.workspace_dir,
             )
         except Exception as e:
             logger.warning(f"[PostProcessor] Report generation failed: {e}")
@@ -157,15 +151,12 @@ class PostProcessingEngine:
                 "csv": str(summary_csv),
                 "plots": plots,
                 "json": str(ranking_json),
-                "report": str(report_path) if report_path else None
-            }
+                "report": str(report_path) if report_path else None,
+            },
         }
 
     def _process_repeated_calibration(
-        self,
-        subtask_results: List[Dict],
-        task_plan: Dict,
-        intent: Dict
+        self, subtask_results: List[Dict], task_plan: Dict, intent: Dict
     ) -> Dict[str, Any]:
         """
         实验5：重复率定稳定性验证后处理
@@ -182,8 +173,7 @@ class PostProcessingEngine:
         from hydroagent.utils.data_loader import DataLoader
 
         data = DataLoader.load_repeated_calibration_data(
-            workspace_dir=self.workspace_dir,
-            n_repeats=len(subtask_results)
+            workspace_dir=self.workspace_dir, n_repeats=len(subtask_results)
         )
 
         # 生成稳定性摘要CSV
@@ -207,7 +197,7 @@ class PostProcessingEngine:
                 analysis={},
                 repeated_results=data.get("tasks", {}),
                 plots=plots,
-                output_path=self.workspace_dir
+                output_path=self.workspace_dir,
             )
         except Exception as e:
             logger.warning(f"[PostProcessor] Report generation failed: {e}")
@@ -219,15 +209,12 @@ class PostProcessingEngine:
                 "csv": str(summary_csv),
                 "plots": plots,
                 "json": str(convergence_json),
-                "report": str(report_path) if report_path else None
-            }
+                "report": str(report_path) if report_path else None,
+            },
         }
 
     def _process_multi_algorithm(
-        self,
-        subtask_results: List[Dict],
-        task_plan: Dict,
-        intent: Dict
+        self, subtask_results: List[Dict], task_plan: Dict, intent: Dict
     ) -> Dict[str, Any]:
         """
         实验2C：多算法×多模型组合后处理
@@ -258,11 +245,7 @@ class PostProcessingEngine:
         model_ranking = self._rank_models(data)
         best_combination = self._find_best_combination(data)
 
-        json_files = [
-            str(algorithm_ranking),
-            str(model_ranking),
-            str(best_combination)
-        ]
+        json_files = [str(algorithm_ranking), str(model_ranking), str(best_combination)]
 
         # 生成分析报告（可选）
         report_path = None
@@ -273,7 +256,7 @@ class PostProcessingEngine:
                 analysis={},
                 results=data.get("matrix", {}),
                 plots=plots,
-                output_path=self.workspace_dir / "analysis_report.md"
+                output_path=self.workspace_dir / "analysis_report.md",
             )
         except Exception as e:
             logger.warning(f"[PostProcessor] Report generation failed: {e}")
@@ -285,8 +268,8 @@ class PostProcessingEngine:
                 "csv": str(matrix_csv),
                 "plots": plots,
                 "json": json_files,
-                "report": str(report_path) if report_path else None
-            }
+                "report": str(report_path) if report_path else None,
+            },
         }
 
     # ========================================================================
@@ -294,10 +277,7 @@ class PostProcessingEngine:
     # ========================================================================
 
     def _process_iterative_optimization(
-        self,
-        subtask_results: List[Dict],
-        task_plan: Dict,
-        intent: Dict
+        self, subtask_results: List[Dict], task_plan: Dict, intent: Dict
     ) -> Dict[str, Any]:
         """
         实验3：迭代优化后处理
@@ -314,12 +294,14 @@ class PostProcessingEngine:
             metrics = result.get("evaluation_metrics", {})
             params = result.get("best_params", {})
 
-            iteration_history.append({
-                "iteration": i,
-                "NSE": metrics.get("NSE", None),
-                "RMSE": metrics.get("RMSE", None),
-                "params": params
-            })
+            iteration_history.append(
+                {
+                    "iteration": i,
+                    "NSE": metrics.get("NSE", None),
+                    "RMSE": metrics.get("RMSE", None),
+                    "params": params,
+                }
+            )
 
         # 生成收敛曲线图
         plots = []
@@ -329,7 +311,7 @@ class PostProcessingEngine:
 
         # 生成参数演化JSON
         param_evolution = self.workspace_dir / "parameter_evolution.json"
-        with open(param_evolution, 'w', encoding='utf-8') as f:
+        with open(param_evolution, "w", encoding="utf-8") as f:
             json.dump(iteration_history, f, indent=2, ensure_ascii=False)
 
         logger.info(f"[PostProcessor] Generated: {param_evolution}")
@@ -337,17 +319,11 @@ class PostProcessingEngine:
         return {
             "success": True,
             "task_type": "iterative_optimization",
-            "summary_files": {
-                "plots": plots,
-                "json": str(param_evolution)
-            }
+            "summary_files": {"plots": plots, "json": str(param_evolution)},
         }
 
     def _process_generic(
-        self,
-        subtask_results: List[Dict],
-        task_plan: Dict,
-        intent: Dict
+        self, subtask_results: List[Dict], task_plan: Dict, intent: Dict
     ) -> Dict[str, Any]:
         """
         通用多任务后处理（兜底）
@@ -373,10 +349,7 @@ class PostProcessingEngine:
         return {
             "success": True,
             "task_type": "multi_task_generic",
-            "summary_files": {
-                "csv": str(summary_csv),
-                "plots": plots
-            }
+            "summary_files": {"csv": str(summary_csv), "plots": plots},
         }
 
     # ========================================================================
@@ -399,21 +372,25 @@ class PostProcessingEngine:
 
             if config_file.exists():
                 try:
-                    with open(config_file, 'r', encoding='utf-8') as f:
+                    with open(config_file, "r", encoding="utf-8") as f:
                         config = yaml.safe_load(f)
                     basin_ids = config.get("data_cfgs", {}).get("basin_ids", [])
                     if basin_ids:
                         basin_id = basin_ids[0]
                 except Exception as e:
-                    logger.warning(f"[PostProcessor] Failed to read basin_id from {config_file}: {e}")
+                    logger.warning(
+                        f"[PostProcessor] Failed to read basin_id from {config_file}: {e}"
+                    )
 
-            rows.append({
-                "basin_id": basin_id,
-                "NSE": metrics.get("NSE", None),
-                "RMSE": metrics.get("RMSE", None),
-                "KGE": metrics.get("KGE", None),
-                "PBIAS": metrics.get("PBIAS", None)
-            })
+            rows.append(
+                {
+                    "basin_id": basin_id,
+                    "NSE": metrics.get("NSE", None),
+                    "RMSE": metrics.get("RMSE", None),
+                    "KGE": metrics.get("KGE", None),
+                    "PBIAS": metrics.get("PBIAS", None),
+                }
+            )
 
         df = pd.DataFrame(rows)
         output_path = self.workspace_dir / "multi_basin_summary.csv"
@@ -437,13 +414,15 @@ class PostProcessingEngine:
 
             if config_file.exists():
                 try:
-                    with open(config_file, 'r', encoding='utf-8') as f:
+                    with open(config_file, "r", encoding="utf-8") as f:
                         config = yaml.safe_load(f)
                     basin_ids = config.get("data_cfgs", {}).get("basin_ids", [])
                     if basin_ids:
                         basin_id = basin_ids[0]
                 except Exception as e:
-                    logger.warning(f"[PostProcessor] Failed to read basin_id from {config_file}: {e}")
+                    logger.warning(
+                        f"[PostProcessor] Failed to read basin_id from {config_file}: {e}"
+                    )
 
             basins.append({"basin_id": basin_id, "NSE": nse})
 
@@ -453,11 +432,11 @@ class PostProcessingEngine:
         ranking = {
             "ranking": basins,
             "best_basin": basins[0] if basins else None,
-            "worst_basin": basins[-1] if basins else None
+            "worst_basin": basins[-1] if basins else None,
         }
 
         output_path = self.workspace_dir / "basin_ranking.json"
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(ranking, f, indent=2, ensure_ascii=False)
 
         logger.info(f"[PostProcessor] Generated: {output_path}")
@@ -484,13 +463,15 @@ class PostProcessingEngine:
 
             if config_file.exists():
                 try:
-                    with open(config_file, 'r', encoding='utf-8') as f:
+                    with open(config_file, "r", encoding="utf-8") as f:
                         config = yaml.safe_load(f)
                     basin_ids = config.get("data_cfgs", {}).get("basin_ids", [])
                     if basin_ids:
                         basin_id = basin_ids[0]
                 except Exception as e:
-                    logger.warning(f"[PostProcessor] Failed to read basin_id from {config_file}: {e}")
+                    logger.warning(
+                        f"[PostProcessor] Failed to read basin_id from {config_file}: {e}"
+                    )
 
             basins.append(basin_id)
             nse_values.append(metrics.get("NSE", 0.0) or 0.0)
@@ -509,7 +490,7 @@ class PostProcessingEngine:
             nse_values=nse_values,
             rmse_values=rmse_values,
             kge_values=kge_values,
-            output_path=output_path
+            output_path=output_path,
         )
 
         if success:
@@ -534,14 +515,20 @@ class PostProcessingEngine:
             if not values:
                 continue
 
-            rows.append({
-                "metric": metric_name,
-                "mean": np.mean(values),
-                "std": np.std(values),
-                "cv": np.std(values) / np.mean(values) if np.mean(values) != 0 else None,
-                "min": np.min(values),
-                "max": np.max(values)
-            })
+            rows.append(
+                {
+                    "metric": metric_name,
+                    "mean": np.mean(values),
+                    "std": np.std(values),
+                    "cv": (
+                        np.std(values) / np.mean(values)
+                        if np.mean(values) != 0
+                        else None
+                    ),
+                    "min": np.min(values),
+                    "max": np.max(values),
+                }
+            )
 
         df = pd.DataFrame(rows)
         output_path = self.workspace_dir / "stability_summary.csv"
@@ -566,7 +553,7 @@ class PostProcessingEngine:
             x_label="Repetition",
             y_label="NSE",
             title="NSE Stability Across Repetitions",
-            output_path=output_path
+            output_path=output_path,
         )
 
         if success:
@@ -587,14 +574,18 @@ class PostProcessingEngine:
                 "converged": np.std(nse_values) < 0.05,  # CV < 0.05为收敛
                 "mean_NSE": np.mean(nse_values),
                 "std_NSE": np.std(nse_values),
-                "cv_NSE": np.std(nse_values) / np.mean(nse_values) if np.mean(nse_values) != 0 else None,
-                "n_repeats": len(nse_values)
+                "cv_NSE": (
+                    np.std(nse_values) / np.mean(nse_values)
+                    if np.mean(nse_values) != 0
+                    else None
+                ),
+                "n_repeats": len(nse_values),
             }
         else:
             convergence = {"error": "No NSE values available"}
 
         output_path = self.workspace_dir / "convergence_analysis.json"
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(convergence, f, indent=2, ensure_ascii=False)
 
         logger.info(f"[PostProcessor] Generated: {output_path}")
@@ -628,7 +619,8 @@ class PostProcessingEngine:
 
             try:
                 import yaml
-                with open(config_file, 'r', encoding='utf-8') as f:
+
+                with open(config_file, "r", encoding="utf-8") as f:
                     config = yaml.safe_load(f)
 
                 # 提取算法和模型名称
@@ -644,13 +636,17 @@ class PostProcessingEngine:
                     "model": model,
                     "NSE": metrics.get("NSE", None),
                     "RMSE": metrics.get("RMSE", None),
-                    "KGE": metrics.get("KGE", None)
+                    "KGE": metrics.get("KGE", None),
                 }
 
-                logger.debug(f"[PostProcessor] Extracted {key}: NSE={metrics.get('NSE')}")
+                logger.debug(
+                    f"[PostProcessor] Extracted {key}: NSE={metrics.get('NSE')}"
+                )
 
             except Exception as e:
-                logger.warning(f"[PostProcessor] Failed to extract config for {task_id}: {e}")
+                logger.warning(
+                    f"[PostProcessor] Failed to extract config for {task_id}: {e}"
+                )
                 continue
 
         return {"matrix": matrix}
@@ -661,13 +657,15 @@ class PostProcessingEngine:
 
         rows = []
         for key, item in data.get("matrix", {}).items():
-            rows.append({
-                "algorithm": item["algorithm"],
-                "model": item["model"],
-                "NSE": item.get("NSE"),
-                "RMSE": item.get("RMSE"),
-                "KGE": item.get("KGE")
-            })
+            rows.append(
+                {
+                    "algorithm": item["algorithm"],
+                    "model": item["model"],
+                    "NSE": item.get("NSE"),
+                    "RMSE": item.get("RMSE"),
+                    "KGE": item.get("KGE"),
+                }
+            )
 
         df = pd.DataFrame(rows)
         output_path = self.workspace_dir / "model_algorithm_matrix.csv"
@@ -719,7 +717,7 @@ class PostProcessingEngine:
             output_path=output_path,
             cbar_label="NSE",
             cmap="RdYlGn",
-            show_values=True
+            show_values=True,
         )
 
         if success:
@@ -743,16 +741,15 @@ class PostProcessingEngine:
         ranking = []
         for algo, scores in algorithm_scores.items():
             import numpy as np
-            ranking.append({
-                "algorithm": algo,
-                "mean_NSE": np.mean(scores),
-                "count": len(scores)
-            })
+
+            ranking.append(
+                {"algorithm": algo, "mean_NSE": np.mean(scores), "count": len(scores)}
+            )
 
         ranking.sort(key=lambda x: x["mean_NSE"], reverse=True)
 
         output_path = self.workspace_dir / "algorithm_ranking.json"
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump({"ranking": ranking}, f, indent=2, ensure_ascii=False)
 
         logger.info(f"[PostProcessor] Generated: {output_path}")
@@ -773,16 +770,15 @@ class PostProcessingEngine:
         ranking = []
         for model, scores in model_scores.items():
             import numpy as np
-            ranking.append({
-                "model": model,
-                "mean_NSE": np.mean(scores),
-                "count": len(scores)
-            })
+
+            ranking.append(
+                {"model": model, "mean_NSE": np.mean(scores), "count": len(scores)}
+            )
 
         ranking.sort(key=lambda x: x["mean_NSE"], reverse=True)
 
         output_path = self.workspace_dir / "model_ranking.json"
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump({"ranking": ranking}, f, indent=2, ensure_ascii=False)
 
         logger.info(f"[PostProcessor] Generated: {output_path}")
@@ -791,16 +787,16 @@ class PostProcessingEngine:
     def _find_best_combination(self, data: Dict) -> Path:
         """查找最佳组合"""
         best = None
-        best_nse = -float('inf')
+        best_nse = -float("inf")
 
         for key, item in data.get("matrix", {}).items():
-            nse = item.get("NSE", -float('inf'))
+            nse = item.get("NSE", -float("inf"))
             if nse > best_nse:
                 best_nse = nse
                 best = item
 
         output_path = self.workspace_dir / "best_combination.json"
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump({"best_combination": best}, f, indent=2, ensure_ascii=False)
 
         logger.info(f"[PostProcessor] Generated: {output_path}")
@@ -824,19 +820,23 @@ class PostProcessingEngine:
             try:
                 return (int(parts[0]), task_id)
             except (ValueError, IndexError):
-                return (float('inf'), task_id)
+                return (float("inf"), task_id)
 
         rows = []
-        for task_id, task_info in sorted(session_data.get("tasks", {}).items(), key=lambda x: natural_sort_key(x[0])):
+        for task_id, task_info in sorted(
+            session_data.get("tasks", {}).items(), key=lambda x: natural_sort_key(x[0])
+        ):
             metrics = task_info.get("metrics", {})
             status = task_info.get("status", "unknown")
 
-            rows.append({
-                "task_id": task_id,
-                "NSE": metrics.get("NSE", None),
-                "RMSE": metrics.get("RMSE", None),
-                "status": status
-            })
+            rows.append(
+                {
+                    "task_id": task_id,
+                    "NSE": metrics.get("NSE", None),
+                    "RMSE": metrics.get("RMSE", None),
+                    "status": status,
+                }
+            )
 
         df = pd.DataFrame(rows)
         output_path = self.workspace_dir / "task_summary.csv"
@@ -845,12 +845,13 @@ class PostProcessingEngine:
         logger.info(f"[PostProcessor] Generated: {output_path}")
         return output_path
 
-    def _generate_generic_comparison_plot(self, subtask_results: List[Dict]) -> Optional[Path]:
+    def _generate_generic_comparison_plot(
+        self, subtask_results: List[Dict]
+    ) -> Optional[Path]:
         """生成通用对比图"""
         # 简化实现：如果有NSE数据，生成柱状图
         nse_values = [
-            r.get("evaluation_metrics", {}).get("NSE", 0.0)
-            for r in subtask_results
+            r.get("evaluation_metrics", {}).get("NSE", 0.0) for r in subtask_results
         ]
 
         if not any(nse_values):
@@ -865,7 +866,9 @@ class PostProcessingEngine:
         logger.warning("[PostProcessor] Generic comparison plot not yet implemented")
         return None
 
-    def _generate_convergence_plot(self, iteration_history: List[Dict]) -> Optional[Path]:
+    def _generate_convergence_plot(
+        self, iteration_history: List[Dict]
+    ) -> Optional[Path]:
         """生成迭代收敛曲线"""
         from hydroagent.utils.plotting import PlottingToolkit
 

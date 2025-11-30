@@ -28,7 +28,7 @@ TASK_TYPES = {
     "repeated_experiment": "重复实验-多随机种子（实验5）",
     "extended_analysis": "扩展分析-超出hydromodel功能（实验4）",
     "batch_processing": "批量处理-多流域/多算法",
-    "custom_data": "自定义数据路径（实验2C）"
+    "custom_data": "自定义数据路径（实验2C）",
 }
 
 
@@ -78,7 +78,7 @@ class IntentAgent(BaseAgent):
         llm_interface: LLMInterface,
         workspace_dir: Optional[Path] = None,
         use_dynamic_prompt: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize IntentAgent.
@@ -93,7 +93,7 @@ class IntentAgent(BaseAgent):
             name="IntentAgent",
             llm_interface=llm_interface,
             workspace_dir=workspace_dir,
-            **kwargs
+            **kwargs,
         )
 
         # Dynamic Prompt System
@@ -101,10 +101,14 @@ class IntentAgent(BaseAgent):
         if self.use_dynamic_prompt:
             self.prompt_manager = PromptManager()
             # Register static prompt skeleton
-            self.prompt_manager.register_static_prompt("IntentAgent", self._get_default_system_prompt())
+            self.prompt_manager.register_static_prompt(
+                "IntentAgent", self._get_default_system_prompt()
+            )
             # Load algorithm parameters schema for accurate parameter extraction
             self.prompt_manager.load_schema("algorithm_params")
-            logger.info("[IntentAgent] Dynamic prompt system enabled with algorithm schema")
+            logger.info(
+                "[IntentAgent] Dynamic prompt system enabled with algorithm schema"
+            )
         else:
             self.prompt_manager = None
             logger.info("[IntentAgent] Using static prompt system")
@@ -112,6 +116,7 @@ class IntentAgent(BaseAgent):
         # Try to import hydrodataset for data validation
         try:
             from hydrodataset import CamelsUs
+
             self.has_hydrodataset = True
             logger.info("hydrodataset module available")
         except ImportError:
@@ -230,11 +235,13 @@ class IntentAgent(BaseAgent):
 
             # Check if LLM call failed (indicated by "error" field in intent_result)
             if "error" in intent_result and intent_result.get("confidence", 1.0) == 0.0:
-                logger.error(f"[IntentAgent] LLM analysis failed: {intent_result['error']}")
+                logger.error(
+                    f"[IntentAgent] LLM analysis failed: {intent_result['error']}"
+                )
                 return {
                     "success": False,
                     "error": f"LLM analysis failed: {intent_result['error']}",
-                    "intent_result": intent_result  # Include partial result for debugging
+                    "intent_result": intent_result,  # Include partial result for debugging
                 }
 
             # Step 2: 🆕 Decide task type (战略决策)
@@ -249,7 +256,7 @@ class IntentAgent(BaseAgent):
             if task_type == "iterative_optimization":
                 intent_result["strategy"] = {
                     "phases": ["coarse_calibration", "fine_calibration"],
-                    "trigger": "boundary_effect"
+                    "trigger": "boundary_effect",
                 }
 
             # Step 5: 🆕 Extract extended analysis needs (if needed)
@@ -268,19 +275,15 @@ class IntentAgent(BaseAgent):
             # Store result in context
             self.update_context("intent_result", intent_result)
 
-            logger.info(f"[IntentAgent] Intent: {intent_result.get('intent')}, Task: {task_type}")
+            logger.info(
+                f"[IntentAgent] Intent: {intent_result.get('intent')}, Task: {task_type}"
+            )
 
-            return {
-                "success": True,
-                "intent_result": intent_result
-            }
+            return {"success": True, "intent_result": intent_result}
 
         except Exception as e:
             logger.error(f"[IntentAgent] Processing failed: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
     def _analyze_intent(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -302,7 +305,7 @@ class IntentAgent(BaseAgent):
             agent_context = self.prompt_manager.create_context(
                 agent_name="IntentAgent",
                 user_query=query,
-                workspace_dir=self.workspace_dir
+                workspace_dir=self.workspace_dir,
             )
 
             # Add feedback if present
@@ -320,13 +323,15 @@ class IntentAgent(BaseAgent):
                 "IntentAgent",
                 agent_context,
                 include_schema=True,  # Include algorithm parameters schema
-                include_feedback=True
+                include_feedback=True,
             )
 
             # Add instruction
             final_prompt += "\n\nRespond with ONLY valid JSON, no extra text."
 
-            logger.debug(f"[IntentAgent] Using dynamic prompt (length: {len(final_prompt)} chars)")
+            logger.debug(
+                f"[IntentAgent] Using dynamic prompt (length: {len(final_prompt)} chars)"
+            )
 
         # =====================================================================
         # Static Prompt System (Fallback)
@@ -356,17 +361,21 @@ Respond with ONLY valid JSON, no extra text."""
         # =====================================================================
         try:
             # Try to use generate_json if available
-            if hasattr(self.llm, 'generate_json'):
+            if hasattr(self.llm, "generate_json"):
                 response = self.llm.generate_json(
-                    system_prompt=self.system_prompt if not self.use_dynamic_prompt else "",
+                    system_prompt=(
+                        self.system_prompt if not self.use_dynamic_prompt else ""
+                    ),
                     user_prompt=final_prompt,
-                    temperature=0.2  # Low temperature for structured output
+                    temperature=0.2,  # Low temperature for structured output
                 )
                 logger.debug(f"[IntentAgent] LLM response (JSON): {response}")
                 return self._validate_and_normalize_response(response)
 
         except (AttributeError, NotImplementedError, Exception) as e:
-            logger.debug(f"[IntentAgent] generate_json not available or failed: {str(e)}, falling back to text parsing")
+            logger.debug(
+                f"[IntentAgent] generate_json not available or failed: {str(e)}, falling back to text parsing"
+            )
 
         # Fallback: Use regular text generation and parse JSON
         import json
@@ -389,7 +398,9 @@ Respond with ONLY valid JSON, no extra text."""
             # Strategy 2: Find JSON block between { }
             if json_result is None:
                 # Find the first complete JSON object
-                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+                json_match = re.search(
+                    r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", response_text, re.DOTALL
+                )
                 if json_match:
                     json_str = json_match.group(0)
                     try:
@@ -399,7 +410,9 @@ Respond with ONLY valid JSON, no extra text."""
 
             # Strategy 3: Find JSON in code blocks (```json ... ```)
             if json_result is None:
-                code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                code_block_match = re.search(
+                    r"```(?:json)?\s*(\{.*?\})\s*```", response_text, re.DOTALL
+                )
                 if code_block_match:
                     json_str = code_block_match.group(1)
                     try:
@@ -425,10 +438,16 @@ Respond with ONLY valid JSON, no extra text."""
                 "clarifications_needed": ["Unable to parse query, please rephrase"],
                 "confidence": 0.0,
                 "error": str(e),
-                "raw_response": response_text[:500] if 'response_text' in locals() else "No response"
+                "raw_response": (
+                    response_text[:500]
+                    if "response_text" in locals()
+                    else "No response"
+                ),
             }
 
-    def _validate_and_normalize_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_and_normalize_response(
+        self, response: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Validate and normalize LLM response to ensure consistent structure.
         验证并规范化 LLM 响应以确保结构一致。
@@ -449,15 +468,19 @@ Respond with ONLY valid JSON, no extra text."""
             "extra_params": response.get("extra_params", {}),
             "missing_info": response.get("missing_info", []),
             "clarifications_needed": response.get("clarifications_needed", []),
-            "confidence": response.get("confidence", 0.8)
+            "confidence": response.get("confidence", 0.8),
         }
 
         # Normalize basin_id (handle both single and multi-basin from LLM)
         if normalized["basin_id"]:
             # If LLM returns a list, take the first element
             if isinstance(normalized["basin_id"], list):
-                normalized["basin_id"] = normalized["basin_id"][0] if normalized["basin_id"] else None
-                logger.debug(f"[IntentAgent] Normalized basin_id list to first element: {normalized['basin_id']}")
+                normalized["basin_id"] = (
+                    normalized["basin_id"][0] if normalized["basin_id"] else None
+                )
+                logger.debug(
+                    f"[IntentAgent] Normalized basin_id list to first element: {normalized['basin_id']}"
+                )
             # Convert non-string to string
             elif not isinstance(normalized["basin_id"], str):
                 normalized["basin_id"] = str(normalized["basin_id"])
@@ -469,20 +492,32 @@ Respond with ONLY valid JSON, no extra text."""
         # Validate model_name against known models
         valid_models = ["xaj", "xaj_mz", "gr4j", "gr5j", "gr6j", "gr1y", "gr2m"]
         if normalized["model_name"] and normalized["model_name"] not in valid_models:
-            logger.warning(f"Unknown model: {normalized['model_name']}, setting to None")
+            logger.warning(
+                f"Unknown model: {normalized['model_name']}, setting to None"
+            )
             normalized["model_name"] = None
             if "model_name" not in normalized["missing_info"]:
                 normalized["missing_info"].append("model_name")
 
         # Validate intent
-        valid_intents = ["calibration", "evaluation", "simulation", "extension", "unknown"]
+        valid_intents = [
+            "calibration",
+            "evaluation",
+            "simulation",
+            "extension",
+            "unknown",
+        ]
         if normalized["intent"] not in valid_intents:
-            logger.warning(f"Unknown intent: {normalized['intent']}, setting to 'unknown'")
+            logger.warning(
+                f"Unknown intent: {normalized['intent']}, setting to 'unknown'"
+            )
             normalized["intent"] = "unknown"
 
         # Normalize algorithm
         if normalized["algorithm"]:
-            normalized["algorithm"] = str(normalized["algorithm"]).upper().replace("-", "_")
+            normalized["algorithm"] = (
+                str(normalized["algorithm"]).upper().replace("-", "_")
+            )
 
         # Copy extension-specific fields if present
         if normalized["intent"] == "extension":
@@ -519,7 +554,9 @@ Respond with ONLY valid JSON, no extra text."""
             # data = camels.read_target_cols(basin_id=basin_id, ...)
             # return data is not None
 
-            logger.info(f"[IntentAgent] Data validation for basin {basin_id}: OK (placeholder)")
+            logger.info(
+                f"[IntentAgent] Data validation for basin {basin_id}: OK (placeholder)"
+            )
             return True
 
         except Exception as e:
@@ -564,17 +601,28 @@ Respond with ONLY valid JSON, no extra text."""
 
         # 🆕 0. 自动迭代率定（v4.0新功能）- 最高优先级
         # 关键词：迭代地去率定、直到NSE达到、自动运行
-        auto_iter_keywords = ["迭代地", "迭代率定", "自动运行", "自动执行", "不断尝试", "直到nse", "直到 nse"]
+        auto_iter_keywords = [
+            "迭代地",
+            "迭代率定",
+            "自动运行",
+            "自动执行",
+            "不断尝试",
+            "直到nse",
+            "直到 nse",
+        ]
         if any(kw in query_lower for kw in auto_iter_keywords):
             logger.debug("[IntentAgent] Detected: auto_iterative_calibration (v4.0)")
             # 提取NSE阈值和最大次数
             import re
-            nse_match = re.search(r'nse\s*[>>=]+\s*(\d+\.?\d*)', query_lower)
+
+            nse_match = re.search(r"nse\s*[>>=]+\s*(\d+\.?\d*)", query_lower)
             if nse_match:
                 intent_result["nse_threshold"] = float(nse_match.group(1))
-                logger.info(f"[IntentAgent] Extracted NSE threshold: {intent_result['nse_threshold']}")
+                logger.info(
+                    f"[IntentAgent] Extracted NSE threshold: {intent_result['nse_threshold']}"
+                )
 
-            max_iter_match = re.search(r'最多\s*(\d+)|(\d+)\s*次', query_lower)
+            max_iter_match = re.search(r"最多\s*(\d+)|(\d+)\s*次", query_lower)
             if max_iter_match:
                 max_iter = int(max_iter_match.group(1) or max_iter_match.group(2))
                 intent_result["max_iterations"] = max_iter
@@ -583,23 +631,67 @@ Respond with ONLY valid JSON, no extra text."""
             return "auto_iterative_calibration"
 
         # 1. 重复实验（实验5）
-        if any(kw in query_lower for kw in ["重复", "多次", "repeat", "multiple times", "不同种子", "different seed"]):
+        if any(
+            kw in query_lower
+            for kw in [
+                "重复",
+                "多次",
+                "repeat",
+                "multiple times",
+                "不同种子",
+                "different seed",
+            ]
+        ):
             logger.debug("[IntentAgent] Detected: repeated_experiment")
             return "repeated_experiment"
 
         # 2. 迭代优化（实验3 - 参数范围调整）
-        if any(kw in query_lower for kw in ["迭代", "边界", "调整范围", "adaptive", "boundary", "iterative", "两阶段", "two-phase"]):
+        if any(
+            kw in query_lower
+            for kw in [
+                "迭代",
+                "边界",
+                "调整范围",
+                "adaptive",
+                "boundary",
+                "iterative",
+                "两阶段",
+                "two-phase",
+            ]
+        ):
             logger.debug("[IntentAgent] Detected: iterative_optimization")
             return "iterative_optimization"
 
         # 3. 扩展分析（实验4）
-        extended_keywords = ["径流系数", "runoff coefficient", "fdc", "flow duration", "历时曲线", "绘制", "画", "plot", "可视化", "visualization"]
+        extended_keywords = [
+            "径流系数",
+            "runoff coefficient",
+            "fdc",
+            "flow duration",
+            "历时曲线",
+            "绘制",
+            "画",
+            "plot",
+            "可视化",
+            "visualization",
+        ]
         if any(kw in query_lower for kw in extended_keywords):
             logger.debug("[IntentAgent] Detected: extended_analysis")
             return "extended_analysis"
 
         # 4. 自定义数据路径（实验2C）
-        if any(kw in query_lower for kw in ["d盘", "d:", "文件夹", "folder", "my_data", "自定义数据", "custom data"]):
+        if any(
+            kw in query_lower
+            for kw in [
+                "d盘",
+                "d:",
+                "文件夹",
+                "folder",
+                "my_data",
+                "自定义数据",
+                "custom data",
+            ]
+        ):
             logger.debug("[IntentAgent] Detected: custom_data")
             return "custom_data"
 
@@ -609,13 +701,17 @@ Respond with ONLY valid JSON, no extra text."""
         models = self._extract_multiple_models(query, intent_result)
 
         if len(basins) > 1 or len(algorithms) > 1 or len(models) > 1:
-            logger.debug(f"[IntentAgent] Detected: batch_processing (basins={len(basins)}, algorithms={len(algorithms)}, models={len(models)})")
+            logger.debug(
+                f"[IntentAgent] Detected: batch_processing (basins={len(basins)}, algorithms={len(algorithms)}, models={len(models)})"
+            )
 
             # Store multi-basin/algorithm/model data for TaskPlanner
             intent_result["basin_ids"] = basins
             intent_result["algorithms"] = algorithms
             intent_result["model_names"] = models
-            logger.info(f"[IntentAgent] Stored basin_ids={basins}, algorithms={algorithms}, model_names={models}")
+            logger.info(
+                f"[IntentAgent] Stored basin_ids={basins}, algorithms={algorithms}, model_names={models}"
+            )
 
             return "batch_processing"
 
@@ -633,7 +729,9 @@ Respond with ONLY valid JSON, no extra text."""
         logger.debug("[IntentAgent] Detected: standard_calibration (default)")
         return "standard_calibration"
 
-    def _complete_missing_info(self, intent_result: Dict[str, Any], query: str) -> Dict[str, Any]:
+    def _complete_missing_info(
+        self, intent_result: Dict[str, Any], query: str
+    ) -> Dict[str, Any]:
         """
         补全缺失信息（智能填充默认值）。
 
@@ -660,25 +758,38 @@ Respond with ONLY valid JSON, no extra text."""
             # 使用默认的训练和测试时段
             intent_result["time_period"] = {
                 "train": ["1990-01-01", "2000-12-31"],  # 默认10年训练
-                "test": ["2001-01-01", "2005-12-31"]     # 默认5年测试
+                "test": ["2001-01-01", "2005-12-31"],  # 默认5年测试
             }
-            logger.info("[IntentAgent] Filled missing time_period: default 10y train + 5y test")
+            logger.info(
+                "[IntentAgent] Filled missing time_period: default 10y train + 5y test"
+            )
 
         # 4. 推断数据源（基于流域ID格式）
         basin_id = intent_result.get("basin_id", "")
         if basin_id and "data_source" not in intent_result:
             # 判断流域ID格式
             # Type check to prevent crash on list objects
-            if isinstance(basin_id, str) and basin_id.startswith("0") and len(basin_id) == 8 and basin_id.isdigit():
+            if (
+                isinstance(basin_id, str)
+                and basin_id.startswith("0")
+                and len(basin_id) == 8
+                and basin_id.isdigit()
+            ):
                 # CAMELS_US格式：8位数字，以0开头
                 intent_result["data_source"] = "camels_us"
-                logger.info(f"[IntentAgent] Inferred data_source: camels_us (basin_id={basin_id})")
+                logger.info(
+                    f"[IntentAgent] Inferred data_source: camels_us (basin_id={basin_id})"
+                )
             elif isinstance(basin_id, str) and "camels_" in basin_id.lower():
                 intent_result["data_source"] = "camels_us"
-                logger.info(f"[IntentAgent] Inferred data_source: camels_us (contains 'camels_')")
+                logger.info(
+                    f"[IntentAgent] Inferred data_source: camels_us (contains 'camels_')"
+                )
             else:
                 intent_result["data_source"] = "unknown"
-                logger.warning(f"[IntentAgent] Could not infer data_source for basin_id={basin_id}")
+                logger.warning(
+                    f"[IntentAgent] Could not infer data_source for basin_id={basin_id}"
+                )
 
         # 5. 补全data_source_type（用于自定义数据）
         if intent_result.get("task_type") == "custom_data":
@@ -687,7 +798,9 @@ Respond with ONLY valid JSON, no extra text."""
             if data_path:
                 intent_result["data_source_type"] = "selfmadehydrodataset"
                 intent_result["data_source_path"] = data_path
-                logger.info(f"[IntentAgent] Set data_source_type: selfmadehydrodataset, path={data_path}")
+                logger.info(
+                    f"[IntentAgent] Set data_source_type: selfmadehydrodataset, path={data_path}"
+                )
 
         # 6. 更新missing_info列表（移除已补全的）
         original_missing = set(intent_result.get("missing_info", []))
@@ -752,10 +865,10 @@ Respond with ONLY valid JSON, no extra text."""
 
         # 查找数字 + "次"/"times"
         patterns = [
-            r'(\d+)\s*次',  # "10次"
-            r'重复\s*(\d+)',  # "重复10"
-            r'(\d+)\s*times',  # "10 times"
-            r'repeat\s*(\d+)',  # "repeat 10"
+            r"(\d+)\s*次",  # "10次"
+            r"重复\s*(\d+)",  # "重复10"
+            r"(\d+)\s*times",  # "10 times"
+            r"repeat\s*(\d+)",  # "repeat 10"
         ]
 
         for pattern in patterns:
@@ -783,9 +896,9 @@ Respond with ONLY valid JSON, no extra text."""
 
         # 查找路径模式
         patterns = [
-            r'([A-Za-z]:\\[^\s]+)',  # Windows路径：D:\path\to\data
-            r'(/[^\s]+)',  # Unix路径：/path/to/data
-            r'([A-Za-z]盘[^\s]+)',  # 中文路径：D盘\my_data
+            r"([A-Za-z]:\\[^\s]+)",  # Windows路径：D:\path\to\data
+            r"(/[^\s]+)",  # Unix路径：/path/to/data
+            r"([A-Za-z]盘[^\s]+)",  # 中文路径：D盘\my_data
         ]
 
         for pattern in patterns:
@@ -798,7 +911,7 @@ Respond with ONLY valid JSON, no extra text."""
         # 查找文件夹名称
         if "文件夹" in query or "folder" in query.lower():
             # 简单提取："my_data 文件夹" → "my_data"
-            match = re.search(r'(\w+)\s*(?:文件夹|folder)', query, re.IGNORECASE)
+            match = re.search(r"(\w+)\s*(?:文件夹|folder)", query, re.IGNORECASE)
             if match:
                 folder_name = match.group(1)
                 logger.info(f"[IntentAgent] Extracted folder name: {folder_name}")
@@ -806,7 +919,9 @@ Respond with ONLY valid JSON, no extra text."""
 
         return None
 
-    def _extract_multiple_basins(self, query: str, intent_result: Dict[str, Any]) -> List[str]:
+    def _extract_multiple_basins(
+        self, query: str, intent_result: Dict[str, Any]
+    ) -> List[str]:
         """
         提取多个流域ID。
 
@@ -826,7 +941,7 @@ Respond with ONLY valid JSON, no extra text."""
             basins.append(intent_result["basin_id"])
 
         # 在查询中查找额外的流域ID（8位数字格式）
-        pattern = r'\b(0\d{7})\b'  # CAMELS_US格式：0XXXXXXX
+        pattern = r"\b(0\d{7})\b"  # CAMELS_US格式：0XXXXXXX
         matches = re.findall(pattern, query)
         for match in matches:
             if match not in basins:
@@ -834,7 +949,9 @@ Respond with ONLY valid JSON, no extra text."""
 
         return basins
 
-    def _extract_multiple_algorithms(self, query: str, intent_result: Dict[str, Any]) -> List[str]:
+    def _extract_multiple_algorithms(
+        self, query: str, intent_result: Dict[str, Any]
+    ) -> List[str]:
         """
         提取多个算法。
 
@@ -854,9 +971,14 @@ Respond with ONLY valid JSON, no extra text."""
             if isinstance(algo_value, list):
                 algorithms.extend(algo_value)
             # 情况2：algorithm是一个字符串形式的列表（如"['SCE_UA', 'GA']"）
-            elif isinstance(algo_value, str) and algo_value.startswith("[") and algo_value.endswith("]"):
+            elif (
+                isinstance(algo_value, str)
+                and algo_value.startswith("[")
+                and algo_value.endswith("]")
+            ):
                 try:
                     import ast
+
                     parsed_list = ast.literal_eval(algo_value)
                     if isinstance(parsed_list, list):
                         algorithms.extend(parsed_list)
@@ -875,7 +997,7 @@ Respond with ONLY valid JSON, no extra text."""
         algorithm_keywords = {
             "SCE_UA": ["sce-ua", "sce_ua", "sceua", "sce"],
             "GA": ["ga", "genetic", "遗传"],
-            "SCIPY": ["scipy"]
+            "SCIPY": ["scipy"],
         }
 
         for algo, keywords in algorithm_keywords.items():
@@ -894,7 +1016,9 @@ Respond with ONLY valid JSON, no extra text."""
 
         return unique_algorithms
 
-    def _extract_multiple_models(self, query: str, intent_result: Dict[str, Any]) -> List[str]:
+    def _extract_multiple_models(
+        self, query: str, intent_result: Dict[str, Any]
+    ) -> List[str]:
         """
         提取多个模型。
 
@@ -914,9 +1038,14 @@ Respond with ONLY valid JSON, no extra text."""
             if isinstance(model_value, list):
                 models.extend(model_value)
             # 情况2：model_name是一个字符串形式的列表（如"['xaj', 'gr4j']"）
-            elif isinstance(model_value, str) and model_value.startswith("[") and model_value.endswith("]"):
+            elif (
+                isinstance(model_value, str)
+                and model_value.startswith("[")
+                and model_value.endswith("]")
+            ):
                 try:
                     import ast
+
                     parsed_list = ast.literal_eval(model_value)
                     if isinstance(parsed_list, list):
                         models.extend(parsed_list)
@@ -939,7 +1068,7 @@ Respond with ONLY valid JSON, no extra text."""
             "gr5j": ["gr5j", "gr-5j"],
             "gr6j": ["gr6j", "gr-6j"],
             "gr1y": ["gr1y", "gr-1y"],
-            "gr2m": ["gr2m", "gr-2m"]
+            "gr2m": ["gr2m", "gr-2m"],
         }
 
         for model, keywords in model_keywords.items():

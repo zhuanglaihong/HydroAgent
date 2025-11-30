@@ -33,11 +33,12 @@ class SubTask:
     Represents a single subtask in the task plan.
     表示任务计划中的单个子任务。
     """
-    task_id: str                    # e.g., "task_1", "task_2a", "task_2b"
-    task_type: str                  # Type of subtask (calibration, evaluation, etc.)
-    description: str                # Human-readable description
-    prompt: str                     # Complete prompt for InterpreterAgent
-    parameters: Dict[str, Any]      # Parameters specific to this subtask
+
+    task_id: str  # e.g., "task_1", "task_2a", "task_2b"
+    task_type: str  # Type of subtask (calibration, evaluation, etc.)
+    description: str  # Human-readable description
+    prompt: str  # Complete prompt for InterpreterAgent
+    parameters: Dict[str, Any]  # Parameters specific to this subtask
     dependencies: List[str] = None  # List of task_ids this depends on
 
     def __post_init__(self):
@@ -81,7 +82,7 @@ class TaskPlanner(BaseAgent):
         llm_interface: LLMInterface,
         prompt_pool: Optional[PromptPool] = None,
         workspace_dir: Optional[Path] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize TaskPlanner.
@@ -96,7 +97,7 @@ class TaskPlanner(BaseAgent):
             name="TaskPlanner",
             llm_interface=llm_interface,
             workspace_dir=workspace_dir,
-            **kwargs
+            **kwargs,
         )
 
         # Initialize PromptPool
@@ -180,29 +181,25 @@ Always create structured, actionable task plans."""
                 self.prompt_pool.store_prompt(
                     task_id=subtask.task_id,
                     prompt=subtask.prompt,
-                    params=subtask.parameters
+                    params=subtask.parameters,
                 )
 
             # Step 3: Create task plan
             task_plan = {
                 "task_type": task_type,
                 "subtasks": [st.to_dict() for st in subtasks],
-                "total_subtasks": len(subtasks)
+                "total_subtasks": len(subtasks),
             }
 
             logger.info(f"[TaskPlanner] Task plan created: {len(subtasks)} subtasks")
 
-            return {
-                "success": True,
-                "task_plan": task_plan
-            }
+            return {"success": True, "task_plan": task_plan}
 
         except Exception as e:
-            logger.error(f"[TaskPlanner] Task decomposition failed: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            logger.error(
+                f"[TaskPlanner] Task decomposition failed: {str(e)}", exc_info=True
+            )
+            return {"success": False, "error": str(e)}
 
     def _decompose_task(self, intent_result: Dict[str, Any]) -> List[SubTask]:
         """
@@ -221,7 +218,9 @@ Always create structured, actionable task plans."""
         decomposition_method = self.decomposition_methods.get(task_type)
 
         if not decomposition_method:
-            logger.warning(f"[TaskPlanner] Unknown task_type: {task_type}, using standard")
+            logger.warning(
+                f"[TaskPlanner] Unknown task_type: {task_type}, using standard"
+            )
             decomposition_method = self._decompose_standard_calibration
 
         return decomposition_method(intent_result)
@@ -249,9 +248,9 @@ Always create structured, actionable task plans."""
                     "algorithm": intent.get("algorithm"),
                     "time_period": intent.get("time_period"),
                     "extra_params": intent.get("extra_params", {}),
-                    "auto_evaluate": True  # Auto-run evaluation after calibration
+                    "auto_evaluate": True,  # Auto-run evaluation after calibration
                 },
-                dependencies=[]
+                dependencies=[],
             )
         ]
 
@@ -268,7 +267,9 @@ Always create structured, actionable task plans."""
         # Same as standard calibration since IntentAgent filled missing info
         return self._decompose_standard_calibration(intent)
 
-    def _decompose_iterative_optimization(self, intent: Dict[str, Any]) -> List[SubTask]:
+    def _decompose_iterative_optimization(
+        self, intent: Dict[str, Any]
+    ) -> List[SubTask]:
         """
         实验3：迭代优化 (循环式参数范围调整)
         Decompose iterative optimization task.
@@ -286,10 +287,16 @@ Always create structured, actionable task plans."""
         strategy = intent.get("strategy", {})
 
         # Get defaults from config.py (or use fallback values)
-        max_iterations = getattr(config, 'MAX_ITERATIONS', 5) if config else 5
-        nse_threshold = getattr(config, 'NSE_THRESHOLD_FOR_ITERATION', 0.65) if config else 0.65
-        min_nse_improvement = getattr(config, 'MIN_NSE_IMPROVEMENT', 0.01) if config else 0.01
-        initial_range_scale = getattr(config, 'INITIAL_RANGE_SCALE', 0.6) if config else 0.6
+        max_iterations = getattr(config, "MAX_ITERATIONS", 5) if config else 5
+        nse_threshold = (
+            getattr(config, "NSE_THRESHOLD_FOR_ITERATION", 0.65) if config else 0.65
+        )
+        min_nse_improvement = (
+            getattr(config, "MIN_NSE_IMPROVEMENT", 0.01) if config else 0.01
+        )
+        initial_range_scale = (
+            getattr(config, "INITIAL_RANGE_SCALE", 0.6) if config else 0.6
+        )
 
         subtasks = [
             SubTask(
@@ -306,12 +313,18 @@ Always create structured, actionable task plans."""
                     # ⭐ 迭代控制参数 (从 config.py 读取，可被 strategy 覆盖)
                     "max_iterations": strategy.get("max_iterations", max_iterations),
                     "nse_threshold": strategy.get("nse_threshold", nse_threshold),
-                    "min_nse_improvement": strategy.get("min_nse_improvement", min_nse_improvement),
-                    "initial_range_scale": strategy.get("initial_range_scale", initial_range_scale),
+                    "min_nse_improvement": strategy.get(
+                        "min_nse_improvement", min_nse_improvement
+                    ),
+                    "initial_range_scale": strategy.get(
+                        "initial_range_scale", initial_range_scale
+                    ),
                     "range_scale_decay": strategy.get("range_scale_decay", 0.7),
-                    "consecutive_no_improvement_limit": strategy.get("consecutive_no_improvement_limit", 2)
+                    "consecutive_no_improvement_limit": strategy.get(
+                        "consecutive_no_improvement_limit", 2
+                    ),
                 },
-                dependencies=[]
+                dependencies=[],
             )
         ]
 
@@ -345,9 +358,9 @@ Always create structured, actionable task plans."""
                         "time_period": intent.get("time_period"),
                         "extra_params": extra_params,
                         "repetition_id": i + 1,
-                        "auto_evaluate": True
+                        "auto_evaluate": True,
                     },
-                    dependencies=[]  # All can run in parallel
+                    dependencies=[],  # All can run in parallel
                 )
             )
 
@@ -360,9 +373,9 @@ Always create structured, actionable task plans."""
                 prompt="",
                 parameters={
                     "n_repeats": n_repeats,
-                    "analysis_type": "stability_validation"
+                    "analysis_type": "stability_validation",
                 },
-                dependencies=[f"task_{i+1}_repeat" for i in range(n_repeats)]
+                dependencies=[f"task_{i+1}_repeat" for i in range(n_repeats)],
             )
         )
 
@@ -392,9 +405,9 @@ Always create structured, actionable task plans."""
                     "algorithm": intent.get("algorithm"),
                     "time_period": intent.get("time_period"),
                     "extra_params": intent.get("extra_params", {}),
-                    "auto_evaluate": True
+                    "auto_evaluate": True,
                 },
-                dependencies=[]
+                dependencies=[],
             )
         ]
 
@@ -410,9 +423,9 @@ Always create structured, actionable task plans."""
                         "task_type": "custom_analysis",  # ⭐ CRITICAL: RunnerAgent needs this
                         "analysis_type": need,
                         "basin_id": intent.get("basin_id"),
-                        "model_name": intent.get("model_name")
+                        "model_name": intent.get("model_name"),
                     },
-                    dependencies=["task_1_calibration"]  # Depends on calibration
+                    dependencies=["task_1_calibration"],  # Depends on calibration
                 )
             )
 
@@ -456,9 +469,9 @@ Always create structured, actionable task plans."""
                                 "algorithm": algorithm,
                                 "time_period": intent.get("time_period"),
                                 "extra_params": intent.get("extra_params", {}),
-                                "auto_evaluate": True
+                                "auto_evaluate": True,
                             },
-                            dependencies=[]  # All can run in parallel
+                            dependencies=[],  # All can run in parallel
                         )
                     )
                     task_counter += 1
@@ -486,15 +499,17 @@ Always create structured, actionable task plans."""
                     "extra_params": intent.get("extra_params", {}),
                     "data_source_type": "custom",
                     "data_source_path": intent.get("data_source"),
-                    "auto_evaluate": True
+                    "auto_evaluate": True,
                 },
-                dependencies=[]
+                dependencies=[],
             )
         ]
 
         return subtasks
 
-    def _decompose_auto_iterative_calibration(self, intent: Dict[str, Any]) -> List[SubTask]:
+    def _decompose_auto_iterative_calibration(
+        self, intent: Dict[str, Any]
+    ) -> List[SubTask]:
         """
         🆕 v4.0: 自动迭代率定（直到NSE达标或达到最大次数）
         Decompose auto-iterative calibration task (v4.0 new feature).
@@ -523,9 +538,9 @@ Always create structured, actionable task plans."""
                     # 🆕 迭代控制参数
                     "nse_threshold": nse_threshold,
                     "max_iterations": max_iterations,
-                    "plot_each_iteration": True  # 每轮绘图
+                    "plot_each_iteration": True,  # 每轮绘图
                 },
-                dependencies=[]
+                dependencies=[],
             )
         ]
 
@@ -539,7 +554,7 @@ Always create structured, actionable task plans."""
         self,
         subtask: SubTask,
         intent_result: Dict[str, Any],
-        error_log: Optional[str] = None
+        error_log: Optional[str] = None,
     ) -> str:
         """
         Generate prompt for a subtask using PromptPool.
@@ -561,9 +576,7 @@ Always create structured, actionable task plans."""
 
         # Use PromptPool to add historical context
         complete_prompt = self.prompt_pool.generate_context_prompt(
-            base_prompt=base_prompt,
-            intent=intent_result,
-            error_log=error_log
+            base_prompt=base_prompt, intent=intent_result, error_log=error_log
         )
 
         return complete_prompt
@@ -594,7 +607,6 @@ Always create structured, actionable task plans."""
 
 **输出**: 完整的配置字典（JSON格式）
 """,
-
             "boundary_check_recalibration": """
 ## 任务：边界检查与重新率定
 
@@ -608,7 +620,6 @@ Always create structured, actionable task plans."""
 
 **输出**: 配置字典（如需重新率定）或跳过信号
 """,
-
             "statistical_analysis": """
 ## 任务：统计分析
 
@@ -622,7 +633,6 @@ Always create structured, actionable task plans."""
 
 **输出**: 统计分析报告
 """,
-
             "custom_analysis": """
 ## 任务：自定义分析
 

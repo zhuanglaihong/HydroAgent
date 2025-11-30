@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 #   从RunnerAgent提取的工具函数，用于解析hydromodel的返回值
 # ============================================================================
 
+
 def parse_calibration_result(result: Any, config: Dict[str, Any]) -> Dict[str, Any]:
     """
     解析率定结果。
@@ -41,7 +42,7 @@ def parse_calibration_result(result: Any, config: Dict[str, Any]) -> Dict[str, A
         "metrics": {},
         "best_params": {},
         "output_files": [],
-        "calibration_dir": None
+        "calibration_dir": None,
     }
 
     try:
@@ -64,11 +65,13 @@ def parse_calibration_result(result: Any, config: Dict[str, Any]) -> Dict[str, A
                 if results_file_direct.exists():
                     # 情况2：直接保存在 output_dir（experiment_name=""）
                     calibration_dir = str(output_path)
-                    logger.info(f"[ResultParser] 找到率定目录（直接模式）: {calibration_dir}")
+                    logger.info(
+                        f"[ResultParser] 找到率定目录（直接模式）: {calibration_dir}"
+                    )
                     parsed["calibration_dir"] = calibration_dir
 
                     # 读取 calibration_results.json
-                    with open(results_file_direct, 'r') as f:
+                    with open(results_file_direct, "r") as f:
                         calib_results = json.load(f)
                         logger.info(f"[ResultParser] 读取calibration_results.json")
 
@@ -84,24 +87,34 @@ def parse_calibration_result(result: Any, config: Dict[str, Any]) -> Dict[str, A
                                 if model_params:
                                     model_name = list(model_params.keys())[0]
                                     parsed["best_params"] = model_params[model_name]
-                                    logger.info(f"[ResultParser] 提取参数: {parsed['best_params']}")
+                                    logger.info(
+                                        f"[ResultParser] 提取参数: {parsed['best_params']}"
+                                    )
                 else:
                     # 情况1：查找最新的实验子目录（旧版逻辑）
-                    experiment_dirs = sorted([d for d in output_path.iterdir() if d.is_dir()],
-                                           key=lambda x: x.stat().st_mtime,
-                                           reverse=True)
+                    experiment_dirs = sorted(
+                        [d for d in output_path.iterdir() if d.is_dir()],
+                        key=lambda x: x.stat().st_mtime,
+                        reverse=True,
+                    )
 
                     if experiment_dirs:
                         calibration_dir = str(experiment_dirs[0])
-                        logger.info(f"[ResultParser] 找到率定目录（子目录模式）: {calibration_dir}")
+                        logger.info(
+                            f"[ResultParser] 找到率定目录（子目录模式）: {calibration_dir}"
+                        )
                         parsed["calibration_dir"] = calibration_dir
 
                         # 尝试读取calibration_results.json
-                        results_file = Path(calibration_dir) / "calibration_results.json"
+                        results_file = (
+                            Path(calibration_dir) / "calibration_results.json"
+                        )
                         if results_file.exists():
-                            with open(results_file, 'r') as f:
+                            with open(results_file, "r") as f:
                                 calib_results = json.load(f)
-                                logger.info(f"[ResultParser] 读取calibration_results.json")
+                                logger.info(
+                                    f"[ResultParser] 读取calibration_results.json"
+                                )
 
                                 # 提取第一个basin的参数
                                 if calib_results:
@@ -114,12 +127,20 @@ def parse_calibration_result(result: Any, config: Dict[str, Any]) -> Dict[str, A
                                         # 提取第一个模型的参数
                                         if model_params:
                                             model_name = list(model_params.keys())[0]
-                                            parsed["best_params"] = model_params[model_name]
-                                            logger.info(f"[ResultParser] 提取参数: {parsed['best_params']}")
+                                            parsed["best_params"] = model_params[
+                                                model_name
+                                            ]
+                                            logger.info(
+                                                f"[ResultParser] 提取参数: {parsed['best_params']}"
+                                            )
                         else:
-                            logger.warning(f"[ResultParser] 未找到calibration_results.json: {results_file}")
+                            logger.warning(
+                                f"[ResultParser] 未找到calibration_results.json: {results_file}"
+                            )
                     else:
-                        logger.warning(f"[ResultParser] 输出目录中没有实验目录或结果文件: {output_path}")
+                        logger.warning(
+                            f"[ResultParser] 输出目录中没有实验目录或结果文件: {output_path}"
+                        )
             else:
                 logger.warning(f"[ResultParser] 输出目录不存在: {output_path}")
         else:
@@ -134,7 +155,9 @@ def parse_calibration_result(result: Any, config: Dict[str, Any]) -> Dict[str, A
             elif "performance" in result:
                 parsed["metrics"] = result["performance"]
 
-        logger.info(f"[ResultParser] 解析结果: calibration_dir={parsed['calibration_dir']}, best_params={len(parsed['best_params'])}个")
+        logger.info(
+            f"[ResultParser] 解析结果: calibration_dir={parsed['calibration_dir']}, best_params={len(parsed['best_params'])}个"
+        )
 
     except Exception as e:
         logger.error(f"[ResultParser] 解析率定结果时出错: {str(e)}", exc_info=True)
@@ -154,11 +177,7 @@ def parse_evaluation_result(result: Any) -> Dict[str, Any]:
     Returns:
         解析后的结果字典
     """
-    parsed = {
-        "metrics": {},
-        "performance": {},
-        "output_files": []
-    }
+    parsed = {"metrics": {}, "performance": {}, "output_files": []}
 
     try:
         if isinstance(result, dict):
@@ -178,13 +197,17 @@ def parse_evaluation_result(result: Any) -> Dict[str, Any]:
                         flat_metrics = {}
                         for key, value in metrics.items():
                             if isinstance(value, (list, np.ndarray)):
-                                flat_metrics[key] = float(value[0]) if len(value) > 0 else None
+                                flat_metrics[key] = (
+                                    float(value[0]) if len(value) > 0 else None
+                                )
                             else:
                                 flat_metrics[key] = value
 
                         parsed["metrics"] = flat_metrics
                         parsed["performance"] = flat_metrics
-                        logger.info(f"[ResultParser] 提取basin {first_basin_id}的metrics: {list(flat_metrics.keys())}")
+                        logger.info(
+                            f"[ResultParser] 提取basin {first_basin_id}的metrics: {list(flat_metrics.keys())}"
+                        )
 
                     # 提取parameters
                     if "parameters" in basin_result:
@@ -216,6 +239,7 @@ def parse_evaluation_result(result: Any) -> Dict[str, Any]:
 #   ResultParser Class (Intelligent Analysis Middleware)
 # ============================================================================
 
+
 class ResultParser:
     """
     Intelligent result analysis middleware (Tech 4.2).
@@ -240,9 +264,7 @@ class ResultParser:
         self.boundary_threshold = boundary_threshold
 
     def parse_calibration_results(
-        self,
-        result_dir: Path,
-        param_range_path: Optional[Path] = None
+        self, result_dir: Path, param_range_path: Optional[Path] = None
     ) -> Dict[str, Any]:
         """
         Parse calibration results and generate comprehensive analysis.
@@ -262,7 +284,7 @@ class ResultParser:
             "convergence": {},
             "boundary_effects": {},
             "warnings": [],
-            "recommendations": []
+            "recommendations": [],
         }
 
         if not result_dir.exists():
@@ -286,8 +308,7 @@ class ResultParser:
             optimal_params = analysis["summary"].get("optimal_params", {})
             if optimal_params:
                 boundary_analysis = self._detect_boundary_effects(
-                    optimal_params,
-                    param_range_path
+                    optimal_params, param_range_path
                 )
                 analysis["boundary_effects"] = boundary_analysis
                 analysis["warnings"].extend(boundary_analysis.get("warnings", []))
@@ -312,14 +333,14 @@ class ResultParser:
         logger.info(f"[ResultParser] Parsing JSON: {json_path}")
 
         try:
-            with open(json_path, 'r', encoding='utf-8') as f:
+            with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             summary = {
                 "nse": None,
                 "rmse": None,
                 "optimal_params": {},
-                "file_path": str(json_path)
+                "file_path": str(json_path),
             }
 
             # TODO: Extract actual structure from hydromodel results
@@ -362,7 +383,7 @@ class ResultParser:
                 "final_value": None,
                 "convergence_rate": None,
                 "variance_last_10pct": None,
-                "is_converged": False
+                "is_converged": False,
             }
 
             # Assume first column is objective function value
@@ -400,9 +421,7 @@ class ResultParser:
             return {}
 
     def _detect_boundary_effects(
-        self,
-        optimal_params: Dict[str, float],
-        param_range_path: Path
+        self, optimal_params: Dict[str, float], param_range_path: Path
     ) -> Dict[str, Any]:
         """
         Detect boundary effects in optimized parameters (Tech 4.2 core).
@@ -418,14 +437,14 @@ class ResultParser:
         logger.info("[ResultParser] Detecting boundary effects...")
 
         try:
-            with open(param_range_path, 'r', encoding='utf-8') as f:
+            with open(param_range_path, "r", encoding="utf-8") as f:
                 param_ranges = yaml.safe_load(f)
 
             boundary_analysis = {
                 "params_at_boundary": [],
                 "params_converged_well": [],
                 "warnings": [],
-                "suggested_adjustments": {}
+                "suggested_adjustments": {},
             }
 
             for param_name, param_value in optimal_params.items():
@@ -454,7 +473,10 @@ class ResultParser:
 
                         # Suggest expanding lower bound
                         new_min = min_val - range_span * 0.2  # Expand by 20%
-                        boundary_analysis["suggested_adjustments"][param_name] = [new_min, max_val]
+                        boundary_analysis["suggested_adjustments"][param_name] = [
+                            new_min,
+                            max_val,
+                        ]
 
                     elif upper_proximity < self.boundary_threshold:
                         # Hitting upper boundary
@@ -465,7 +487,10 @@ class ResultParser:
 
                         # Suggest expanding upper bound
                         new_max = max_val + range_span * 0.2  # Expand by 20%
-                        boundary_analysis["suggested_adjustments"][param_name] = [min_val, new_max]
+                        boundary_analysis["suggested_adjustments"][param_name] = [
+                            min_val,
+                            new_max,
+                        ]
 
                     else:
                         # Well converged within bounds
@@ -506,9 +531,7 @@ class ResultParser:
 
             suggested_adjustments = boundary_effects.get("suggested_adjustments", {})
             if suggested_adjustments:
-                recommendations.append(
-                    "Suggested new param_range.yaml values:"
-                )
+                recommendations.append("Suggested new param_range.yaml values:")
                 for param, new_range in suggested_adjustments.items():
                     recommendations.append(
                         f"  {param}: [{new_range[0]:.4f}, {new_range[1]:.4f}]"
@@ -517,9 +540,7 @@ class ResultParser:
         # Recommendations based on convergence
         convergence = analysis.get("convergence", {})
         if not convergence.get("is_converged", False):
-            recommendations.append(
-                "Calibration did not fully converge. Consider:"
-            )
+            recommendations.append("Calibration did not fully converge. Consider:")
             recommendations.append("  - Increase maxn (max iterations)")
             recommendations.append("  - Increase rep (SCE-UA repetitions)")
 
@@ -527,9 +548,7 @@ class ResultParser:
         summary = analysis.get("summary", {})
         nse = summary.get("nse")
         if nse is not None and nse < 0.6:
-            recommendations.append(
-                f"Low NSE ({nse:.3f}). Consider:"
-            )
+            recommendations.append(f"Low NSE ({nse:.3f}). Consider:")
             recommendations.append("  - Check input data quality")
             recommendations.append("  - Try different model structure")
             recommendations.append("  - Increase warmup period")
@@ -568,7 +587,9 @@ class ResultParser:
             lines.append(f"Convergence: {status}")
 
             if "variance_last_10pct" in convergence:
-                lines.append(f"Variance (last 10%): {convergence['variance_last_10pct']:.6f}")
+                lines.append(
+                    f"Variance (last 10%): {convergence['variance_last_10pct']:.6f}"
+                )
 
         lines.append("")
 

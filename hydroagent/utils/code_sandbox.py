@@ -41,7 +41,7 @@ class CodeSandbox:
         self,
         timeout: int = 300,
         max_memory_mb: int = 1024,
-        allowed_imports: Optional[List[str]] = None
+        allowed_imports: Optional[List[str]] = None,
     ):
         """
         Initialize CodeSandbox.
@@ -55,7 +55,9 @@ class CodeSandbox:
         self.max_memory_mb = max_memory_mb
         self.allowed_imports = allowed_imports or self._get_default_allowed_imports()
 
-        logger.info(f"[CodeSandbox] Initialized with timeout={timeout}s, max_memory={max_memory_mb}MB")
+        logger.info(
+            f"[CodeSandbox] Initialized with timeout={timeout}s, max_memory={max_memory_mb}MB"
+        )
 
     def _get_default_allowed_imports(self) -> List[str]:
         """
@@ -67,24 +69,35 @@ class CodeSandbox:
         """
         return [
             # Standard library
-            "os", "sys", "json", "yaml", "csv", "datetime", "pathlib",
-            "logging", "argparse", "re", "math", "random",
-
+            "os",
+            "sys",
+            "json",
+            "yaml",
+            "csv",
+            "datetime",
+            "pathlib",
+            "logging",
+            "argparse",
+            "re",
+            "math",
+            "random",
             # Scientific computing
-            "numpy", "pandas", "scipy", "matplotlib", "seaborn",
-
+            "numpy",
+            "pandas",
+            "scipy",
+            "matplotlib",
+            "seaborn",
             # Hydrological
-            "hydromodel", "hydrodataset", "hydroutils",
-
+            "hydromodel",
+            "hydrodataset",
+            "hydroutils",
             # Others
-            "tqdm", "joblib"
+            "tqdm",
+            "joblib",
         ]
 
     def execute(
-        self,
-        code: str,
-        mode: str = "subprocess",
-        working_dir: Optional[Path] = None
+        self, code: str, mode: str = "subprocess", working_dir: Optional[Path] = None
     ) -> Dict[str, Any]:
         """
         Execute Python code in sandbox.
@@ -107,7 +120,7 @@ class CodeSandbox:
             return {
                 "success": False,
                 "error": "Code validation failed",
-                "safety_issues": safety_issues
+                "safety_issues": safety_issues,
             }
 
         if mode == "subprocess":
@@ -145,23 +158,27 @@ class CodeSandbox:
                 issues.append(f"Potentially dangerous: {description}")
 
         # Check for unauthorized imports
-        import_lines = [line for line in code.split('\n') if line.strip().startswith('import') or 'from ' in line]
+        import_lines = [
+            line
+            for line in code.split("\n")
+            if line.strip().startswith("import") or "from " in line
+        ]
         for line in import_lines:
             # Extract module name
-            if 'import' in line:
-                parts = line.split('import')
+            if "import" in line:
+                parts = line.split("import")
                 if len(parts) > 1:
-                    module = parts[1].split()[0].split('.')[0].strip()
-                    if module not in self.allowed_imports and not module.startswith('hydroagent'):
+                    module = parts[1].split()[0].split(".")[0].strip()
+                    if module not in self.allowed_imports and not module.startswith(
+                        "hydroagent"
+                    ):
                         issues.append(f"Unauthorized import: {module}")
 
         is_safe = len(issues) == 0
         return is_safe, issues
 
     def _execute_subprocess(
-        self,
-        code: str,
-        working_dir: Optional[Path]
+        self, code: str, working_dir: Optional[Path]
     ) -> Dict[str, Any]:
         """
         Execute code as subprocess (safer isolation).
@@ -177,7 +194,7 @@ class CodeSandbox:
         logger.info("[CodeSandbox] Executing as subprocess...")
 
         # Create temporary file for code
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             temp_file = Path(f.name)
             f.write(code)
 
@@ -188,19 +205,21 @@ class CodeSandbox:
                 cwd=working_dir or Path.cwd(),
                 capture_output=True,
                 text=True,
-                timeout=self.timeout
+                timeout=self.timeout,
             )
 
             success = result.returncode == 0
 
-            logger.info(f"[CodeSandbox] Subprocess execution {'succeeded' if success else 'failed'}")
+            logger.info(
+                f"[CodeSandbox] Subprocess execution {'succeeded' if success else 'failed'}"
+            )
 
             return {
                 "success": success,
                 "returncode": result.returncode,
                 "stdout": result.stdout,
                 "stderr": result.stderr,
-                "execution_mode": "subprocess"
+                "execution_mode": "subprocess",
             }
 
         except subprocess.TimeoutExpired:
@@ -208,25 +227,19 @@ class CodeSandbox:
             return {
                 "success": False,
                 "error": f"Execution timeout ({self.timeout}s)",
-                "execution_mode": "subprocess"
+                "execution_mode": "subprocess",
             }
 
         except Exception as e:
             logger.error(f"[CodeSandbox] Execution failed: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e),
-                "execution_mode": "subprocess"
-            }
+            return {"success": False, "error": str(e), "execution_mode": "subprocess"}
 
         finally:
             # Clean up temporary file
             temp_file.unlink(missing_ok=True)
 
     def _execute_inprocess(
-        self,
-        code: str,
-        working_dir: Optional[Path]
+        self, code: str, working_dir: Optional[Path]
     ) -> Dict[str, Any]:
         """
         Execute code in-process with output capture (less isolation).
@@ -249,16 +262,19 @@ class CodeSandbox:
         original_cwd = Path.cwd()
         if working_dir:
             import os
+
             os.chdir(working_dir)
 
         try:
-            with contextlib.redirect_stdout(stdout_capture), \
-                 contextlib.redirect_stderr(stderr_capture):
+            with (
+                contextlib.redirect_stdout(stdout_capture),
+                contextlib.redirect_stderr(stderr_capture),
+            ):
 
                 # Create isolated namespace
                 namespace = {
-                    '__name__': '__main__',
-                    '__file__': '<sandbox>',
+                    "__name__": "__main__",
+                    "__file__": "<sandbox>",
                 }
 
                 # Execute code
@@ -271,32 +287,32 @@ class CodeSandbox:
                 "stdout": stdout_capture.getvalue(),
                 "stderr": stderr_capture.getvalue(),
                 "execution_mode": "inprocess",
-                "namespace": namespace  # Return final namespace state
+                "namespace": namespace,  # Return final namespace state
             }
 
         except Exception as e:
             logger.error(f"[CodeSandbox] Execution failed: {str(e)}")
 
             import traceback
+
             return {
                 "success": False,
                 "error": str(e),
                 "stdout": stdout_capture.getvalue(),
                 "stderr": stderr_capture.getvalue(),
                 "traceback": traceback.format_exc(),
-                "execution_mode": "inprocess"
+                "execution_mode": "inprocess",
             }
 
         finally:
             # Restore working directory
             if working_dir:
                 import os
+
                 os.chdir(original_cwd)
 
     def execute_file(
-        self,
-        script_path: Path,
-        mode: str = "subprocess"
+        self, script_path: Path, mode: str = "subprocess"
     ) -> Dict[str, Any]:
         """
         Execute Python script file.
@@ -312,13 +328,10 @@ class CodeSandbox:
         logger.info(f"[CodeSandbox] Executing file: {script_path}")
 
         if not script_path.exists():
-            return {
-                "success": False,
-                "error": f"Script file not found: {script_path}"
-            }
+            return {"success": False, "error": f"Script file not found: {script_path}"}
 
         try:
-            with open(script_path, 'r', encoding='utf-8') as f:
+            with open(script_path, "r", encoding="utf-8") as f:
                 code = f.read()
 
             working_dir = script_path.parent
@@ -326,10 +339,7 @@ class CodeSandbox:
 
         except Exception as e:
             logger.error(f"[CodeSandbox] Failed to execute file: {str(e)}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
     def test_environment(self) -> Dict[str, Any]:
         """

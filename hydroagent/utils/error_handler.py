@@ -47,59 +47,57 @@ class ErrorHandler:
             "KeyError": {
                 "prec": {
                     "message": "Variable name error",
-                    "suggestion": "In hydromodel, precipitation variable is typically 'prcp' or 'precipitation', not 'prec'"
+                    "suggestion": "In hydromodel, precipitation variable is typically 'prcp' or 'precipitation', not 'prec'",
                 },
                 "temp": {
                     "message": "Variable name error",
-                    "suggestion": "Temperature variable should be 'tmean', 'tmin', or 'tmax', not 'temp'"
-                }
+                    "suggestion": "Temperature variable should be 'tmean', 'tmin', or 'tmax', not 'temp'",
+                },
             },
             "FileNotFoundError": {
                 "datasets-origin": {
                     "message": "Data path configuration error",
-                    "suggestion": "Check 'datasets-origin' path in config. Ensure it points to valid data directory"
+                    "suggestion": "Check 'datasets-origin' path in config. Ensure it points to valid data directory",
                 },
                 "basin": {
                     "message": "Basin data not found",
-                    "suggestion": "Basin ID may be incorrect or data not downloaded. Verify basin_id exists in dataset"
-                }
+                    "suggestion": "Basin ID may be incorrect or data not downloaded. Verify basin_id exists in dataset",
+                },
             },
             "ValueError": {
                 "date": {
                     "message": "Invalid date format",
-                    "suggestion": "Time periods must use format: YYYY-MM-DD (e.g., '2000-01-01')"
+                    "suggestion": "Time periods must use format: YYYY-MM-DD (e.g., '2000-01-01')",
                 },
                 "parameter": {
                     "message": "Invalid parameter value",
-                    "suggestion": "Check parameter ranges in param_range.yaml. Values must be within specified bounds"
-                }
+                    "suggestion": "Check parameter ranges in param_range.yaml. Values must be within specified bounds",
+                },
             },
             "ImportError": {
                 "hydromodel": {
                     "message": "hydromodel module not found",
-                    "suggestion": "Install hydromodel: pip install git+https://github.com/OuyangWenyu/hydromodel.git"
+                    "suggestion": "Install hydromodel: pip install git+https://github.com/OuyangWenyu/hydromodel.git",
                 },
                 "module": {
                     "message": "Missing required dependency",
-                    "suggestion": "Install missing package using pip or conda"
-                }
+                    "suggestion": "Install missing package using pip or conda",
+                },
             },
             "TypeError": {
                 "NoneType": {
                     "message": "Unexpected None value",
-                    "suggestion": "A required value is None. Check if data was loaded correctly"
+                    "suggestion": "A required value is None. Check if data was loaded correctly",
                 },
                 "array": {
                     "message": "Type mismatch in array operation",
-                    "suggestion": "Data type conversion issue. Ensure numeric data is properly formatted"
-                }
-            }
+                    "suggestion": "Data type conversion issue. Ensure numeric data is properly formatted",
+                },
+            },
         }
 
     def handle_exception(
-        self,
-        exception: Exception,
-        context: Optional[Dict[str, Any]] = None
+        self, exception: Exception, context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Handle an exception and generate feedback.
@@ -118,7 +116,7 @@ class ErrorHandler:
             "traceback": self._format_traceback(),
             "analysis": {},
             "suggestions": [],
-            "severity": "error"
+            "severity": "error",
         }
 
         # Analyze error
@@ -132,7 +130,9 @@ class ErrorHandler:
         # Determine severity
         error_info["severity"] = self._determine_severity(exception)
 
-        logger.error(f"[ErrorHandler] {error_info['error_type']}: {error_info['error_message']}")
+        logger.error(
+            f"[ErrorHandler] {error_info['error_type']}: {error_info['error_message']}"
+        )
 
         return error_info
 
@@ -147,9 +147,7 @@ class ErrorHandler:
         return traceback.format_exc()
 
     def _analyze_error(
-        self,
-        exception: Exception,
-        context: Optional[Dict[str, Any]]
+        self, exception: Exception, context: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Analyze exception to extract key information.
@@ -165,7 +163,7 @@ class ErrorHandler:
         analysis = {
             "error_category": "unknown",
             "likely_cause": "Unknown error",
-            "affected_component": "unknown"
+            "affected_component": "unknown",
         }
 
         error_type = type(exception).__name__
@@ -203,7 +201,7 @@ class ErrorHandler:
         self,
         exception: Exception,
         analysis: Dict[str, Any],
-        context: Optional[Dict[str, Any]]
+        context: Optional[Dict[str, Any]],
     ) -> List[str]:
         """
         Generate actionable suggestions for fixing the error.
@@ -232,29 +230,39 @@ class ErrorHandler:
 
         # Category-specific suggestions
         if analysis["error_category"] == "configuration":
-            suggestions.append("Review configuration file for typos or incorrect field names")
+            suggestions.append(
+                "Review configuration file for typos or incorrect field names"
+            )
             suggestions.append("Compare with hydromodel's example_config.yaml")
 
         elif analysis["error_category"] == "data":
             suggestions.append("Verify data paths in config are correct and accessible")
-            suggestions.append("Check if required data files exist in specified directory")
+            suggestions.append(
+                "Check if required data files exist in specified directory"
+            )
 
         elif analysis["error_category"] == "data_validation":
             suggestions.append("Validate input data ranges and formats")
             suggestions.append("Check for NaN or infinite values in data")
 
         elif analysis["error_category"] == "dependency":
-            suggestions.append("Install missing dependencies: pip install -r requirements.txt")
+            suggestions.append(
+                "Install missing dependencies: pip install -r requirements.txt"
+            )
             suggestions.append("Verify virtual environment is activated")
 
         elif analysis["error_category"] == "numerical":
-            suggestions.append("Check parameter ranges - values may be causing numerical instability")
+            suggestions.append(
+                "Check parameter ranges - values may be causing numerical instability"
+            )
             suggestions.append("Increase warmup period to stabilize model")
 
         # Context-specific suggestions
         if context:
             if "config" in context:
-                suggestions.append("Review generated configuration for potential issues")
+                suggestions.append(
+                    "Review generated configuration for potential issues"
+                )
 
         # Default suggestion if none matched
         if not suggestions:
@@ -305,14 +313,12 @@ class ErrorHandler:
         lines = []
 
         # Header
-        severity_emoji = {
-            "critical": "🔴",
-            "error": "⚠️",
-            "warning": "⚡"
-        }
+        severity_emoji = {"critical": "🔴", "error": "⚠️", "warning": "⚡"}
         emoji = severity_emoji.get(error_info["severity"], "❌")
 
-        lines.append(f"{emoji} {error_info['error_type']}: {error_info['error_message']}\n")
+        lines.append(
+            f"{emoji} {error_info['error_type']}: {error_info['error_message']}\n"
+        )
 
         # Analysis
         analysis = error_info.get("analysis", {})
@@ -346,9 +352,7 @@ class ErrorHandler:
         return "\n".join(lines)
 
     def create_retry_config(
-        self,
-        original_config: Dict[str, Any],
-        error_info: Dict[str, Any]
+        self, original_config: Dict[str, Any], error_info: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Create modified config for retry based on error analysis.
@@ -387,9 +391,7 @@ class GracefulErrorHandler:
 
     @staticmethod
     def format_error_for_terminal(
-        error: Exception,
-        context: str = "执行过程",
-        max_length: int = 150
+        error: Exception, context: str = "执行过程", max_length: int = 150
     ) -> str:
         """
         格式化错误信息供终端显示（简洁版）。
@@ -416,7 +418,7 @@ class GracefulErrorHandler:
         error: Exception,
         context: str = "执行过程",
         phase: Optional[str] = None,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
     ) -> None:
         """
         记录详细的错误信息到日志（包含完整堆栈）。
@@ -447,8 +449,8 @@ class GracefulErrorHandler:
         error: Exception,
         context: str = "pipeline",
         session_id: Optional[str] = None,
-        workspace = None,
-        additional_info: Optional[Dict[str, Any]] = None
+        workspace=None,
+        additional_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         创建标准化的错误响应字典。
@@ -467,7 +469,7 @@ class GracefulErrorHandler:
             "success": False,
             "error": str(error),
             "error_type": type(error).__name__,
-            "context": context
+            "context": context,
         }
 
         if session_id:
@@ -485,10 +487,10 @@ class GracefulErrorHandler:
     def print_terminal_error(
         error: Exception,
         context: str = "执行过程",
-        log_file = None,
-        workspace = None,
+        log_file=None,
+        workspace=None,
         elapsed_time: Optional[float] = None,
-        checkpoint_file = None
+        checkpoint_file=None,
     ) -> None:
         """
         打印格式化的错误信息到终端（用户友好）。
@@ -535,8 +537,8 @@ def handle_pipeline_error(
     error: Exception,
     phase: str,
     session_id: Optional[str] = None,
-    workspace = None,
-    checkpoint_manager = None
+    workspace=None,
+    checkpoint_manager=None,
 ) -> Dict[str, Any]:
     """
     处理 pipeline 执行错误的便捷函数。
@@ -560,9 +562,7 @@ def handle_pipeline_error(
 
     # 记录详细日志
     handler.log_detailed_error(
-        error=error,
-        context="Orchestrator Pipeline",
-        phase=phase
+        error=error, context="Orchestrator Pipeline", phase=phase
     )
 
     # 标记 checkpoint 失败
@@ -577,14 +577,9 @@ def handle_pipeline_error(
         error=error,
         context=f"pipeline_phase_{phase}",
         session_id=session_id,
-        workspace=workspace
+        workspace=workspace,
     )
 
-
-# ============================================================================
-#   Utility Functions for Code Execution Error Analysis
-#   从RunnerAgent提取的工具函数，用于分析生成代码的执行错误
-# ============================================================================
 
 def format_traceback() -> str:
     """
@@ -598,9 +593,7 @@ def format_traceback() -> str:
 
 
 def analyze_execution_error(
-    error_message: str,
-    code_content: str,
-    execution_context: Dict[str, Any]
+    error_message: str, code_content: str, execution_context: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     分析代码执行错误并提供修复建议（v4.0）。
@@ -628,7 +621,7 @@ def analyze_execution_error(
         "root_cause": "",
         "fix_suggestions": [],
         "needs_config_update": False,
-        "needs_code_regeneration": False
+        "needs_code_regeneration": False,
     }
 
     error_lower = error_message.lower()

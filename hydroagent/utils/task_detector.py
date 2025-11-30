@@ -35,9 +35,7 @@ class TaskTypeDetector:
 
     @staticmethod
     def detect_task_type(
-        subtask_results: List[Dict],
-        task_plan: Dict,
-        intent: Dict
+        subtask_results: List[Dict], task_plan: Dict, intent: Dict
     ) -> str:
         """
         检测任务类型（增强版，支持多种数据结构）。
@@ -71,17 +69,25 @@ class TaskTypeDetector:
 
         # 重复实验（实验5）
         if any("重复" in d or "repeat" in d.lower() for d in descriptions):
-            logger.info(f"[TaskDetector] Detected repeated_calibration (keyword match in {n_tasks} tasks)")
+            logger.info(
+                f"[TaskDetector] Detected repeated_calibration (keyword match in {n_tasks} tasks)"
+            )
             return "repeated_calibration"
 
         # 迭代优化（实验3）
         if any("迭代" in d or "iteration" in d.lower() for d in descriptions):
-            logger.info(f"[TaskDetector] Detected iterative_optimization (keyword match in {n_tasks} tasks)")
+            logger.info(
+                f"[TaskDetector] Detected iterative_optimization (keyword match in {n_tasks} tasks)"
+            )
             return "iterative_optimization"
 
         # ===== 检测3: Intent中的流域/算法/模型数量（多路径提取）=====
-        basin_ids = TaskTypeDetector._extract_basin_ids(intent, task_plan, subtask_results)
-        algorithms = TaskTypeDetector._extract_algorithms(intent, task_plan, subtask_results)
+        basin_ids = TaskTypeDetector._extract_basin_ids(
+            intent, task_plan, subtask_results
+        )
+        algorithms = TaskTypeDetector._extract_algorithms(
+            intent, task_plan, subtask_results
+        )
         models = TaskTypeDetector._extract_models(intent, task_plan, subtask_results)
 
         logger.debug(
@@ -91,7 +97,9 @@ class TaskTypeDetector:
 
         # 多流域检测
         if len(basin_ids) > 1:
-            logger.info(f"[TaskDetector] Detected multi_basin ({len(basin_ids)} basins)")
+            logger.info(
+                f"[TaskDetector] Detected multi_basin ({len(basin_ids)} basins)"
+            )
             return "multi_basin"
 
         # 多算法或多模型检测
@@ -103,11 +111,15 @@ class TaskTypeDetector:
             return "multi_algorithm"
 
         # ===== 检测4: 兜底 =====
-        logger.info(f"[TaskDetector] Detected multi_task_generic ({n_tasks} tasks, no specific pattern)")
+        logger.info(
+            f"[TaskDetector] Detected multi_task_generic ({n_tasks} tasks, no specific pattern)"
+        )
         return "multi_task_generic"
 
     @staticmethod
-    def _extract_basin_ids(intent: Dict, task_plan: Dict, subtask_results: List[Dict]) -> List[str]:
+    def _extract_basin_ids(
+        intent: Dict, task_plan: Dict, subtask_results: List[Dict]
+    ) -> List[str]:
         """
         从多个数据源提取basin_ids（向后兼容）。
 
@@ -147,7 +159,9 @@ class TaskTypeDetector:
         return list(basin_ids)
 
     @staticmethod
-    def _extract_algorithms(intent: Dict, task_plan: Dict, subtask_results: List[Dict]) -> List[str]:
+    def _extract_algorithms(
+        intent: Dict, task_plan: Dict, subtask_results: List[Dict]
+    ) -> List[str]:
         """
         从多个数据源提取algorithms（向后兼容）。
 
@@ -187,7 +201,9 @@ class TaskTypeDetector:
         return list(algorithms)
 
     @staticmethod
-    def _extract_models(intent: Dict, task_plan: Dict, subtask_results: List[Dict]) -> List[str]:
+    def _extract_models(
+        intent: Dict, task_plan: Dict, subtask_results: List[Dict]
+    ) -> List[str]:
         """
         从多个数据源提取models（向后兼容）。
 
@@ -206,7 +222,9 @@ class TaskTypeDetector:
         if isinstance(intent_result, dict):
             model_names = intent_result.get("model_names", [])
             if model_names:
-                models.update(model_names if isinstance(model_names, list) else [model_names])
+                models.update(
+                    model_names if isinstance(model_names, list) else [model_names]
+                )
 
         # 数据源2: Task Plan
         for subtask in task_plan.get("subtasks", []):
@@ -230,6 +248,7 @@ class TaskTypeDetector:
 #   Utility Functions (for future extensions)
 # ============================================================================
 
+
 def get_task_type_description(task_type: str) -> str:
     """
     获取任务类型的中文描述。
@@ -246,7 +265,7 @@ def get_task_type_description(task_type: str) -> str:
         "multi_algorithm": "多算法×模型组合",
         "repeated_calibration": "重复率定（稳定性验证）",
         "iterative_optimization": "迭代优化",
-        "multi_task_generic": "通用多任务"
+        "multi_task_generic": "通用多任务",
     }
 
     return descriptions.get(task_type, "未知类型")

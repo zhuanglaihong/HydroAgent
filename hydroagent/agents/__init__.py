@@ -15,9 +15,9 @@ from .runner_agent import RunnerAgent
 from .developer_agent import DeveloperAgent
 
 __all__ = [
-    'Orchestrator',
-    'IntentAgent',
-    'ConfigAgent',
-    'RunnerAgent',
-    'DeveloperAgent',
+    "Orchestrator",
+    "IntentAgent",
+    "ConfigAgent",
+    "RunnerAgent",
+    "DeveloperAgent",
 ]

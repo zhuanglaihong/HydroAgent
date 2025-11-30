@@ -47,7 +47,7 @@ class InterpreterAgent(BaseAgent):
         llm_interface: LLMInterface,
         workspace_dir: Optional[Path] = None,
         max_correction_attempts: int = 3,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize InterpreterAgent.
@@ -62,7 +62,7 @@ class InterpreterAgent(BaseAgent):
             name="InterpreterAgent",
             llm_interface=llm_interface,
             workspace_dir=workspace_dir,
-            **kwargs
+            **kwargs,
         )
 
         self.max_correction_attempts = max_correction_attempts
@@ -76,15 +76,33 @@ class InterpreterAgent(BaseAgent):
         Dynamically injects algorithm parameters from config.py.
         """
         # Load algorithm defaults from config.py
-        sce_ua_params = getattr(config, "DEFAULT_SCE_UA_PARAMS", {
-            "rep": 5000, "ngs": 7, "kstop": 3, "pcento": 0.0001, "peps": 0.001, "random_seed": 1234
-        })
-        ga_params = getattr(config, "DEFAULT_GA_PARAMS", {
-            "generations": 100, "population_size": 50, "crossover_prob": 0.9, "mutation_prob": 0.1
-        })
-        de_params = getattr(config, "DEFAULT_DE_PARAMS", {
-            "max_generations": 100, "pop_size": 50, "F": 0.5, "CR": 0.9
-        })
+        sce_ua_params = getattr(
+            config,
+            "DEFAULT_SCE_UA_PARAMS",
+            {
+                "rep": 5000,
+                "ngs": 7,
+                "kstop": 3,
+                "pcento": 0.0001,
+                "peps": 0.001,
+                "random_seed": 1234,
+            },
+        )
+        ga_params = getattr(
+            config,
+            "DEFAULT_GA_PARAMS",
+            {
+                "generations": 100,
+                "population_size": 50,
+                "crossover_prob": 0.9,
+                "mutation_prob": 0.1,
+            },
+        )
+        de_params = getattr(
+            config,
+            "DEFAULT_DE_PARAMS",
+            {"max_generations": 100, "pop_size": 50, "F": 0.5, "CR": 0.9},
+        )
 
         # Format algorithm parameters section dynamically
         sce_ua_section = "\n".join([f"- {k}: {v}" for k, v in sce_ua_params.items()])
@@ -194,13 +212,17 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
 
     def _load_system_prompt(self) -> str:
         """Load system prompt from file or use default."""
-        prompt_file = Path(__file__).parent.parent / "resources" / "interpreter_agent_prompt.txt"
+        prompt_file = (
+            Path(__file__).parent.parent / "resources" / "interpreter_agent_prompt.txt"
+        )
 
         if prompt_file.exists():
             try:
-                with open(prompt_file, 'r', encoding='utf-8') as f:
+                with open(prompt_file, "r", encoding="utf-8") as f:
                     prompt = f.read()
-                logger.info(f"[InterpreterAgent] Loaded system prompt from {prompt_file}")
+                logger.info(
+                    f"[InterpreterAgent] Loaded system prompt from {prompt_file}"
+                )
                 return prompt
             except Exception as e:
                 logger.warning(f"[InterpreterAgent] Failed to load prompt file: {e}")
@@ -256,19 +278,23 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
                 )
 
                 # Use LLM to fix errors
-                config = self._self_correct(config, validation_errors, prompt, parameters)
+                config = self._self_correct(
+                    config, validation_errors, prompt, parameters
+                )
 
                 # Re-validate
                 is_valid, validation_errors = self._validate_config(config)
                 correction_attempt += 1
 
             if not is_valid:
-                logger.error(f"[InterpreterAgent] Validation failed after {correction_attempt} attempts")
+                logger.error(
+                    f"[InterpreterAgent] Validation failed after {correction_attempt} attempts"
+                )
                 return {
                     "success": False,
                     "error": "Config validation failed",
                     "validation_errors": validation_errors,
-                    "task_id": task_id
+                    "task_id": task_id,
                 }
 
             # Step 4: Apply workspace directory (only for hydromodel tasks)
@@ -278,7 +304,7 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
                     config=config,
                     session_dir=self.workspace_dir,
                     task_id=task_id,
-                    use_flat_structure=True  # 使用扁平结构，避免嵌套
+                    use_flat_structure=True,  # 使用扁平结构，避免嵌套
                 )
                 logger.info(f"[InterpreterAgent] Path configured by PathManager")
 
@@ -292,26 +318,20 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
                 config["parameters"]["task_type"] = task_type
                 logger.info(f"[InterpreterAgent] Set task_type in config: {task_type}")
 
-            logger.info(f"[InterpreterAgent] Config generated successfully for {task_id}")
+            logger.info(
+                f"[InterpreterAgent] Config generated successfully for {task_id}"
+            )
 
-            return {
-                "success": True,
-                "config": config,
-                "task_id": task_id
-            }
+            return {"success": True, "config": config, "task_id": task_id}
 
         except Exception as e:
-            logger.error(f"[InterpreterAgent] Config generation failed: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "task_id": task_id
-            }
+            logger.error(
+                f"[InterpreterAgent] Config generation failed: {str(e)}", exc_info=True
+            )
+            return {"success": False, "error": str(e), "task_id": task_id}
 
     def _generate_config_with_llm(
-        self,
-        prompt: str,
-        parameters: Dict[str, Any]
+        self, prompt: str, parameters: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Use LLM to generate config from prompt.
@@ -333,16 +353,18 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
             config = self.llm.generate_json(
                 system_prompt=self.system_prompt,
                 user_prompt=user_message,
-                temperature=0.1  # Low temperature for consistent output
+                temperature=0.1,  # Low temperature for consistent output
             )
             return config
         except Exception as e:
-            logger.warning(f"[InterpreterAgent] generate_json failed, falling back to generate: {e}")
+            logger.warning(
+                f"[InterpreterAgent] generate_json failed, falling back to generate: {e}"
+            )
             # Fallback to generate and parse manually
             response = self.llm.generate(
                 system_prompt=self.system_prompt,
                 user_prompt=user_message,
-                temperature=0.1
+                temperature=0.1,
             )
             # Parse JSON from response
             config = self._parse_llm_response(response)
@@ -368,30 +390,40 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
             raise ValueError("LLM returned empty response")
 
         # Try to extract JSON from markdown code blocks
-        json_match = re.search(r'```json\s*\n(.*?)\n```', response, re.DOTALL)
+        json_match = re.search(r"```json\s*\n(.*?)\n```", response, re.DOTALL)
         if json_match:
             json_str = json_match.group(1)
             logger.info("[InterpreterAgent] Extracted JSON from markdown code block")
         else:
             # Try to find JSON directly
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
                 logger.info("[InterpreterAgent] Extracted JSON from response body")
             else:
                 json_str = response
-                logger.warning("[InterpreterAgent] No JSON pattern found, using entire response")
+                logger.warning(
+                    "[InterpreterAgent] No JSON pattern found, using entire response"
+                )
 
         # Parse JSON
         try:
             config = json.loads(json_str)
-            logger.info(f"[InterpreterAgent] Successfully parsed JSON config with {len(config)} sections")
+            logger.info(
+                f"[InterpreterAgent] Successfully parsed JSON config with {len(config)} sections"
+            )
             return config
         except json.JSONDecodeError as e:
             logger.error(f"[InterpreterAgent] JSON parsing failed: {e}")
-            logger.error(f"[InterpreterAgent] Response length: {len(response)} characters")
-            logger.error(f"[InterpreterAgent] Response preview (first 500 chars): {response[:500]}")
-            logger.error(f"[InterpreterAgent] Extracted JSON string (first 500 chars): {json_str[:500]}")
+            logger.error(
+                f"[InterpreterAgent] Response length: {len(response)} characters"
+            )
+            logger.error(
+                f"[InterpreterAgent] Response preview (first 500 chars): {response[:500]}"
+            )
+            logger.error(
+                f"[InterpreterAgent] Extracted JSON string (first 500 chars): {json_str[:500]}"
+            )
             raise ValueError(f"Failed to parse JSON from LLM response: {e}")
 
     def _validate_config(self, config: Dict[str, Any]) -> tuple[bool, List[str]]:
@@ -486,7 +518,7 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
         config: Dict[str, Any],
         errors: List[str],
         original_prompt: str,
-        parameters: Dict[str, Any]
+        parameters: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
         Use LLM to fix validation errors.
@@ -525,21 +557,25 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
             corrected_config = self.llm.generate_json(
                 system_prompt=self.system_prompt,
                 user_prompt=correction_prompt,
-                temperature=0.1
+                temperature=0.1,
             )
             logger.info("[InterpreterAgent] Config corrected via LLM (generate_json)")
             return corrected_config
         except Exception as e:
-            logger.warning(f"[InterpreterAgent] generate_json failed in correction: {e}")
+            logger.warning(
+                f"[InterpreterAgent] generate_json failed in correction: {e}"
+            )
             try:
                 # Fallback to generate and parse manually
                 response = self.llm.generate(
                     system_prompt=self.system_prompt,
                     user_prompt=correction_prompt,
-                    temperature=0.1
+                    temperature=0.1,
                 )
                 corrected_config = self._parse_llm_response(response)
-                logger.info("[InterpreterAgent] Config corrected via LLM (generate + parse)")
+                logger.info(
+                    "[InterpreterAgent] Config corrected via LLM (generate + parse)"
+                )
                 return corrected_config
             except Exception as e2:
                 logger.error(f"[InterpreterAgent] Self-correction failed: {e2}")

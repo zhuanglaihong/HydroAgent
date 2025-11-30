@@ -56,7 +56,7 @@ class SchemaValidator:
             return self._get_default_schema()
 
         try:
-            with open(self.schema_path, 'r', encoding='utf-8') as f:
+            with open(self.schema_path, "r", encoding="utf-8") as f:
                 schema = json.load(f)
             logger.info(f"Loaded schema from {self.schema_path}")
             return schema
@@ -73,34 +73,24 @@ class SchemaValidator:
             Default schema dictionary
         """
         return {
-            "required_fields": [
-                "model_name",
-                "basin_id",
-                "train_period"
-            ],
+            "required_fields": ["model_name", "basin_id", "train_period"],
             "optional_fields": [
                 "exp_name",
                 "test_period",
                 "data",
                 "training_cfgs",
-                "warmup"
+                "warmup",
             ],
             "model_name": {
                 "type": "string",
-                "enum": ["xaj", "xaj_mz", "gr4j", "gr5j", "gr6j", "gr1y", "gr2m"]
+                "enum": ["xaj", "xaj_mz", "gr4j", "gr5j", "gr6j", "gr1y", "gr2m"],
             },
-            "algorithm_name": {
-                "type": "string",
-                "enum": ["SCE_UA", "GA", "scipy"]
-            },
+            "algorithm_name": {"type": "string", "enum": ["SCE_UA", "GA", "scipy"]},
             "time_period": {
                 "type": "array",
-                "items": {
-                    "type": "string",
-                    "format": "date"  # YYYY-MM-DD
-                },
+                "items": {"type": "string", "format": "date"},  # YYYY-MM-DD
                 "minItems": 2,
-                "maxItems": 2
+                "maxItems": 2,
             },
             "training_cfgs": {
                 "type": "object",
@@ -110,9 +100,9 @@ class SchemaValidator:
                     "npg": {"type": "integer", "minimum": 1},
                     "npt": {"type": "integer", "minimum": 1},
                     "rep": {"type": "integer", "minimum": 1},
-                    "maxn": {"type": "integer", "minimum": 100}
-                }
-            }
+                    "maxn": {"type": "integer", "minimum": 100},
+                },
+            },
         }
 
     def validate(self, config: Dict[str, Any]) -> Tuple[bool, List[str]]:
@@ -151,7 +141,9 @@ class SchemaValidator:
         if is_valid:
             logger.info("[SchemaValidator] Configuration is valid")
         else:
-            logger.warning(f"[SchemaValidator] Validation failed with {len(errors)} errors")
+            logger.warning(
+                f"[SchemaValidator] Validation failed with {len(errors)} errors"
+            )
 
         return is_valid, errors
 
@@ -242,7 +234,11 @@ class SchemaValidator:
                     )
 
             # Check logical order (start < end)
-            if len(period) == 2 and self._is_valid_date(period[0]) and self._is_valid_date(period[1]):
+            if (
+                len(period) == 2
+                and self._is_valid_date(period[0])
+                and self._is_valid_date(period[1])
+            ):
                 try:
                     start = datetime.strptime(period[0], "%Y-%m-%d")
                     end = datetime.strptime(period[1], "%Y-%m-%d")
@@ -298,7 +294,9 @@ class SchemaValidator:
         """Check for unknown fields that might be hallucinations."""
         warnings = []
 
-        known_fields = set(self.schema["required_fields"] + self.schema["optional_fields"])
+        known_fields = set(
+            self.schema["required_fields"] + self.schema["optional_fields"]
+        )
         config_fields = set(config.keys())
 
         unknown_fields = config_fields - known_fields
@@ -340,7 +338,7 @@ class SchemaValidator:
             Tuple of (is_valid, list_of_errors)
         """
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
             logger.info(f"[SchemaValidator] Validating {config_path}")

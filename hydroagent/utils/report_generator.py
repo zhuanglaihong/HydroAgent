@@ -43,7 +43,7 @@ class ReportGenerator:
         data_summary: str,
         plots: List[str],
         n_repeats: int,
-        output_path: Path
+        output_path: Path,
     ) -> Path:
         """
         生成重复率定实验分析报告
@@ -71,7 +71,9 @@ class ReportGenerator:
         report_lines.append("# 重复率定实验分析报告")
         report_lines.append("# Repeated Calibration Analysis Report")
         report_lines.append("")
-        report_lines.append(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         report_lines.append(f"**重复次数**: {n_repeats}")
         report_lines.append("")
         report_lines.append("---")
@@ -124,8 +126,8 @@ class ReportGenerator:
             report_lines.append("")
 
         # 写入文件
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(report_lines))
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(report_lines))
 
         logger.info(f"[ReportGenerator] 重复率定报告已生成: {report_path}")
         return report_path
@@ -137,7 +139,7 @@ class ReportGenerator:
         plots: List[str],
         converged: bool,
         total_iterations: int,
-        output_path: Path
+        output_path: Path,
     ) -> Path:
         """
         生成迭代优化实验分析报告
@@ -168,9 +170,13 @@ class ReportGenerator:
         report_lines.append("# 迭代优化实验分析报告")
         report_lines.append("# Iterative Optimization Analysis Report")
         report_lines.append("")
-        report_lines.append(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         report_lines.append(f"**迭代次数**: {total_iterations}")
-        report_lines.append(f"**收敛状态**: {'✅ 已收敛' if converged else '❌ 未收敛'}")
+        report_lines.append(
+            f"**收敛状态**: {'✅ 已收敛' if converged else '❌ 未收敛'}"
+        )
         report_lines.append("")
         report_lines.append("---")
         report_lines.append("")
@@ -180,11 +186,17 @@ class ReportGenerator:
         report_lines.append("## 1. 收敛性分析 (Convergence Analysis)")
         report_lines.append("")
         if convergence:
-            report_lines.append(f"- **初始NSE**: {convergence.get('initial_nse', 0):.3f}")
+            report_lines.append(
+                f"- **初始NSE**: {convergence.get('initial_nse', 0):.3f}"
+            )
             report_lines.append(f"- **最终NSE**: {convergence.get('final_nse', 0):.3f}")
             report_lines.append(f"- **最佳NSE**: {convergence.get('best_nse', 0):.3f}")
-            report_lines.append(f"- **改进幅度**: {convergence.get('improvement', 0):.3f}")
-            report_lines.append(f"- **改进率**: {convergence.get('improvement_rate', 0):.1f}%")
+            report_lines.append(
+                f"- **改进幅度**: {convergence.get('improvement', 0):.3f}"
+            )
+            report_lines.append(
+                f"- **改进率**: {convergence.get('improvement_rate', 0):.1f}%"
+            )
             report_lines.append(f"- **趋势**: {convergence.get('trend', 'unknown')}")
         report_lines.append("")
 
@@ -201,7 +213,11 @@ class ReportGenerator:
             report_lines.append("## 3. 最终性能指标 (Final Metrics)")
             report_lines.append("")
             for metric_name, value in final_metrics.items():
-                report_lines.append(f"- **{metric_name}**: {value:.4f}" if isinstance(value, float) else f"- **{metric_name}**: {value}")
+                report_lines.append(
+                    f"- **{metric_name}**: {value:.4f}"
+                    if isinstance(value, float)
+                    else f"- **{metric_name}**: {value}"
+                )
             report_lines.append("")
 
         # 4. 最优参数
@@ -210,7 +226,11 @@ class ReportGenerator:
             report_lines.append("## 4. 最优参数 (Optimal Parameters)")
             report_lines.append("")
             for param_name, value in final_params.items():
-                report_lines.append(f"- **{param_name}**: {value:.6f}" if isinstance(value, float) else f"- **{param_name}**: {value}")
+                report_lines.append(
+                    f"- **{param_name}**: {value:.6f}"
+                    if isinstance(value, float)
+                    else f"- **{param_name}**: {value}"
+                )
             report_lines.append("")
 
         # 5. 改进建议
@@ -245,8 +265,8 @@ class ReportGenerator:
             report_lines.append("")
 
         # 写入文件
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(report_lines))
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(report_lines))
 
         logger.info(f"[ReportGenerator] 迭代优化报告已生成: {report_path}")
         return report_path
@@ -256,7 +276,7 @@ class ReportGenerator:
         analysis: Dict[str, Any],
         basin_results: Dict[str, Dict],
         plots: List[str],
-        output_path: Path
+        output_path: Path,
     ) -> Path:
         """
         生成多流域实验分析报告
@@ -277,7 +297,9 @@ class ReportGenerator:
         report_lines.append("# 多流域实验分析报告")
         report_lines.append("# Multi-Basin Analysis Report")
         report_lines.append("")
-        report_lines.append(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         report_lines.append(f"**流域数量**: {len(basin_results)}")
         report_lines.append("")
         report_lines.append("---")
@@ -294,7 +316,9 @@ class ReportGenerator:
             nse = metrics.get("NSE", "N/A")
             rmse = metrics.get("RMSE", "N/A")
             status = "✅" if (isinstance(nse, (int, float)) and nse > 0.65) else "⚠️"
-            report_lines.append(f"| {basin_id} | {nse:.3f if isinstance(nse, (int, float)) else nse} | {rmse:.3f if isinstance(rmse, (int, float)) else rmse} | {status} |")
+            report_lines.append(
+                f"| {basin_id} | {nse:.3f if isinstance(nse, (int, float)) else nse} | {rmse:.3f if isinstance(rmse, (int, float)) else rmse} | {status} |"
+            )
 
         report_lines.append("")
 
@@ -317,17 +341,15 @@ class ReportGenerator:
             report_lines.append("")
 
         # 写入文件
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(report_lines))
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(report_lines))
 
         logger.info(f"[ReportGenerator] 多流域报告已生成: {report_path}")
         return report_path
 
     @staticmethod
     def generate_summary_report(
-        title: str,
-        sections: Dict[str, Any],
-        output_path: Path
+        title: str, sections: Dict[str, Any], output_path: Path
     ) -> Path:
         """
         生成通用摘要报告（灵活模板）
@@ -352,7 +374,9 @@ class ReportGenerator:
         report_lines = []
         report_lines.append(f"# {title}")
         report_lines.append("")
-        report_lines.append(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(
+            f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         report_lines.append("")
         report_lines.append("---")
         report_lines.append("")
@@ -376,7 +400,9 @@ class ReportGenerator:
                 report_lines.append(f"| {' | '.join(headers)} |")
                 report_lines.append(f"|{'|'.join(['---' for _ in headers])}|")
                 for row in rows:
-                    report_lines.append(f"| {' | '.join([str(cell) for cell in row])} |")
+                    report_lines.append(
+                        f"| {' | '.join([str(cell) for cell in row])} |"
+                    )
             elif section_type == "code":
                 report_lines.append("```")
                 report_lines.append(content)
@@ -385,8 +411,8 @@ class ReportGenerator:
             report_lines.append("")
 
         # 写入文件
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(report_lines))
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(report_lines))
 
         logger.info(f"[ReportGenerator] 通用报告已生成: {report_path}")
         return report_path

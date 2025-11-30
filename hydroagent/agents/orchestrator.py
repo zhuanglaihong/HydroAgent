@@ -43,7 +43,7 @@ class Orchestrator(BaseAgent):
         enable_code_gen: bool = True,
         enable_checkpoint: bool = True,
         code_llm_interface: Optional[LLMInterface] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the Orchestrator.
@@ -63,7 +63,7 @@ class Orchestrator(BaseAgent):
             name="Orchestrator",
             llm_interface=llm_interface,
             workspace_dir=workspace_root,
-            **kwargs
+            **kwargs,
         )
 
         self.workspace_root = workspace_root
@@ -124,6 +124,7 @@ Always think step-by-step and explain your reasoning."""
         # Initialize checkpoint manager if enabled
         if self.enable_checkpoint:
             from ..core.checkpoint_manager import CheckpointManager
+
             self.checkpoint_manager = CheckpointManager(self.current_workspace)
             logger.info("Checkpoint manager initialized")
 
@@ -156,6 +157,7 @@ Always think step-by-step and explain your reasoning."""
 
         # Initialize checkpoint manager and load checkpoint
         from ..core.checkpoint_manager import CheckpointManager
+
         self.checkpoint_manager = CheckpointManager(workspace_path)
 
         if not self.checkpoint_manager.exists():
@@ -208,13 +210,12 @@ Always think step-by-step and explain your reasoning."""
         self.task_planner = TaskPlanner(
             llm_interface=self.llm,
             prompt_pool=prompt_pool,
-            workspace_dir=self.current_workspace
+            workspace_dir=self.current_workspace,
         )
 
         # Agent 3: Configuration Interpretation (配置生成)
         self.interpreter_agent = InterpreterAgent(
-            llm_interface=self.llm,
-            workspace_dir=self.current_workspace
+            llm_interface=self.llm, workspace_dir=self.current_workspace
         )
 
         # Agent 4: Model Runner (执行) - v4.0: 支持代码生成
@@ -222,13 +223,12 @@ Always think step-by-step and explain your reasoning."""
             llm_interface=self.llm,
             workspace_dir=self.current_workspace,
             show_progress=self.show_progress,
-            code_llm_interface=self.code_llm  # 🆕 v4.0: 传入代码专用LLM
+            code_llm_interface=self.code_llm,  # 🆕 v4.0: 传入代码专用LLM
         )
 
         # Agent 5: Result Developer (分析)
         self.developer_agent = DeveloperAgent(
-            llm_interface=self.llm,
-            workspace_dir=self.current_workspace
+            llm_interface=self.llm, workspace_dir=self.current_workspace
         )
 
         # 保留旧的config_agent引用（向后兼容）
@@ -285,7 +285,7 @@ Always think step-by-step and explain your reasoning."""
             return {
                 "success": False,
                 "error": "No query provided",
-                "session_id": self.current_session_id
+                "session_id": self.current_session_id,
             }
 
         logger.info(f"[Orchestrator] Processing query: {query}")
@@ -300,17 +300,16 @@ Always think step-by-step and explain your reasoning."""
             self.checkpoint_manager.initialize(
                 experiment_name=f"session_{self.current_session_id}",
                 query=query,
-                total_tasks=0  # Will be updated after TaskPlanner
+                total_tasks=0,  # Will be updated after TaskPlanner
             )
 
         # Add to conversation history
-        self.conversation_history.append({
-            "role": "user",
-            "content": query,
-            "timestamp": datetime.now().isoformat()
-        })
+        self.conversation_history.append(
+            {"role": "user", "content": query, "timestamp": datetime.now().isoformat()}
+        )
 
         import time
+
         start_time = time.time()
 
         try:
@@ -328,7 +327,7 @@ Always think step-by-step and explain your reasoning."""
                 self.checkpoint_manager.save_intent_result(intent_result)
 
             # ====================================================================
-            # Step 2: Task Planning 
+            # Step 2: Task Planning
             # ====================================================================
             logger.info("[Orchestrator] Step 2/5: Task Planning")
             if self.checkpoint_manager:
@@ -344,7 +343,7 @@ Always think step-by-step and explain your reasoning."""
             logger.info(f"[Orchestrator] {len(subtasks)} subtasks planned")
 
             # ====================================================================
-            # Step 3: Configuration Generation 
+            # Step 3: Configuration Generation
             # ====================================================================
             logger.info("[Orchestrator] Step 3/5: Configuration Generation")
             if self.checkpoint_manager:
@@ -374,16 +373,16 @@ Always think step-by-step and explain your reasoning."""
             combined_result = {
                 "subtask_results": execution_results,
                 "task_plan": task_plan,
-                "intent": intent_data
+                "intent": intent_data,
             }
             analysis_result = self._analyze_results(combined_result)
 
             # Check overall success
             all_tasks_success = all(r.get("success", False) for r in execution_results)
             overall_success = (
-                intent_result.get("success", False) and
-                task_plan_result.get("success", False) and
-                all_tasks_success
+                intent_result.get("success", False)
+                and task_plan_result.get("success", False)
+                and all_tasks_success
             )
 
             elapsed_time = time.time() - start_time
@@ -393,14 +392,17 @@ Always think step-by-step and explain your reasoning."""
                 self.checkpoint_manager.mark_experiment_completed(analysis_result)
 
             # Save history to PromptPool (for future case retrieval)
-            if hasattr(self.task_planner, 'prompt_pool') and self.task_planner.prompt_pool:
+            if (
+                hasattr(self.task_planner, "prompt_pool")
+                and self.task_planner.prompt_pool
+            ):
                 for i, subtask_result in enumerate(execution_results):
                     self.task_planner.prompt_pool.add_history(
                         task_type=subtask_result.get("task_type", "unknown"),
                         intent=intent_data,
                         config=configs[i] if i < len(configs) else {},
                         result=subtask_result,
-                        success=subtask_result.get("success", False)
+                        success=subtask_result.get("success", False),
                     )
                 logger.info(
                     f"[Orchestrator] Added {len(execution_results)} records to PromptPool history"
@@ -412,11 +414,13 @@ Always think step-by-step and explain your reasoning."""
             )
 
             # Add to conversation history
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": summary,
-                "timestamp": datetime.now().isoformat()
-            })
+            self.conversation_history.append(
+                {
+                    "role": "assistant",
+                    "content": summary,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
             result = {
                 "success": overall_success,
@@ -428,7 +432,7 @@ Always think step-by-step and explain your reasoning."""
                 "execution_results": execution_results,
                 "analysis": analysis_result,
                 "summary": summary,
-                "elapsed_time": elapsed_time
+                "elapsed_time": elapsed_time,
             }
 
             logger.info(f"[Orchestrator] Pipeline completed in {elapsed_time:.1f}s")
@@ -438,10 +442,16 @@ Always think step-by-step and explain your reasoning."""
             # 使用优雅的错误处理器 (集中错误处理逻辑)
             return handle_pipeline_error(
                 error=e,
-                phase=self.checkpoint_manager.checkpoint_data.get("current_phase", "unknown") if self.checkpoint_manager else "unknown",
+                phase=(
+                    self.checkpoint_manager.checkpoint_data.get(
+                        "current_phase", "unknown"
+                    )
+                    if self.checkpoint_manager
+                    else "unknown"
+                ),
                 session_id=self.current_session_id,
                 workspace=self.current_workspace,
-                checkpoint_manager=self.checkpoint_manager
+                checkpoint_manager=self.checkpoint_manager,
             )
 
     def _plan_tasks(self, intent_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -459,7 +469,9 @@ Always think step-by-step and explain your reasoning."""
 
         return self.task_planner.process({"intent_result": intent_result})
 
-    def _generate_configs(self, subtasks: List[Dict], intent_result: Dict) -> List[Dict]:
+    def _generate_configs(
+        self, subtasks: List[Dict], intent_result: Dict
+    ) -> List[Dict]:
         """
         为每个子任务生成配置。
 
@@ -475,10 +487,9 @@ Always think step-by-step and explain your reasoning."""
 
         configs = []
         for subtask in subtasks:
-            config_result = self.interpreter_agent.process({
-                "subtask": subtask,
-                "intent_result": intent_result
-            })
+            config_result = self.interpreter_agent.process(
+                {"subtask": subtask, "intent_result": intent_result}
+            )
 
             if not config_result.get("success"):
                 raise RuntimeError(f"Config generation failed for {subtask['task_id']}")
@@ -487,7 +498,9 @@ Always think step-by-step and explain your reasoning."""
 
         return configs
 
-    def _execute_subtasks(self, configs: List[Dict], use_mock: bool = False) -> List[Dict]:
+    def _execute_subtasks(
+        self, configs: List[Dict], use_mock: bool = False
+    ) -> List[Dict]:
         """
         执行所有子任务（支持checkpoint恢复）。
 
@@ -506,10 +519,11 @@ Always think step-by-step and explain your reasoning."""
         # Mock模式设置
         if use_mock:
             from unittest.mock import patch, Mock, MagicMock
+
             mock_result = {
                 "best_params": {"x1": 350.0, "x2": 0.5},
                 "metrics": {"NSE": 0.68, "RMSE": 2.5},
-                "output_files": ["calibration_results.json"]
+                "output_files": ["calibration_results.json"],
             }
             mock_hydromodel = MagicMock()
             mock_hydromodel.calibrate = Mock(return_value=mock_result)
@@ -520,9 +534,13 @@ Always think step-by-step and explain your reasoning."""
 
             # 检查checkpoint：是否已完成
             if self.checkpoint_manager:
-                task_status = self.checkpoint_manager.checkpoint_data.get("subtasks_status", {}).get(task_id, {})
+                task_status = self.checkpoint_manager.checkpoint_data.get(
+                    "subtasks_status", {}
+                ).get(task_id, {})
                 if task_status.get("status") == "completed":
-                    logger.info(f"[Orchestrator] Task {task_id} already completed (from checkpoint)")
+                    logger.info(
+                        f"[Orchestrator] Task {task_id} already completed (from checkpoint)"
+                    )
                     execution_results.append(task_status.get("result", {}))
                     continue
 
@@ -543,7 +561,9 @@ Always think step-by-step and explain your reasoning."""
                     runner_result = self.runner_agent.process(config_result)
 
                 if not runner_result.get("success"):
-                    logger.error(f"[Orchestrator] Task {task_id} failed: {runner_result.get('error')}")
+                    logger.error(
+                        f"[Orchestrator] Task {task_id} failed: {runner_result.get('error')}"
+                    )
                     if self.checkpoint_manager:
                         self.checkpoint_manager.mark_subtask_failed(
                             task_id, runner_result.get("error", "Unknown error")
@@ -554,25 +574,30 @@ Always think step-by-step and explain your reasoning."""
 
                 # 标记任务完成
                 if self.checkpoint_manager:
-                    self.checkpoint_manager.mark_subtask_completed(task_id, runner_result)
+                    self.checkpoint_manager.mark_subtask_completed(
+                        task_id, runner_result
+                    )
 
                 execution_results.append(runner_result)
 
             except Exception as e:
-                logger.error(f"[Orchestrator] Task {task_id} exception: {str(e)}", exc_info=True)
+                logger.error(
+                    f"[Orchestrator] Task {task_id} exception: {str(e)}", exc_info=True
+                )
                 if self.checkpoint_manager:
                     self.checkpoint_manager.mark_subtask_failed(task_id, str(e))
-                execution_results.append({
-                    "success": False,
-                    "task_id": task_id,
-                    "error": str(e)
-                })
+                execution_results.append(
+                    {"success": False, "task_id": task_id, "error": str(e)}
+                )
 
         return execution_results
 
     def _generate_summary_v2(
-        self, intent_result: Dict, task_plan: Dict,
-        execution_results: List[Dict], analysis_result: Dict
+        self,
+        intent_result: Dict,
+        task_plan: Dict,
+        execution_results: List[Dict],
+        analysis_result: Dict,
     ) -> str:
         """
         生成完整流程的摘要（支持多任务）。
@@ -616,7 +641,9 @@ Always think step-by-step and explain your reasoning."""
                     analysis_data = subtask_analysis.get("analysis", {})
                     mode = subtask_analysis.get("mode", "unknown")
 
-                    summary_parts.append(f"\n  任务 {i}/{len(subtask_analyses)} ({mode}):")
+                    summary_parts.append(
+                        f"\n  任务 {i}/{len(subtask_analyses)} ({mode}):"
+                    )
 
                     # 率定/评估结果
                     if mode in ["calibrate", "evaluate"]:
@@ -639,7 +666,9 @@ Always think step-by-step and explain your reasoning."""
                         # 显示输出文件
                         output_files = analysis_data.get("output_files", [])
                         if output_files:
-                            summary_parts.append(f"    📁 输出文件: {', '.join(output_files)}")
+                            summary_parts.append(
+                                f"    📁 输出文件: {', '.join(output_files)}"
+                            )
 
                         # 显示错误信息（如果失败）
                         if "error" in analysis_data:
@@ -661,8 +690,11 @@ Always think step-by-step and explain your reasoning."""
         return "\n".join(summary_parts)
 
     def _generate_summary(
-        self, intent_result: Dict, config_result: Dict,
-        execution_result: Dict, analysis_result: Dict
+        self,
+        intent_result: Dict,
+        config_result: Dict,
+        execution_result: Dict,
+        analysis_result: Dict,
     ) -> str:
         """
         Generate a summary of the entire pipeline execution.
@@ -726,7 +758,9 @@ Always think step-by-step and explain your reasoning."""
         logger.info("[Orchestrator] Step 1/4: Processing intent...")
 
         if self.intent_agent is None:
-            raise RuntimeError("IntentAgent not initialized. Call start_new_session() first.")
+            raise RuntimeError(
+                "IntentAgent not initialized. Call start_new_session() first."
+            )
 
         result = self.intent_agent.process({"query": query})
 
@@ -750,7 +784,9 @@ Always think step-by-step and explain your reasoning."""
         logger.info("[Orchestrator] Step 2/4: Generating configuration...")
 
         if self.config_agent is None:
-            raise RuntimeError("ConfigAgent not initialized. Call start_new_session() first.")
+            raise RuntimeError(
+                "ConfigAgent not initialized. Call start_new_session() first."
+            )
 
         result = self.config_agent.process(intent_result)
 
@@ -774,7 +810,9 @@ Always think step-by-step and explain your reasoning."""
         logger.info("[Orchestrator] Step 3/4: Executing workflow...")
 
         if self.runner_agent is None:
-            raise RuntimeError("RunnerAgent not initialized. Call start_new_session() first.")
+            raise RuntimeError(
+                "RunnerAgent not initialized. Call start_new_session() first."
+            )
 
         result = self.runner_agent.process(config_result)
 
@@ -800,12 +838,16 @@ Always think step-by-step and explain your reasoning."""
         logger.info("[Orchestrator] Step 4/4: Analyzing results...")
 
         if self.developer_agent is None:
-            raise RuntimeError("DeveloperAgent not initialized. Call start_new_session() first.")
+            raise RuntimeError(
+                "DeveloperAgent not initialized. Call start_new_session() first."
+            )
 
         result = self.developer_agent.process(execution_result)
 
         if not result.get("success"):
-            logger.warning(f"[Orchestrator] Analysis completed with issues: {result.get('error')}")
+            logger.warning(
+                f"[Orchestrator] Analysis completed with issues: {result.get('error')}"
+            )
             # Return result even if analysis has issues
             return result
 
@@ -814,10 +856,10 @@ Always think step-by-step and explain your reasoning."""
 
     def register_agents(
         self,
-        intent_agent: 'IntentAgent',
-        config_agent: 'ConfigAgent',
-        runner_agent: 'RunnerAgent',
-        developer_agent: 'DeveloperAgent'
+        intent_agent: "IntentAgent",
+        config_agent: "ConfigAgent",
+        runner_agent: "RunnerAgent",
+        developer_agent: "DeveloperAgent",
     ) -> None:
         """
         Register all sub-agents.
