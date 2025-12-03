@@ -27,6 +27,7 @@ from ..utils import param_range_adjuster
 from ..utils import code_generator
 from ..utils.prompt_manager import build_code_generation_prompt
 from ..utils.path_manager import scan_output_files
+from ..utils.config_validator import ConfigValidator
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,9 @@ class RunnerAgent(BaseAgent):
         self.show_progress = show_progress
         self.last_execution_log = None
 
+        # Initialize config validator
+        self.validator = ConfigValidator()
+
         #   代码生成LLM
         self.code_llm = code_llm_interface if code_llm_interface else None
         if self.code_llm:
@@ -305,6 +309,24 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             logger.info(
                 f"[RunnerAgent] 流域: {config.get('data_cfgs', {}).get('basin_ids', [])}"
             )
+
+        # 🆕 Pre-execution validation (最后一道防线)
+        # Only validate hydromodel tasks (skip custom_analysis)
+        if mode not in ["custom_analysis", "statistical_analysis"]:
+            is_valid, validation_errors = self.validator.validate_config(config)
+
+            if not is_valid:
+                error_message = self.validator.format_validation_errors(validation_errors)
+                logger.error(f"[RunnerAgent] 配置验证失败:\n{error_message}")
+
+                return {
+                    "success": False,
+                    "task_id": task_id,
+                    "mode": mode,
+                    "error": error_message,
+                    "error_type": "ConfigValidationError",
+                    "validation_errors": validation_errors,
+                }
 
         try:
             if mode == "calibrate":

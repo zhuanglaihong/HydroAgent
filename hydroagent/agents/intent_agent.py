@@ -16,6 +16,7 @@ import logging
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
 from ..utils.prompt_manager import PromptManager, AgentContext
+from ..utils.config_validator import validate_basin_id, ConfigValidator
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class IntentAgent(BaseAgent):
 
     Responsibilities (Enhanced):
     1. **Intent classification** (calibration / evaluation / simulation / extension)
-    2. **Task type decision** (🆕) - Decide "what to do" based on query complexity
+    2. **Task type decision** () - Decide "what to do" based on query complexity
        - standard_calibration: Simple single-basin calibration
        - info_completion: Query with missing information
        - iterative_optimization: Two-phase adaptive calibration
@@ -47,7 +48,7 @@ class IntentAgent(BaseAgent):
        - extended_analysis: Tasks beyond hydromodel (e.g., FDC plotting)
        - batch_processing: Multi-basin or multi-algorithm tasks
        - custom_data: Custom data path handling
-    3. **Information completion** (🆕) - Fill missing fields with intelligent defaults
+    3. **Information completion** () - Fill missing fields with intelligent defaults
        - Model name (default: xaj)
        - Algorithm (default: SCE_UA)
        - Time period (infer from data or use defaults)
@@ -59,15 +60,15 @@ class IntentAgent(BaseAgent):
     {
         "success": True,
         "intent_result": {
-            "task_type": "...",  # 🆕 Task type classification
+            "task_type": "...",  #  Task type classification
             "intent": "calibration",
             "model_name": "gr4j",
             "basin_id": "01013500",
             "algorithm": "SCE_UA",
             "extra_params": {...},
-            "strategy": {...},  # 🆕 Strategy information (if iterative)
-            "needs": [...],     # 🆕 Extended analysis needs (if extended_analysis)
-            "n_repeats": 10,    # 🆕 Number of repetitions (if repeated_experiment)
+            "strategy": {...},  #  Strategy information (if iterative)
+            "needs": [...],     #  Extended analysis needs (if extended_analysis)
+            "n_repeats": 10,    #  Number of repetitions (if repeated_experiment)
             ...
         }
     }
@@ -95,6 +96,9 @@ class IntentAgent(BaseAgent):
             workspace_dir=workspace_dir,
             **kwargs,
         )
+
+        # Initialize config validator for parameter validation
+        self.validator = ConfigValidator()
 
         # Dynamic Prompt System
         self.use_dynamic_prompt = use_dynamic_prompt
@@ -216,7 +220,7 @@ class IntentAgent(BaseAgent):
                 {
                     "success": True,
                     "intent_result": {
-                        "task_type": "...",  # 🆕
+                        "task_type": "...",  # 
                         "intent": "...",
                         "model_name": "...",
                         "basin_id": "...",
@@ -244,26 +248,56 @@ class IntentAgent(BaseAgent):
                     "intent_result": intent_result,  # Include partial result for debugging
                 }
 
-            # Step 2: 🆕 Decide task type (战略决策)
+            # Step 2:  Decide task type (战略决策)
             task_type = self._decide_task_type(query, intent_result)
             intent_result["task_type"] = task_type
             logger.info(f"[IntentAgent] Task type: {task_type}")
 
-            # Step 3: 🆕 Complete missing information (信息补全)
+            # Step 3:  Complete missing information (信息补全)
             intent_result = self._complete_missing_info(intent_result, query)
 
-            # Step 4: 🆕 Add strategy information (if needed)
+            # Step 3.5:  Validate basin ID format (流域ID格式验证)
+            basin_id = intent_result.get("basin_id")
+            if basin_id:
+                validation_error = validate_basin_id(basin_id)
+                if validation_error:
+                    logger.error(f"[IntentAgent] Basin ID validation failed: {validation_error}")
+                    return {
+                        "success": False,
+                        "error": validation_error,
+                        "error_type": "BasinIDValidationError",
+                        "intent_result": intent_result,
+                    }
+
+            # Step 3.6:  Validate algorithm parameters (算法参数验证)
+            algorithm = intent_result.get("algorithm")
+            extra_params = intent_result.get("extra_params", {})
+
+            if algorithm and extra_params:
+                param_errors = self._validate_algorithm_params(algorithm, extra_params)
+                if param_errors:
+                    error_message = "\n".join(param_errors)
+                    logger.error(f"[IntentAgent] Algorithm parameter validation failed:\n{error_message}")
+                    return {
+                        "success": False,
+                        "error": f"算法参数验证失败：\n{error_message}",
+                        "error_type": "AlgorithmParameterValidationError",
+                        "validation_errors": param_errors,
+                        "intent_result": intent_result,
+                    }
+
+            # Step 4:  Add strategy information (if needed)
             if task_type == "iterative_optimization":
                 intent_result["strategy"] = {
                     "phases": ["coarse_calibration", "fine_calibration"],
                     "trigger": "boundary_effect",
                 }
 
-            # Step 5: 🆕 Extract extended analysis needs (if needed)
+            # Step 5:  Extract extended analysis needs (if needed)
             if task_type == "extended_analysis":
                 intent_result["needs"] = self._extract_analysis_needs(query)
 
-            # Step 6: 🆕 Extract repetition count (if needed)
+            # Step 6:  Extract repetition count (if needed)
             if task_type == "repeated_experiment":
                 intent_result["n_repeats"] = self._extract_n_repeats(query)
 
@@ -579,7 +613,7 @@ Respond with ONLY valid JSON, no extra text."""
             return result["intent_result"].get("intent", "unknown")
         return "unknown"
 
-    # ===== 🆕 Phase 1 Enhancement Methods =====
+    # =====  Phase 1 Enhancement Methods =====
 
     def _decide_task_type(self, query: str, intent_result: Dict[str, Any]) -> str:
         """
@@ -599,7 +633,7 @@ Respond with ONLY valid JSON, no extra text."""
         # 检测关键词 → 任务类型映射
         # 优先级从高到低
 
-        # 🆕 0. 自动迭代率定（v4.0新功能）- 最高优先级
+        #  0. 自动迭代率定（v4.0新功能）- 最高优先级
         # 关键词：迭代地去率定、直到NSE达到、自动运行
         auto_iter_keywords = [
             "迭代地",
@@ -1086,3 +1120,36 @@ Respond with ONLY valid JSON, no extra text."""
                 unique_models.append(model)
 
         return unique_models
+
+    def _validate_algorithm_params(
+        self, algorithm: str, extra_params: Dict[str, Any]
+    ) -> List[str]:
+        """
+        验证算法参数的合理性。
+
+        Args:
+            algorithm: 算法名称
+            extra_params: 额外参数字典
+
+        Returns:
+            错误信息列表（如果为空则验证通过）
+        """
+        errors = []
+
+        # 检查算法是否在验证范围内
+        if algorithm not in self.validator.ALGORITHM_PARAM_RANGES:
+            logger.debug(f"[IntentAgent] Algorithm {algorithm} not in validation range, skipping")
+            return errors
+
+        param_ranges = self.validator.ALGORITHM_PARAM_RANGES[algorithm]
+
+        # 验证每个参数
+        for param_name, param_value in extra_params.items():
+            if param_name in param_ranges:
+                error = self.validator.validate_algorithm_param(
+                    algorithm, param_name, param_value, param_ranges[param_name]
+                )
+                if error:
+                    errors.append(error)
+
+        return errors

@@ -20,7 +20,7 @@ from .core.llm_interface import create_llm_interface, OpenAIInterface, ClaudeInt
 from .agents import (
     Orchestrator,
     IntentAgent,
-    ConfigAgent,
+    TaskPlanner,
     RunnerAgent,
     DeveloperAgent,
 )
@@ -66,7 +66,7 @@ __all__ = [
     # Agents
     'Orchestrator',
     'IntentAgent',
-    'ConfigAgent',
+    'TaskPlanner',
     'RunnerAgent',
     'DeveloperAgent',
 

@@ -1,4 +1,4 @@
-"""
+r"""
 Author: zhuanglaihong 
 Date: 2025-11-13 20:00:00
 LastEditTime: 2025-11-20 20:05:00
@@ -466,6 +466,13 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[Path] = None):
     """配置日志系统"""
     log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
+    root_logger = logging.getLogger()
+
+    # 如果已经配置过，先清除旧的 handlers 避免重复
+    if root_logger.handlers:
+        logger.warning("Logger already configured, skipping reconfiguration")
+        return
+
     handlers = [logging.StreamHandler()]
 
     if log_file:
@@ -475,7 +482,8 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[Path] = None):
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format=log_format,
-        handlers=handlers
+        handlers=handlers,
+        force=True  # Python 3.8+ 支持，强制重新配置
     )
 
 

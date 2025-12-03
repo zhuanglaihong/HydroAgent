@@ -1375,3 +1375,139 @@ Format: Return a JSON array of recommendation strings."""
             "report_path": str(report_path) if report_path else None,
             "fallback_mode": True,
         }
+
+    # ========================================================================
+    # Session Summary Generation (New Feature - 2025-12-03)
+    # ========================================================================
+
+    def generate_session_summary(
+        self,
+        orchestrator_output: Dict[str, Any],
+        session_id: str,
+        query: str,
+    ) -> Dict[str, Any]:
+        """
+        生成会话总结报告(使用LLM)
+
+        新功能:统一的会话总结,适用于所有任务执行模式
+        - 收集会话信息(任务、时间、路径等)
+        - 使用LLM生成智能总结报告
+        - 保存报告到session_summary.md
+
+        Args:
+            orchestrator_output: Orchestrator的完整输出
+                {
+                    "success": bool,
+                    "session_id": str,
+                    "workspace": str,
+                    "intent": dict,
+                    "task_plan": dict,
+                    "execution_results": list,
+                    "analysis": dict,
+                    "elapsed_time": float
+                }
+            session_id: 会话ID
+            query: 用户查询
+
+        Returns:
+            {
+                "success": bool,
+                "report_path": str,
+                "summary_text": str  # 简短摘要(用于终端显示)
+            }
+        """
+        logger.info("[DeveloperAgent] Generating session summary...")
+
+        try:
+            from hydroagent.utils.session_summary import (
+                SessionSummaryCollector,
+                SessionSummaryGenerator,
+            )
+
+            # Step 1: 收集会话信息
+            collector = SessionSummaryCollector(
+                session_id=session_id,
+                workspace_dir=self.workspace_dir,
+            )
+
+            # 设置基本信息
+            collector.set_query(query)
+
+            # 提取任务类型
+            intent_result = orchestrator_output.get("intent", {})
+            intent_data = intent_result.get("intent_result", {})
+            task_type = intent_data.get("task_type", "unknown")
+            collector.set_task_type(task_type)
+
+            # 添加子任务信息
+            task_plan = orchestrator_output.get("task_plan", {})
+            subtasks = task_plan.get("subtasks", [])
+            for subtask in subtasks:
+                collector.add_subtask(subtask)
+
+            # 添加执行结果
+            execution_results = orchestrator_output.get("execution_results", [])
+            for result in execution_results:
+                collector.add_execution_result(result)
+
+            # 设置时间统计(从elapsed_time推断)
+            total_time = orchestrator_output.get("elapsed_time", 0)
+            # 简单估算各阶段耗时(后续可以从Orchestrator传入更准确的数据)
+            collector.set_phase_time("intent", total_time * 0.1)
+            collector.set_phase_time("planning", total_time * 0.1)
+            collector.set_phase_time("configuration", total_time * 0.1)
+            collector.set_phase_time("execution", total_time * 0.6)
+            collector.set_phase_time("analysis", total_time * 0.1)
+
+            # 自动扫描工作目录,收集文件路径
+            collector.collect_workspace_files()
+
+            # 标记完成
+            collector.mark_completed()
+
+            # 获取会话信息字典
+            session_info = collector.to_dict()
+
+            # Step 2: 使用LLM生成总结报告
+            generator = SessionSummaryGenerator(llm_interface=self.llm)
+
+            # 获取分析结果(可选)
+            analysis_result = orchestrator_output.get("analysis", {})
+
+            # 生成报告
+            summary_result = generator.generate_summary(
+                session_info=session_info,
+                analysis_result=analysis_result,
+                output_path=self.workspace_dir / "session_summary.md",
+            )
+
+            if summary_result.get("success"):
+                logger.info(
+                    f"[DeveloperAgent] Session summary generated: {summary_result['report_path']}"
+                )
+                return {
+                    "success": True,
+                    "report_path": summary_result["report_path"],
+                    "summary_text": summary_result.get("summary_text", ""),
+                }
+            else:
+                # LLM失败,返回降级总结
+                logger.warning(
+                    f"[DeveloperAgent] Session summary generation failed, using fallback"
+                )
+                fallback_summary = summary_result.get("fallback_summary", "")
+                return {
+                    "success": False,
+                    "error": summary_result.get("error", "Unknown error"),
+                    "fallback_summary": fallback_summary,
+                }
+
+        except Exception as e:
+            logger.error(
+                f"[DeveloperAgent] Session summary generation error: {str(e)}",
+                exc_info=True,
+            )
+            return {
+                "success": False,
+                "error": str(e),
+            }

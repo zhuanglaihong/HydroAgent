@@ -1,7 +1,7 @@
 """
 Author: Claude
-Date: 2025-01-24 16:00:00
-LastEditTime: 2025-01-24 16:00:00
+Date: 2025-11-24 16:00:00
+LastEditTime: 2025-11-24 16:00:00
 LastEditors: Claude
 Description: 实验1A - 标准流程验证
              Experiment 1A - Standard Workflow Validation
@@ -35,7 +35,7 @@ from base_experiment import BaseExperiment
 
 
 # 实验查询 - 完整信息
-QUERY = "率定流域 14301000，使用 GR4J 模型，SCE-UA 算法，rep=500"
+QUERY = "率定流域 14301000，使用 XAJ 模型，SCE-UA 算法，rep=500"
 
 
 def main():

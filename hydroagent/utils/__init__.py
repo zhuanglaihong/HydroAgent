@@ -19,6 +19,7 @@ from .data_loader import DataLoader
 from .report_generator import ReportGenerator
 from .post_processor import PostProcessingEngine
 from .task_detector import TaskTypeDetector
+from .session_summary import SessionSummaryCollector, SessionSummaryGenerator
 
 # Code Generation & Execution
 from .code_generator import (
@@ -79,6 +80,9 @@ __all__ = [
     "PostProcessingEngine",
     # Task Detection
     "TaskTypeDetector",
+    # Session Summary
+    "SessionSummaryCollector",
+    "SessionSummaryGenerator",
     # ========== Functions ==========
     # Code Generation & Execution
     "generate_code_with_feedback",

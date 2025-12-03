@@ -35,7 +35,7 @@ HydroAgent 是一个基于多智能体协作的智能水文建模系统，通过
 | 指标 | 规格 | 说明 |
 |------|------|------|
 | **支持模型** | 6+ 水文模型 | GR1Y, GR2M, GR4J, GR5J, GR6J, XAJ |
-| **支持算法** | 4+ 优化算法 | SCE-UA, DE, PSO, GA |
+| **支持算法** | 3+ 优化算法 | SCE-UA, scipy, GA |
 | **智能体数量** | 5 个专用智能体 | Intent, TaskPlanner, Interpreter, Runner, Developer |
 | **中文理解** | 95%+ 准确率 | 支持"迭代500轮"等自然表达 |
 | **配置生成** | 100% 自动化 | 无需手动编写 hydromodel 配置 |
@@ -186,8 +186,8 @@ python scripts/run_developer_agent_pipeline.py --backend ollama \
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Orchestrator (编排器)                      │
-│           统筹调度、会话管理、Checkpoint/Resume                │
+│                    Orchestrator (编排器)                     │
+│           统筹调度、会话管理、Checkpoint/Resume              │
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐

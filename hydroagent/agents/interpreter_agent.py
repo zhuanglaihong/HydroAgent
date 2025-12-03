@@ -18,6 +18,8 @@ import re
 from ..core.base_agent import BaseAgent
 from ..core.llm_interface import LLMInterface
 from ..utils.path_manager import PathManager
+from ..utils.config_validator import ConfigValidator
+from ..utils.llm_config_reviewer import LLMConfigReviewer
 from configs import config
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,13 @@ class InterpreterAgent(BaseAgent):
         )
 
         self.max_correction_attempts = max_correction_attempts
+
+        # Initialize config validator (rule-based, fast)
+        self.validator = ConfigValidator()
+
+        # Initialize LLM-based config reviewer (intelligent, extensible)
+        self.llm_reviewer = LLMConfigReviewer(llm_interface)
+        logger.info("[InterpreterAgent] LLM-based config reviewer initialized")
 
         # Load system prompt from file or use default
         self.system_prompt = self._load_system_prompt()
@@ -297,6 +306,25 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
                     "task_id": task_id,
                 }
 
+            # Step 3.5: 🆕 LLM-based intelligent review (智能审查)
+            # Get user query from subtask or intent_result for context
+            user_query = subtask.get("user_query") or intent_result.get("query", "")
+
+            if user_query:
+                logger.info("[InterpreterAgent] Running LLM-based config review...")
+                is_reasonable, llm_error = self.llm_reviewer.review_config(config, user_query)
+
+                if not is_reasonable:
+                    logger.error(f"[InterpreterAgent] LLM review failed: {llm_error}")
+                    return {
+                        "success": False,
+                        "error": llm_error,
+                        "error_type": "LLMConfigReviewError",
+                        "task_id": task_id,
+                    }
+
+                logger.info("[InterpreterAgent] LLM review passed")
+
             # Step 4: Apply workspace directory (only for hydromodel tasks)
             # ⭐ Use PathManager for unified path handling
             if self.workspace_dir and "training_cfgs" in config:
@@ -452,6 +480,15 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
 
             is_valid = len(errors) == 0
             return is_valid, errors
+
+        # 🆕 Use ConfigValidator for comprehensive validation
+        is_valid_comprehensive, comprehensive_errors = self.validator.validate_config(config)
+
+        if not is_valid_comprehensive:
+            logger.warning(
+                f"[InterpreterAgent] ConfigValidator found {len(comprehensive_errors)} issues"
+            )
+            errors.extend(comprehensive_errors)
 
         # For hydromodel tasks, check required top-level sections
         required_sections = ["data_cfgs", "model_cfgs", "training_cfgs"]

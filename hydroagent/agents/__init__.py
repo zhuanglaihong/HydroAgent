@@ -10,14 +10,14 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 
 from .orchestrator import Orchestrator
 from .intent_agent import IntentAgent
-from .config_agent import ConfigAgent
 from .runner_agent import RunnerAgent
 from .developer_agent import DeveloperAgent
+from .task_planner import TaskPlanner
 
 __all__ = [
     "Orchestrator",
     "IntentAgent",
-    "ConfigAgent",
+    "TaskPlanner",
     "RunnerAgent",
     "DeveloperAgent",
 ]

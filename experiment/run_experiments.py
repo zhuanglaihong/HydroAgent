@@ -34,7 +34,7 @@ import argparse
 EXPERIMENTS = {
     "1a": {
         "name": "标准流程验证",
-        "query": "率定流域 14301000，使用 GR4J 模型，SCE-UA 算法，rep=500",
+        "query": "率定流域 14301000，使用 XAJ 模型，SCE-UA 算法，rep=500",
         "description": "完整信息下的标准率定流程",
     },
     "1b": {
@@ -49,21 +49,21 @@ EXPERIMENTS = {
     },
     "2a": {
         "name": "重复率定验证",
-        "query": "重复执行20次率定，流域 14301000，GR4J 模型",
+        "query": "重复执行20次率定，流域 14301000，XAJ 模型",
         "description": "单流域稳定性验证（20次重复）",
         "default_repetitions": 20,
     },
     "2b": {
         "name": "多流域批量率定",
-        "query": "批量率定10个流域，使用 GR4J 模型",
+        "query": "批量率定10个流域，使用 XAJ  模型",
         "description": "多流域性能对比",
         "default_basins": ["14301000", "01013500", "01022500"],
     },
     "2c": {
         "name": "多算法对比",
-        "query": "分别使用 SCE-UA、PSO、GA 率定流域 14301000",
+        "query": "分别使用 SCE-UA、SCIPY、GA 率定流域 14301000",
         "description": "多算法性能对比",
-        "default_algorithms": ["SCE_UA", "PSO", "GA"],
+        "default_algorithms": ["SCE_UA", "scipy", "GA"],
     },
     "3": {
         "name": "参数自适应优化",

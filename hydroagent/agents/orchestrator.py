@@ -435,6 +435,49 @@ Always think step-by-step and explain your reasoning."""
                 "elapsed_time": elapsed_time,
             }
 
+            # ====================================================================
+            # Step 6: Generate Session Summary (New Feature - 2025-12-03)
+            # ====================================================================
+            logger.info("[Orchestrator] Step 6/6: Generating session summary...")
+            try:
+                session_summary = self.developer_agent.generate_session_summary(
+                    orchestrator_output=result,
+                    session_id=self.current_session_id,
+                    query=query,
+                )
+
+                # 添加会话总结到result中
+                result["session_summary"] = session_summary
+
+                # 如果成功生成总结,在日志中记录
+                if session_summary.get("success"):
+                    logger.info(
+                        f"[Orchestrator] Session summary saved to: {session_summary['report_path']}"
+                    )
+                    # 在终端显示简短摘要
+                    summary_text = session_summary.get("summary_text", "")
+                    if summary_text:
+                        logger.info(f"[Orchestrator] Session Summary Preview:\n{summary_text}")
+                else:
+                    logger.warning(
+                        f"[Orchestrator] Session summary generation failed: {session_summary.get('error', 'Unknown error')}"
+                    )
+                    # 降级模式:显示fallback_summary
+                    if "fallback_summary" in session_summary:
+                        logger.info(
+                            f"[Orchestrator] Fallback Summary:\n{session_summary['fallback_summary']}"
+                        )
+
+            except Exception as e:
+                logger.error(
+                    f"[Orchestrator] Session summary generation error: {str(e)}",
+                    exc_info=True,
+                )
+                result["session_summary"] = {
+                    "success": False,
+                    "error": str(e),
+                }
+
             logger.info(f"[Orchestrator] Pipeline completed in {elapsed_time:.1f}s")
             return result
 
@@ -487,12 +530,22 @@ Always think step-by-step and explain your reasoning."""
 
         configs = []
         for subtask in subtasks:
+            # Add user query to subtask for LLM review context
+            subtask["user_query"] = self.conversation_history[-1].get("content", "") if self.conversation_history else ""
+
             config_result = self.interpreter_agent.process(
                 {"subtask": subtask, "intent_result": intent_result}
             )
 
             if not config_result.get("success"):
-                raise RuntimeError(f"Config generation failed for {subtask['task_id']}")
+                error_type = config_result.get("error_type", "ConfigGenerationError")
+
+                # For user-friendly errors (LLM review errors), raise ValueError
+                if error_type == "LLMConfigReviewError":
+                    logger.error(f"[Orchestrator] {config_result.get('error')}")
+                    raise ValueError(config_result.get("error", "Configuration review failed"))
+                else:
+                    raise RuntimeError(f"Config generation failed for {subtask['task_id']}")
 
             configs.append(config_result)
 
@@ -765,7 +818,16 @@ Always think step-by-step and explain your reasoning."""
         result = self.intent_agent.process({"query": query})
 
         if not result.get("success"):
-            raise RuntimeError(f"Intent analysis failed: {result.get('error')}")
+            error_msg = result.get("error", "Unknown error")
+            error_type = result.get("error_type", "IntentAnalysisError")
+
+            # For user-friendly errors, return detailed message without wrapping
+            if error_type in ["BasinIDValidationError", "AlgorithmParameterValidationError"]:
+                logger.error(f"[Orchestrator] {error_msg}")
+                # Return the error directly without wrapping in RuntimeError
+                raise ValueError(error_msg)
+            else:
+                raise RuntimeError(f"Intent analysis failed: {error_msg}")
 
         logger.info(f"[Orchestrator] Intent: {result['intent_result'].get('intent')}")
         return result

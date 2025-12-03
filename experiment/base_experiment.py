@@ -53,14 +53,28 @@ class BaseExperiment:
 
         log_file = logs_dir / f"{self.exp_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(log_file, encoding="utf-8"),
-            ],
-        )
+        # 检查 root logger 是否已经配置了 handlers
+        root_logger = logging.getLogger()
+
+        # 如果已经有 handlers，说明 logging 已被配置过，直接添加文件 handler
+        if root_logger.handlers:
+            # 添加文件 handler 到现有配置
+            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(
+                logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            )
+            root_logger.addHandler(file_handler)
+        else:
+            # 第一次配置，使用 basicConfig
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                handlers=[
+                    logging.StreamHandler(),
+                    logging.FileHandler(log_file, encoding="utf-8"),
+                ],
+            )
 
         return log_file
 

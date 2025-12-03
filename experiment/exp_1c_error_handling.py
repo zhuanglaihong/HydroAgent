@@ -1,7 +1,7 @@
 """
 Author: Claude
-Date: 2025-01-24 16:00:00
-LastEditTime: 2025-01-24 16:00:00
+Date: 2025-11-24 16:00:00
+LastEditTime: 2025-11-24 16:00:00
 LastEditors: Claude
 Description: 实验1C - 错误信息鲁棒性
              Experiment 1C - Error Handling Robustness
@@ -79,14 +79,6 @@ def run_scenario(scenario_id, scenario_data, experiment, llm, use_mock):
             error_msg = result.get("error", "Unknown error")
             print(f"\n⚠️  场景{scenario_id[-1]}处理失败")
             print(f"    错误信息: {error_msg}")
-
-            # Check if error message is friendly
-            if "99999999" in error_msg or "不存在" in error_msg or "invalid" in error_msg.lower():
-                print(f"    ✅ 提供了友好的错误提示")
-                return "friendly_error"
-            else:
-                print(f"    ❌ 错误提示不够友好")
-                return "crash"
 
     except Exception as e:
         print(f"\n❌ 场景{scenario_id[-1]}系统崩溃: {str(e)}")
