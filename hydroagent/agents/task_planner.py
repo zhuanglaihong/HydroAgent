@@ -1,12 +1,18 @@
 """
 Author: Claude
 Date: 2025-11-22 16:00:00
-LastEditTime: 2025-11-22 16:00:00
+LastEditTime: 2025-12-03 22:00:00
 LastEditors: Claude
-Description: Task Planner Agent - Decomposes high-level tasks into subtasks with prompts
-             任务规划智能体 - 将高层任务拆解为带提示词的子任务
+Description: Task Planner Agent - v5.0 LLM-driven dynamic task decomposition
+             任务规划智能体 - v5.0 LLM驱动的动态任务拆解
 FilePath: /HydroAgent/hydroagent/agents/task_planner.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
+
+v5.0 Enhancements:
+- LLM-based dynamic task decomposition (no hardcoded rules)
+- FAISS-based historical case retrieval
+- Automatic prompt generation for InterpreterAgent
+- Fallback to rule-based methods if LLM fails
 """
 
 from typing import Dict, Any, List, Optional
@@ -82,15 +88,17 @@ class TaskPlanner(BaseAgent):
         llm_interface: LLMInterface,
         prompt_pool: Optional[PromptPool] = None,
         workspace_dir: Optional[Path] = None,
+        use_llm_planning: bool = True,  # 🆕 v5.0
         **kwargs,
     ):
         """
-        Initialize TaskPlanner.
+        Initialize TaskPlanner (v5.0 with LLM planning).
 
         Args:
             llm_interface: LLM API interface
             prompt_pool: PromptPool instance for historical cases
             workspace_dir: Working directory for results
+            use_llm_planning: 🆕 v5.0 Whether to use LLM for dynamic planning (default: True)
             **kwargs: Additional configuration
         """
         super().__init__(
@@ -100,12 +108,15 @@ class TaskPlanner(BaseAgent):
             **kwargs,
         )
 
+        # 🆕 v5.0: LLM planning flag
+        self.use_llm_planning = use_llm_planning
+
         # Initialize PromptPool
         self.prompt_pool = prompt_pool or PromptPool(
             pool_dir=workspace_dir / "prompt_pool" if workspace_dir else None
         )
 
-        # Task decomposition mapping
+        # 🆕 v5.0: Task decomposition mapping (kept as fallback)
         self.decomposition_methods = {
             "standard_calibration": self._decompose_standard_calibration,
             "info_completion": self._decompose_info_completion,
@@ -114,8 +125,12 @@ class TaskPlanner(BaseAgent):
             "extended_analysis": self._decompose_extended_analysis,
             "batch_processing": self._decompose_batch_processing,
             "custom_data": self._decompose_custom_data,
-            "auto_iterative_calibration": self._decompose_auto_iterative_calibration,  # 🆕 v4.0
+            "auto_iterative_calibration": self._decompose_auto_iterative_calibration,
         }
+
+        logger.info(
+            f"[TaskPlanner v5.0] Initialized with LLM planning={'enabled' if use_llm_planning else 'disabled'}"
+        )
 
     def _get_default_system_prompt(self) -> str:
         """Return default system prompt for TaskPlanner."""
@@ -134,8 +149,8 @@ Always create structured, actionable task plans."""
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Decompose task into subtasks with prompts.
-        将任务拆解为带提示词的子任务。
+        🆕 v5.0: Decompose task using LLM or fallback to rule-based methods.
+        使用 LLM 动态拆解任务,或回退到基于规则的方法。
 
         Args:
             input_data: Intent result from IntentAgent
@@ -203,8 +218,8 @@ Always create structured, actionable task plans."""
 
     def _decompose_task(self, intent_result: Dict[str, Any]) -> List[SubTask]:
         """
-        Decompose task based on task_type.
-        根据任务类型拆解任务。
+        🆕 v5.0: Decompose task using LLM or fallback to rule-based.
+        使用 LLM 动态拆解或回退到规则方法。
 
         Args:
             intent_result: Intent analysis result with task_type
@@ -214,7 +229,34 @@ Always create structured, actionable task plans."""
         """
         task_type = intent_result.get("task_type", "standard_calibration")
 
-        # Get appropriate decomposition method
+        # ⭐ OPTIMIZATION: Skip LLM for simple standard tasks (faster performance)
+        simple_tasks = {"standard_calibration", "info_completion", "custom_data"}
+        force_rule_based = task_type in simple_tasks
+
+        if force_rule_based:
+            logger.info(f"[TaskPlanner] Using optimized rule-based decomposition for simple task: {task_type}")
+            decomposition_method = self.decomposition_methods.get(task_type, self._decompose_standard_calibration)
+            return decomposition_method(intent_result)
+
+        # 🆕 v5.0: Try LLM-based decomposition for complex tasks
+        if self.use_llm_planning:
+            try:
+                logger.info(f"[TaskPlanner v5.0] Using LLM for task decomposition: {task_type}")
+                subtasks = self._decompose_task_with_llm(intent_result)
+
+                if subtasks:
+                    logger.info(f"[TaskPlanner v5.0] LLM generated {len(subtasks)} subtasks")
+                    return subtasks
+                else:
+                    logger.warning("[TaskPlanner v5.0] LLM returned no subtasks, falling back to rules")
+
+            except Exception as e:
+                logger.warning(
+                    f"[TaskPlanner v5.0] LLM decomposition failed: {str(e)}, falling back to rules"
+                )
+
+        # Fallback to rule-based decomposition
+        logger.info(f"[TaskPlanner] Using rule-based decomposition for: {task_type}")
         decomposition_method = self.decomposition_methods.get(task_type)
 
         if not decomposition_method:
@@ -666,3 +708,256 @@ Always create structured, actionable task plans."""
                 param_lines.append(f"- **{key}**: {value}")
 
         return base_prompt + "\n".join(param_lines)
+
+    # ========================================================================
+    # 🆕 v5.0: LLM-Based Dynamic Task Decomposition
+    # ========================================================================
+
+    def _decompose_task_with_llm(self, intent_result: Dict[str, Any]) -> List[SubTask]:
+        """
+        🆕 v5.0: Use LLM to dynamically decompose task into subtasks.
+        使用 LLM 动态拆解任务为子任务。
+
+        Strategy:
+        1. Retrieve similar historical cases from PromptPool (FAISS)
+        2. Build prompt with intent + historical examples
+        3. Call LLM to generate subtask decomposition
+        4. Parse LLM response into SubTask objects
+
+        Args:
+            intent_result: Intent from IntentAgent
+
+        Returns:
+            List of SubTask objects (empty if LLM fails)
+        """
+        import json
+
+        # Step 1: Retrieve similar historical cases
+        historical_cases = self._retrieve_historical_cases(intent_result)
+
+        # Step 2: Build decomposition prompt
+        decomposition_prompt = self._build_decomposition_prompt(
+            intent_result, historical_cases
+        )
+
+        # Step 3: Call LLM
+        try:
+            response = self.llm.generate(
+                system_prompt=self._get_llm_planning_system_prompt(),
+                user_prompt=decomposition_prompt,
+                temperature=0.1,
+                max_tokens=2000
+            )
+
+            # Step 4: Parse LLM response
+            subtasks = self._parse_llm_decomposition(response, intent_result)
+
+            return subtasks
+
+        except Exception as e:
+            logger.error(f"[TaskPlanner v5.0] LLM call failed: {str(e)}", exc_info=True)
+            return []
+
+    def _retrieve_historical_cases(
+        self, intent_result: Dict[str, Any], top_k: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve similar historical cases from PromptPool using FAISS.
+        从 PromptPool 使用 FAISS 检索相似的历史案例。
+
+        Args:
+            intent_result: Current intent
+            top_k: Number of cases to retrieve
+
+        Returns:
+            List of historical case dictionaries
+        """
+        if not self.prompt_pool or not self.prompt_pool.use_faiss or not self.prompt_pool.faiss_index:
+            logger.info("[TaskPlanner v5.0] FAISS not available, no historical cases retrieved")
+            return []
+
+        # Build query from intent
+        query_text = self._intent_to_query_text(intent_result)
+
+        # Search in PromptPool
+        try:
+            similar_cases = self.prompt_pool.search_similar(query_text, top_k=top_k)
+            logger.info(f"[TaskPlanner v5.0] Retrieved {len(similar_cases)} similar cases")
+            return similar_cases
+        except Exception as e:
+            logger.warning(f"[TaskPlanner v5.0] FAISS search failed: {str(e)}")
+            return []
+
+    def _intent_to_query_text(self, intent_result: Dict[str, Any]) -> str:
+        """
+        Convert intent to query text for FAISS search.
+        将 intent 转换为用于 FAISS 检索的查询文本。
+
+        Args:
+            intent_result: Intent dictionary
+
+        Returns:
+            Query text string
+        """
+        parts = []
+
+        task_type = intent_result.get("task_type", "")
+        model_name = intent_result.get("model_name", "")
+        algorithm = intent_result.get("algorithm", "")
+
+        if task_type:
+            parts.append(f"任务类型: {task_type}")
+        if model_name:
+            parts.append(f"模型: {model_name}")
+        if algorithm:
+            parts.append(f"算法: {algorithm}")
+
+        return " ".join(parts)
+
+    def _build_decomposition_prompt(
+        self, intent_result: Dict[str, Any], historical_cases: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Build prompt for LLM task decomposition.
+        构建 LLM 任务拆解的提示词。
+
+        Args:
+            intent_result: Current intent
+            historical_cases: Retrieved historical cases
+
+        Returns:
+            Complete prompt string
+        """
+        import json
+
+        prompt_parts = []
+
+        # Part 1: Current task description
+        prompt_parts.append("## 当前任务\n")
+        prompt_parts.append(json.dumps(intent_result, indent=2, ensure_ascii=False))
+
+        # Part 2: Historical examples (if available)
+        if historical_cases:
+            prompt_parts.append("\n## 历史参考案例\n")
+            for i, case in enumerate(historical_cases, 1):
+                prompt_parts.append(f"\n### 案例 {i}")
+                prompt_parts.append(json.dumps(case, indent=2, ensure_ascii=False))
+
+        # Part 3: Instructions
+        prompt_parts.append("\n## 任务要求\n")
+        prompt_parts.append(
+            "请根据当前任务的 intent 信息,将其拆解为具体的子任务。\n"
+            "每个子任务需要包含:\n"
+            "1. task_id: 唯一标识 (如 task_1, task_2)\n"
+            "2. task_type: 任务类型 (calibration, evaluation, analysis等)\n"
+            "3. description: 人类可读的描述\n"
+            "4. parameters: 任务参数字典\n"
+            "5. dependencies: 依赖的任务ID列表 (可选)\n\n"
+            "请以JSON格式返回子任务列表,格式如下:\n"
+            "```json\n"
+            "[\n"
+            '  {"task_id": "task_1", "task_type": "calibration", '
+            '"description": "...", "parameters": {...}, "dependencies": []},\n'
+            '  {"task_id": "task_2", "task_type": "evaluation", '
+            '"description": "...", "parameters": {...}, "dependencies": ["task_1"]}\n'
+            "]\n"
+            "```"
+        )
+
+        return "\n".join(prompt_parts)
+
+    def _get_llm_planning_system_prompt(self) -> str:
+        """
+        Get system prompt for LLM-based planning.
+        获取 LLM 规划的系统提示词。
+
+        Returns:
+            System prompt string
+        """
+        return """你是 HydroAgent 的任务规划专家。
+
+你的职责是将用户的高层意图拆解为具体、可执行的子任务序列。
+
+核心原则:
+1. **清晰拆解**: 每个子任务应该明确、独立、可执行
+2. **依赖管理**: 正确识别任务间的依赖关系
+3. **参数完整**: 为每个子任务提供必要的参数
+4. **参考历史**: 学习历史成功案例的拆解模式
+
+任务类型:
+- calibration: 模型参数率定
+- evaluation: 模型性能评估
+- simulation: 模型预测模拟
+- analysis: 自定义分析 (如径流系数、FDC曲线)
+- boundary_check_recalibration: 参数边界检查和重新率定 (迭代优化)
+- statistical_analysis: 统计分析 (重复实验)
+
+请始终以结构化的JSON格式返回子任务列表。"""
+
+    def _parse_llm_decomposition(
+        self, llm_response: str, intent_result: Dict[str, Any]
+    ) -> List[SubTask]:
+        """
+        Parse LLM response into SubTask objects.
+        解析 LLM 响应为 SubTask 对象。
+
+        Args:
+            llm_response: LLM response text
+            intent_result: Original intent (for fallback)
+
+        Returns:
+            List of SubTask objects
+        """
+        import json
+        import re
+
+        # Try to extract JSON from response (may be wrapped in ```json...```)
+        json_match = re.search(r"```json\s*(\[.*?\])\s*```", llm_response, re.DOTALL)
+
+        if json_match:
+            json_text = json_match.group(1)
+        else:
+            # Try to find bare JSON array
+            json_match = re.search(r"(\[.*\])", llm_response, re.DOTALL)
+            if json_match:
+                json_text = json_match.group(1)
+            else:
+                logger.error("[TaskPlanner v5.0] No JSON found in LLM response")
+                return []
+
+        try:
+            subtasks_data = json.loads(json_text)
+
+            if not isinstance(subtasks_data, list):
+                logger.error("[TaskPlanner v5.0] LLM response is not a list")
+                return []
+
+            # Convert to SubTask objects
+            subtasks = []
+            for i, st_data in enumerate(subtasks_data):
+                # Validate required fields
+                if not all(k in st_data for k in ["task_id", "task_type", "description"]):
+                    logger.warning(
+                        f"[TaskPlanner v5.0] Subtask {i} missing required fields, skipping"
+                    )
+                    continue
+
+                subtask = SubTask(
+                    task_id=st_data.get("task_id", f"task_{i+1}"),
+                    task_type=st_data.get("task_type", "calibration"),
+                    description=st_data.get("description", ""),
+                    prompt="",  # Will be generated later
+                    parameters=st_data.get("parameters", {}),
+                    dependencies=st_data.get("dependencies", [])
+                )
+
+                subtasks.append(subtask)
+
+            return subtasks
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[TaskPlanner v5.0] JSON decode error: {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"[TaskPlanner v5.0] Parse error: {str(e)}", exc_info=True)
+            return []

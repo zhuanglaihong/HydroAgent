@@ -1,12 +1,18 @@
 """
-Author: zhuanglaihong
+Author: zhuanglaihong & Claude
 Date: 2025-11-20 19:55:00
-LastEditTime: 2025-11-20 19:55:00
-LastEditors: zhuanglaihong
-Description: Execution and monitoring agent - runs hydromodel and captures output
-             执行监控智能体 - 运行 hydromodel 并捕获输出
+LastEditTime: 2025-12-03 18:00:00
+LastEditors: Claude
+Description: Execution and monitoring agent - v5.0 with timeout and retry logic
+             执行监控智能体 - v5.0 支持超时和重试逻辑
 FilePath: /HydroAgent/hydroagent/agents/runner_agent.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
+
+v5.0 Enhancements:
+- Timeout protection with configurable limits
+- Automatic retry with exponential backoff
+- Error classification for intelligent recovery
+- Complexity reduction on timeout
 """
 
 from typing import Dict, Any, Optional
@@ -154,10 +160,12 @@ class RunnerAgent(BaseAgent):
         workspace_dir: Optional[Path] = None,
         timeout: int = 3600,
         show_progress: bool = True,
+        max_retries: int = 3,  # 🆕 v5.0
+        retry_backoff: float = 2.0,  # 🆕 v5.0
         **kwargs,
     ):
         """
-        Initialize RunnerAgent.
+        Initialize RunnerAgent (v5.0 with retry logic).
 
         Args:
             llm_interface: LLM API interface
@@ -167,6 +175,8 @@ class RunnerAgent(BaseAgent):
             timeout: Execution timeout in seconds
             show_progress: 是否显示实时进度（进度条等）
                           Whether to show real-time progress (progress bars, etc.)
+            max_retries: 🆕 v5.0 Maximum number of retries on recoverable errors
+            retry_backoff: 🆕 v5.0 Exponential backoff factor (seconds)
             **kwargs: Additional configuration
         """
         super().__init__(
@@ -180,6 +190,10 @@ class RunnerAgent(BaseAgent):
         self.show_progress = show_progress
         self.last_execution_log = None
 
+        # 🆕 v5.0: Retry configuration
+        self.max_retries = max_retries
+        self.retry_backoff = retry_backoff
+
         # Initialize config validator
         self.validator = ConfigValidator()
 
@@ -187,12 +201,16 @@ class RunnerAgent(BaseAgent):
         self.code_llm = code_llm_interface if code_llm_interface else None
         if self.code_llm:
             logger.info(
-                f"[RunnerAgent] Code generation enabled with model: {self.code_llm.model_name}"
+                f"[RunnerAgent v5.0] Code generation enabled with model: {self.code_llm.model_name}"
             )
         else:
             logger.info(
-                "[RunnerAgent] Code generation not configured (code_llm_interface not provided)"
+                "[RunnerAgent v5.0] Code generation not configured (code_llm_interface not provided)"
             )
+
+        logger.info(
+            f"[RunnerAgent v5.0] Initialized with timeout={timeout}s, max_retries={max_retries}"
+        )
 
     def _get_default_system_prompt(self) -> str:
         """Return default system prompt for RunnerAgent."""
@@ -439,6 +457,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
                 # 运行率定 - 直接传入config dict
                 logger.info("[RunnerAgent] 调用 calibrate(config)")
+                # print('config',config)
                 result = calibrate(config)
 
             finally:
@@ -1585,3 +1604,226 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             "iteration_history": iteration_history,
             "message": message,
         }
+
+    # ========================================================================
+    # 🆕 v5.0: Timeout and Retry Methods
+    # ========================================================================
+
+    def _execute_with_timeout(
+        self, func: callable, timeout_seconds: int, *args, **kwargs
+    ) -> Dict[str, Any]:
+        """
+        🆕 v5.0 Execute a function with timeout protection.
+        使用超时保护执行函数。
+
+        Args:
+            func: Function to execute
+            timeout_seconds: Timeout in seconds
+            *args, **kwargs: Arguments to pass to func
+
+        Returns:
+            Result dict with success status and result/error
+        """
+        import signal
+        import time
+
+        def timeout_handler(signum, frame):
+            raise TimeoutError(f"Execution exceeded timeout of {timeout_seconds}s")
+
+        # Set timeout alarm (Unix only, Windows not supported)
+        original_handler = None
+        try:
+            if hasattr(signal, 'SIGALRM'):  # Unix systems
+                original_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_seconds)
+
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            elapsed_time = time.time() - start_time
+
+            logger.info(f"[RunnerAgent] Execution completed in {elapsed_time:.1f}s")
+
+            return {
+                "success": True,
+                "result": result,
+                "elapsed_time": elapsed_time,
+                "retryable": False,
+            }
+
+        except TimeoutError as e:
+            logger.error(f"[RunnerAgent] Timeout error: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": "timeout",
+                "retryable": True,
+            }
+
+        except Exception as e:
+            logger.error(f"[RunnerAgent] Execution error: {str(e)}", exc_info=True)
+            # Classify error
+            error_type = self._classify_execution_error(e)
+            retryable = self._is_retryable_error(error_type)
+
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": error_type,
+                "retryable": retryable,
+            }
+
+        finally:
+            # Cancel alarm
+            if hasattr(signal, 'SIGALRM') and original_handler is not None:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, original_handler)
+
+    def _execute_with_retry(
+        self, func: callable, *args, **kwargs
+    ) -> Dict[str, Any]:
+        """
+        🆕 v5.0 Execute a function with automatic retry on recoverable errors.
+        在可恢复错误时自动重试执行函数。
+
+        Args:
+            func: Function to execute
+            *args, **kwargs: Arguments to pass to func
+
+        Returns:
+            Final execution result
+        """
+        import time
+
+        retry_count = 0
+        last_error = None
+
+        while retry_count < self.max_retries:
+            logger.info(f"[RunnerAgent] Attempt {retry_count + 1}/{self.max_retries}")
+
+            # Execute with timeout
+            result = self._execute_with_timeout(func, self.timeout, *args, **kwargs)
+
+            if result["success"]:
+                if retry_count > 0:
+                    logger.info(f"[RunnerAgent] ✅ Succeeded after {retry_count} retries")
+                return result
+
+            # Execution failed
+            last_error = result
+            error_type = result.get("error_type", "unknown")
+
+            if not result.get("retryable", False):
+                logger.error(f"[RunnerAgent] Unrecoverable error: {error_type}")
+                return result
+
+            # Wait before retry (exponential backoff)
+            wait_time = self.retry_backoff ** retry_count
+            logger.warning(
+                f"[RunnerAgent] Retrying in {wait_time:.1f}s (error: {error_type})"
+            )
+            time.sleep(wait_time)
+
+            retry_count += 1
+
+        # Max retries exhausted
+        logger.error(f"[RunnerAgent] ❌ Failed after {self.max_retries} retries")
+        return {
+            "success": False,
+            "error": f"Max retries ({self.max_retries}) exhausted. Last error: {last_error.get('error')}",
+            "error_type": "max_retries_exhausted",
+            "retryable": False,
+            "retry_count": self.max_retries,
+        }
+
+    def _classify_execution_error(self, error: Exception) -> str:
+        """
+        🆕 v5.0 Classify execution error type for intelligent recovery.
+        分类执行错误类型以进行智能恢复。
+
+        Args:
+            error: Exception object
+
+        Returns:
+            Error type string
+        """
+        error_str = str(error).lower()
+        error_name = error.__class__.__name__
+
+        if "timeout" in error_str or error_name == "TimeoutError":
+            return "timeout"
+        elif "keyerror" in error_str or error_name == "KeyError":
+            return "configuration_error"
+        elif "filenotfound" in error_str or error_name == "FileNotFoundError":
+            return "data_not_found"
+        elif "importerror" in error_str or error_name == "ImportError":
+            return "dependency_error"
+        elif "nan" in error_str or "inf" in error_str:
+            return "numerical_error"
+        elif "memory" in error_str or error_name == "MemoryError":
+            return "memory_error"
+        else:
+            return "unknown"
+
+    def _is_retryable_error(self, error_type: str) -> bool:
+        """
+        🆕 v5.0 Determine if error type is retryable.
+        判断错误类型是否可重试。
+
+        Args:
+            error_type: Error type string
+
+        Returns:
+            True if retryable
+        """
+        retryable_errors = {
+            "timeout",
+            "configuration_error",
+            "numerical_error",
+            "memory_error",
+        }
+
+        return error_type in retryable_errors
+
+    def _reduce_complexity_on_timeout(
+        self, config: Dict[str, Any], reduction_factor: float = 0.7
+    ) -> Dict[str, Any]:
+        """
+        🆕 v5.0 Reduce algorithm complexity after timeout.
+        超时后减少算法复杂度。
+
+        Args:
+            config: Original configuration
+            reduction_factor: Factor to reduce iterations (default: 0.7)
+
+        Returns:
+            Modified configuration with reduced complexity
+        """
+        new_config = config.copy()
+
+        # Reduce algorithm iterations
+        training_cfgs = new_config.get("training_cfgs", {})
+        if "algorithm" in training_cfgs:
+            algorithm_params = training_cfgs.get("algorithm", {})
+
+            # Reduce rep/max_generations/max_iterations
+            if "rep" in algorithm_params:
+                old_rep = algorithm_params["rep"]
+                new_rep = int(old_rep * reduction_factor)
+                algorithm_params["rep"] = max(new_rep, 100)  # Minimum 100
+                logger.info(f"[RunnerAgent] Reduced rep: {old_rep} → {algorithm_params['rep']}")
+
+            elif "max_generations" in algorithm_params:
+                old_gen = algorithm_params["max_generations"]
+                new_gen = int(old_gen * reduction_factor)
+                algorithm_params["max_generations"] = max(new_gen, 50)
+                logger.info(f"[RunnerAgent] Reduced generations: {old_gen} → {algorithm_params['max_generations']}")
+
+            elif "max_iterations" in algorithm_params:
+                old_iter = algorithm_params["max_iterations"]
+                new_iter = int(old_iter * reduction_factor)
+                algorithm_params["max_iterations"] = max(new_iter, 50)
+                logger.info(f"[RunnerAgent] Reduced iterations: {old_iter} → {algorithm_params['max_iterations']}")
+
+            new_config["training_cfgs"]["algorithm"] = algorithm_params
+
+        return new_config

@@ -17,7 +17,7 @@ from datetime import datetime
 import json
 
 from hydroagent.agents.orchestrator import Orchestrator
-from hydroagent.core.llm_interface import LLMInterface
+from hydroagent.core.llm_interface import create_llm_interface
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,9 @@ class HydroAgent:
         self,
         backend: str = "api",
         workspace_dir: Optional[Path] = None,
-        enable_checkpoint: bool = True
+        enable_checkpoint: bool = True,
+        enable_faiss: bool = False,  # 🆕 FAISS historical case learning (default: disabled)
+        faiss_timeout: int = 60  # 🆕 FAISS initialization timeout in seconds
     ):
         """
         初始化 HydroAgent 系统
@@ -41,46 +43,59 @@ class HydroAgent:
             backend: LLM后端 ("api" 或 "ollama")
             workspace_dir: 工作目录
             enable_checkpoint: 是否启用checkpoint功能
+            enable_faiss: 🆕 是否启用FAISS历史案例学习 (默认: False)
+                - True: 启用语义检索和增量学习 (需下载模型，首次启动慢5-10秒)
+                - False: 使用规则匹配 (快速启动，适合简单任务和测试)
+            faiss_timeout: 🆕 FAISS初始化超时时间（秒，默认60秒）
         """
         self.backend = backend
         self.workspace_dir = workspace_dir or Path("experiment_results")
         self.enable_checkpoint = enable_checkpoint
+        self.enable_faiss = enable_faiss  # 🆕 Store FAISS config
+        self.faiss_timeout = faiss_timeout  # 🆕 Store timeout config
         self.orchestrator: Optional[Orchestrator] = None
         self.current_session_id: Optional[str] = None
         self.interrupted = False
 
-        # 注册信号处理器（优雅中断）
+        # 注册信号处理器优雅中断
         signal.signal(signal.SIGINT, self._handle_interrupt)
 
         print("\n" + "=" * 70)
-        print("🌊 欢迎使用 HydroAgent - 智能水文模型助手")
+        print("HydroAgent v5.0 - Multi-Agent Orchestration System")
+        print("State Machine Driven Hydrological Modeling Assistant")
         print("=" * 70)
 
     def _handle_interrupt(self, signum, frame):
-        """处理中断信号（Ctrl+C）"""
+        """处理中断信号Ctrl+C"""
         self.interrupted = True
-        print("\n\n⚠️  检测到中断信号...")
-        print("正在安全保存当前进度...")
+        print("\n\n[WARNING] Interrupt signal detected...")
+        print("Safely saving current progress...")
 
         if self.orchestrator and self.orchestrator.checkpoint_manager:
-            checkpoint_file = self.orchestrator.checkpoint_manager.checkpoint_file
-            print(f"✅ 进度已保存到: {checkpoint_file}")
-            print(f"\n💡 恢复方式：")
-            print(f"   python run.py --resume {checkpoint_file.parent}")
+            try:
+                # ⭐ CRITICAL FIX: Actually save the checkpoint!
+                self.orchestrator.checkpoint_manager.save()
+                checkpoint_file = self.orchestrator.checkpoint_manager.checkpoint_file
+                print(f"[OK] Progress saved to: {checkpoint_file}")
+                print(f"\n[INFO] To resume:")
+                print(f"   python run.py --resume {checkpoint_file.parent}")
+            except Exception as e:
+                print(f"[ERROR] Failed to save checkpoint: {e}")
+                logger.error(f"Failed to save checkpoint on interrupt: {e}", exc_info=True)
         else:
-            print("⚠️  未检测到活动会话")
+            print("[WARNING] No active session detected")
 
-        print("\n👋 再见！")
+        print("\n[BYE] Goodbye!")
         sys.exit(0)
 
     def initialize(self):
         """初始化系统组件"""
         try:
-            print("\n⏳ 正在初始化系统...")
+            print("\n[LOADING] 正在初始化系统...")
 
             # 创建 LLM 接口
             if self.backend == "api":
-                print("  📡 连接到 API 后端 (Qwen)...")
+                print("  [API] 连接到 API 后端 (Qwen)...")
                 try:
                     from configs import definitions_private
                     api_key = definitions_private.OPENAI_API_KEY
@@ -90,15 +105,15 @@ class HydroAgent:
                     api_key = definitions.OPENAI_API_KEY
                     base_url = definitions.OPENAI_BASE_URL
 
-                llm = LLMInterface(
+                llm = create_llm_interface(
                     backend="openai",
+                    model_name="qwen-turbo",
                     api_key=api_key,
-                    base_url=base_url,
-                    model_name="qwen-turbo"
+                    base_url=base_url
                 )
 
                 # 代码生成专用 LLM
-                code_llm = LLMInterface(
+                code_llm = create_llm_interface(
                     backend="openai",
                     api_key=api_key,
                     base_url=base_url,
@@ -106,7 +121,7 @@ class HydroAgent:
                 )
 
             elif self.backend == "ollama":
-                print("  🖥️  连接到 Ollama 本地服务...")
+                print("  [LOCAL]  连接到 Ollama 本地服务...")
                 try:
                     from configs import definitions_private
                     base_url = definitions_private.OLLAMA_BASE_URL
@@ -114,137 +129,185 @@ class HydroAgent:
                     from configs import definitions
                     base_url = getattr(definitions, "OLLAMA_BASE_URL", "http://localhost:11434")
 
-                llm = LLMInterface(
+                llm = create_llm_interface(
                     backend="ollama",
-                    base_url=base_url,
-                    model_name="qwen2.5:7b"
+                    model_name="qwen2.5:7b",
+                    base_url=base_url
                 )
 
-                code_llm = LLMInterface(
+                code_llm = create_llm_interface(
                     backend="ollama",
-                    base_url=base_url,
-                    model_name="deepseek-coder:6.7b"
+                    model_name="deepseek-coder:6.7b",
+                    base_url=base_url
                 )
 
             else:
                 raise ValueError(f"Unknown backend: {self.backend}")
 
             # 创建 Orchestrator
-            print("  🎯 初始化智能体编排器...")
+            print("  [INIT] 初始化智能体编排器...")
             self.orchestrator = Orchestrator(
                 llm_interface=llm,
                 code_llm_interface=code_llm,
-                enable_checkpoint=self.enable_checkpoint
+                workspace_root=self.workspace_dir,  # 传入workspace目录
+                enable_checkpoint=self.enable_checkpoint,
+                enable_faiss=self.enable_faiss,  # 🆕 Pass FAISS config
+                faiss_timeout=self.faiss_timeout  # 🆕 Pass timeout config
             )
 
-            print("✅ 系统初始化完成！\n")
+            print("[OK] 系统初始化完成\n")
             return True
 
         except Exception as e:
-            print(f"❌ 初始化失败: {e}")
+            print(f"[ERROR] 初始化失败: {e}")
             logger.error(f"System initialization failed: {e}", exc_info=True)
             return False
 
     def show_welcome(self):
         """显示欢迎信息和功能菜单"""
-        print("\n📚 HydroAgent 功能列表：")
+        print("\n[FEATURES] HydroAgent 功能列表")
         print("-" * 70)
-        print("1️⃣  模型率定")
-        print("   示例: 率定GR4J模型，流域01013500")
+        print("1.  模型率定")
+        print("   示例: 率定GR4J模型流域01013500")
         print()
-        print("2️⃣  模型评估")
+        print("2.  模型评估")
         print("   示例: 评估流域01013500的率定结果")
         print()
-        print("3️⃣  迭代优化")
-        print("   示例: 用xaj模型率定流域01013500，如果参数收敛到边界，自动调整范围重新率定")
+        print("3.  迭代优化")
+        print("   示例: 用xaj模型率定流域01013500如果参数收敛到边界自动调整范围重新率定")
         print()
-        print("4️⃣  自定义分析")
-        print("   示例: 率定完成后，请帮我计算流域的径流系数，并画流量历时曲线FDC")
+        print("4.  自定义分析")
+        print("   示例: 率定完成后请帮我计算流域的径流系数并画流量历时曲线FDC")
         print()
-        print("5️⃣  稳定性验证")
-        print("   示例: 重复率定流域01013500 5次，分析参数稳定性")
         print("-" * 70)
-        print("\n💡 提示:")
+        print("\n[TIP] 提示:")
         print("  - 输入 'help' 查看详细帮助")
         print("  - 输入 'examples' 查看更多示例")
+        print("  - 输入 'status' 查看系统状态")
         print("  - 输入 'history' 查看历史会话")
         print("  - 输入 'resume' 恢复上次中断的会话")
-        print("  - 按 Ctrl+C 可随时优雅退出（进度会自动保存）")
+        print("  - 按 Ctrl+C 可随时退出进度会自动保存")
         print("  - 输入 'exit' 或 'quit' 退出系统")
         print()
 
     def show_help(self):
         """显示详细帮助信息"""
         print("\n" + "=" * 70)
-        print("📖 HydroAgent 详细帮助")
+        print("[HELP] HydroAgent 详细帮助")
         print("=" * 70)
 
-        print("\n🎯 支持的模型:")
+        print("\n[INIT] 支持的模型:")
         print("  - GR系列: GR4J, GR5J, GR6J")
         print("  - XAJ (新安江模型)")
 
-        print("\n🔧 支持的算法:")
+        print("\n[ALGORITHMS] 支持的算法:")
         print("  - SCE-UA: 适合复杂模型")
         print("  - GA (遗传算法): 适合多目标优化")
         print("  - PSO (粒子群算法): 快速收敛")
         print("  - DE (差分进化): 鲁棒性强")
 
-        print("\n📊 性能指标:")
+        print("\n[METRICS] 性能指标:")
         print("  - NSE (Nash-Sutcliffe Efficiency)")
         print("  - RMSE (Root Mean Square Error)")
         print("  - KGE (Kling-Gupta Efficiency)")
-        print("  - R² (Coefficient of Determination)")
+        print("  - R (Coefficient of Determination)")
 
-        print("\n🆕 高级功能:")
+        print("\n v5.0 高级功能:")
+        print("  - 状态机编排: 18状态智能流转自动错误恢复")
+        print("  - GoalTracker: NSE收敛跟踪4种终止条件")
+        print("  - FeedbackRouter: 智能错误路由6种错误类型处理")
         print("  - 自动迭代优化: 参数收敛到边界时自动调整范围")
-        print("  - 代码生成: 支持自定义分析（径流系数、FDC、水量平衡等）")
+        print("  - 代码生成: 支持自定义分析径流系数FDC水量平衡等")
         print("  - 双LLM架构: 通用LLM + 代码专用LLM")
-        print("  - Checkpoint: 支持中断恢复")
+        print("  - Checkpoint: 支持中断恢复断点续传")
+        print("  - PromptPool: FAISS语义检索动态提示优化")
 
-        print("\n💬 自然语言支持:")
+        print("\n 自然语言支持:")
         print("  - 支持中英文混合输入")
-        print("  - 自动识别模型、流域、算法等参数")
+        print("  - 自动识别模型流域算法等参数")
         print("  - 智能补全缺失信息")
+
+        print("\n" + "=" * 70 + "\n")
+
+    def show_status(self):
+        """显示系统状态"""
+        print("\n" + "=" * 70)
+        print("[METRICS] 系统状态")
+        print("=" * 70)
+
+        print(f"\n[ALGORITHMS] 配置:")
+        print(f"  - 版本: v5.0 (State Machine Architecture)")
+        print(f"  - LLM后端: {self.backend}")
+        print(f"  - 工作目录: {self.workspace_dir}")
+        print(f"  - Checkpoint: {'[OK] 启用' if self.enable_checkpoint else '[ERROR] 禁用'}")
+
+        if self.orchestrator:
+            print(f"\n 智能体状态:")
+            print(f"  - Orchestrator: [OK] 已初始化")
+
+            # 显示当前状态
+            if hasattr(self.orchestrator, 'current_state'):
+                print(f"  - 当前状态: {self.orchestrator.current_state}")
+
+            # 显示执行上下文
+            if hasattr(self.orchestrator, 'execution_context') and self.orchestrator.execution_context:
+                ctx = self.orchestrator.execution_context
+                if ctx.get("current_task_idx") is not None:
+                    total = len(ctx.get("task_plan", {}).get("subtasks", []))
+                    current = ctx.get("current_task_idx", 0) + 1
+                    print(f"  - 任务进度: {current}/{total}")
+
+                if ctx.get("config_retry_count"):
+                    print(f"  - 配置重试: {ctx['config_retry_count']}")
+
+                if ctx.get("execution_retry_count"):
+                    print(f"  - 执行重试: {ctx['execution_retry_count']}")
+
+            # 显示 Checkpoint 状态
+            if self.orchestrator.checkpoint_manager:
+                ckpt = self.orchestrator.checkpoint_manager
+                if ckpt.checkpoint_file and ckpt.checkpoint_file.exists():
+                    print(f"\n Checkpoint:")
+                    print(f"  - 文件: {ckpt.checkpoint_file}")
+                    print(f"  - 状态: [OK] 已保存")
+        else:
+            print(f"\n 智能体状态:")
+            print(f"  - Orchestrator: [WARNING] 未初始化")
 
         print("\n" + "=" * 70 + "\n")
 
     def show_examples(self):
         """显示示例查询"""
         print("\n" + "=" * 70)
-        print("💡 查询示例")
+        print("[TIP] 查询示例")
         print("=" * 70)
 
         examples = [
             {
                 "title": "基础率定",
-                "query": "率定GR4J模型，流域01013500",
+                "query": "率定GR4J模型流域01013500",
                 "description": "使用默认参数率定模型"
             },
             {
                 "title": "指定算法参数",
-                "query": "使用SCE-UA算法率定流域01013500，算法迭代500轮",
+                "query": "使用SCE-UA算法率定流域01013500算法迭代500轮",
                 "description": "自定义算法参数"
             },
             {
                 "title": "自定义时间段",
-                "query": "率定xaj模型，流域01013500，训练期1990-2000，测试期2005-2010",
+                "query": "率定xaj模型流域01013500训练期1990-2000测试期2005-2010",
                 "description": "指定训练和测试时间段"
             },
             {
                 "title": "迭代优化",
-                "query": "用xaj模型率定流域01013500，如果参数收敛到边界，自动调整范围重新率定",
+                "query": "用xaj模型率定流域01013500如果参数收敛到边界自动调整范围重新率定",
                 "description": "自适应参数范围调整"
             },
             {
                 "title": "扩展分析",
-                "query": "率定完成后，请帮我计算流域的径流系数，并画FDC曲线",
+                "query": "率定完成后请帮我计算流域的径流系数并画FDC曲线",
                 "description": "率定 + 自定义代码分析"
             },
-            {
-                "title": "稳定性验证",
-                "query": "重复率定流域01013500 5次，分析参数稳定性",
-                "description": "多次重复实验"
-            }
         ]
 
         for i, example in enumerate(examples, 1):
@@ -257,7 +320,7 @@ class HydroAgent:
     def list_history(self):
         """列出历史会话"""
         print("\n" + "=" * 70)
-        print("📜 历史会话")
+        print(" 历史会话")
         print("=" * 70)
 
         try:
@@ -289,10 +352,10 @@ class HydroAgent:
 
                     # 状态图标
                     status_icon = {
-                        "completed": "✅",
-                        "pending": "⏸️",
-                        "failed": "❌"
-                    }.get(status, "❓")
+                        "completed": "[OK]",
+                        "pending": "",
+                        "failed": "[ERROR]"
+                    }.get(status, "")
 
                     print(f"\n{i}. {status_icon} {session['path'].name}")
                     print(f"   查询: {query[:60]}{'...' if len(query) > 60 else ''}")
@@ -304,7 +367,7 @@ class HydroAgent:
                     print(f"\n  ... 还有 {len(sessions) - 10} 个历史会话")
 
         except Exception as e:
-            print(f"\n  ❌ 读取历史失败: {e}")
+            print(f"\n  [ERROR] 读取历史失败: {e}")
 
         print("\n" + "=" * 70 + "\n")
 
@@ -315,7 +378,7 @@ class HydroAgent:
                 resume_path = Path(session_path)
             else:
                 # 查找最近的未完成会话
-                print("🔍 查找最近的未完成会话...")
+                print(" 查找最近的未完成会话...")
                 resume_path = None
 
                 for exp_dir in sorted(self.workspace_dir.iterdir(), reverse=True):
@@ -332,10 +395,10 @@ class HydroAgent:
                         break
 
                 if not resume_path:
-                    print("❌ 未找到可恢复的会话")
+                    print("[ERROR] 未找到可恢复的会话")
                     return
 
-            print(f"\n📂 恢复会话: {resume_path}")
+            print(f"\n 恢复会话: {resume_path}")
 
             # 初始化系统
             if not self.orchestrator:
@@ -351,21 +414,21 @@ class HydroAgent:
             self._display_result(result)
 
         except Exception as e:
-            print(f"❌ 恢复会话失败: {e}")
+            print(f"[ERROR] 恢复会话失败: {e}")
             logger.error(f"Resume session failed: {e}", exc_info=True)
 
     def process_query(self, query: str):
         """处理用户查询"""
         try:
-            # 初始化系统（如果未初始化）
+            # 初始化系统如果未初始化
             if not self.orchestrator:
                 if not self.initialize():
                     return
 
             print("\n" + "=" * 70)
-            print(f"📝 查询: {query}")
+            print(f" 查询: {query}")
             print("=" * 70)
-            print("\n⏳ 正在处理您的请求...\n")
+            print("\n[LOADING] 正在处理您的请求...\n")
 
             # 处理查询
             result = self.orchestrator.process(query=query)
@@ -374,17 +437,17 @@ class HydroAgent:
             self._display_result(result)
 
         except Exception as e:
-            print(f"\n❌ 处理失败: {e}")
+            print(f"\n[ERROR] 处理失败: {e}")
             logger.error(f"Query processing failed: {e}", exc_info=True)
 
     def _display_result(self, result: Dict[str, Any]):
         """显示执行结果"""
         print("\n" + "=" * 70)
-        print("📊 执行结果")
+        print("[METRICS] 执行结果")
         print("=" * 70)
 
         if result.get("success"):
-            print("\n✅ 任务完成！")
+            print("\n[OK] 任务完成")
 
             # 显示摘要
             summary = result.get("summary", "")
@@ -394,15 +457,15 @@ class HydroAgent:
             # 显示工作目录
             workspace = result.get("workspace", "")
             if workspace:
-                print(f"\n📁 结果目录: {workspace}")
+                print(f"\n 结果目录: {workspace}")
 
             # 显示耗时
             elapsed = result.get("elapsed_time", 0)
             if elapsed:
-                print(f"⏱️  耗时: {elapsed:.1f}秒")
+                print(f"  耗时: {elapsed:.1f}秒")
 
         else:
-            print("\n❌ 任务失败")
+            print("\n[ERROR] 任务失败")
             error = result.get("error", "未知错误")
             print(f"错误: {error}")
 
@@ -415,14 +478,14 @@ class HydroAgent:
         while not self.interrupted:
             try:
                 # 读取用户输入
-                user_input = input("💬 HydroAgent> ").strip()
+                user_input = input(" HydroAgent> ").strip()
 
                 if not user_input:
                     continue
 
                 # 处理特殊命令
                 if user_input.lower() in ['exit', 'quit', 'q']:
-                    print("\n👋 再见！")
+                    print("\n[BYE] 再见")
                     break
 
                 elif user_input.lower() == 'help':
@@ -430,6 +493,9 @@ class HydroAgent:
 
                 elif user_input.lower() == 'examples':
                     self.show_examples()
+
+                elif user_input.lower() == 'status':
+                    self.show_status()
 
                 elif user_input.lower() == 'history':
                     self.list_history()
@@ -447,15 +513,15 @@ class HydroAgent:
                     self.process_query(user_input)
 
             except EOFError:
-                print("\n\n👋 再见！")
+                print("\n\n[BYE] 再见")
                 break
 
             except Exception as e:
-                print(f"\n❌ 发生错误: {e}")
+                print(f"\n[ERROR] 发生错误: {e}")
                 logger.error(f"Interactive loop error: {e}", exc_info=True)
 
     def run_single_query(self, query: str, resume_from: Optional[str] = None):
-        """运行单个查询（非交互模式）"""
+        """运行单个查询非交互模式"""
         if resume_from:
             self.resume_session(resume_from)
         else:
@@ -468,7 +534,7 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[Path] = None):
 
     root_logger = logging.getLogger()
 
-    # 如果已经配置过，先清除旧的 handlers 避免重复
+    # 如果已经配置过先清除旧的 handlers 避免重复
     if root_logger.handlers:
         logger.warning("Logger already configured, skipping reconfiguration")
         return
@@ -483,7 +549,7 @@ def setup_logging(log_level: str = "INFO", log_file: Optional[Path] = None):
         level=getattr(logging, log_level.upper()),
         format=log_format,
         handlers=handlers,
-        force=True  # Python 3.8+ 支持，强制重新配置
+        force=True  # Python 3.8+ 支持强制重新配置
     )
 
 
@@ -536,7 +602,7 @@ def run_query(
         执行结果字典
 
     Example:
-        >>> result = run_query("率定GR4J模型，流域01013500", backend="api")
+        >>> result = run_query("率定GR4J模型流域01013500", backend="api")
         >>> print(result["summary"])
     """
     # 配置日志

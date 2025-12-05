@@ -114,7 +114,7 @@ def parse_args():
     parser.add_argument(
         '--version',
         action='version',
-        version='HydroAgent v1.0.0'
+        version='HydroAgent v5.0 (State Machine Architecture)'
     )
 
     return parser.parse_args()

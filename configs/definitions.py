@@ -81,9 +81,3 @@ except ImportError:
     # Ollama base URL for local models (optional)
     OLLAMA_BASE_URL = "http://localhost:11434"
 
-    # ============================================================================
-    # Knowledge Base (for future RAG integration)
-    # ============================================================================
-
-    # Knowledge base directory for RAG system
-    KNOWLEDGE_BASE_DIR = "documents"

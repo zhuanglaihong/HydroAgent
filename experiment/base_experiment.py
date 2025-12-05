@@ -45,6 +45,7 @@ class BaseExperiment:
         self.exp_name = exp_name
         self.exp_description = exp_description
         self.project_root = project_root
+        self.workspace = None  # 将在 setup() 时初始化
 
     def setup_logging(self):
         """设置日志记录。"""
@@ -79,11 +80,22 @@ class BaseExperiment:
         return log_file
 
     def create_workspace(self):
-        """创建实验工作目录。"""
+        """
+        创建实验批次工作目录。
+
+        目录结构:
+        experiment_results/
+        └── exp_1a_standard_calibration/
+            └── 20251205_010000/              # 本次批量执行
+                ├── data/                     # 汇总数据
+                ├── plots/                    # 汇总图表
+                ├── reports/                  # 汇总报告
+                └── session_xxx/              # Orchestrator创建的单任务目录
+        """
         workspace_dir = (
             self.project_root
             / "experiment_results"
-            / self.exp_name  # ← 使用实验名称，不再硬编码 "exp1"
+            / self.exp_name
             / datetime.now().strftime("%Y%m%d_%H%M%S")
         )
         workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -116,13 +128,11 @@ class BaseExperiment:
         # 设置日志记录
         log_file = self.setup_logging()
 
-        # 创建实验工作目录根路径
-        experiment_workspace_root = (
-            self.project_root
-            / "experiment_results"
-            / self.exp_name
-        )
-        experiment_workspace_root.mkdir(parents=True, exist_ok=True)
+        # 🔧 确保工作目录已创建（用于存放所有session）
+        # 如果 run_batch 已调用 setup()，self.workspace 已存在
+        # 如果单独调用 run_experiment()，需要创建
+        if not self.workspace:
+            self.workspace = self.create_workspace()
 
         total_start = time.time()
 
@@ -133,7 +143,7 @@ class BaseExperiment:
 
         orchestrator = Orchestrator(
             llm_interface=llm,
-            workspace_root=experiment_workspace_root,
+            workspace_root=self.workspace,  # 使用统一的workspace
             show_progress=True,
             enable_code_gen=True,
             enable_checkpoint=True,  # 自动支持checkpoint
@@ -149,7 +159,7 @@ class BaseExperiment:
         print("🚀 开始执行完整流程...\n")
         result = orchestrator.process({
             "query": query,
-            "use_mock": use_mock
+            "use_mock": use_mock,
         })
 
         total_elapsed = time.time() - total_start
@@ -206,10 +216,11 @@ class BaseExperiment:
 
             # Checkpoint info
             if orchestrator.checkpoint_manager:
-                print(f"\n🔖 Checkpoint:")
                 progress = orchestrator.checkpoint_manager.get_progress_summary()
-                print(f"   进度: {progress['completed']}/{progress['total']} 任务完成")
-                print(f"   文件: {orchestrator.checkpoint_manager.checkpoint_file}")
+                if progress:  # 检查是否为空字典
+                    print(f"\n🔖 Checkpoint:")
+                    print(f"   进度: {progress['completed']}/{progress['total']} 任务完成")
+                    print(f"   文件: {orchestrator.checkpoint_manager.checkpoint_file}")
 
         else:
             # 失败情况：显示详细错误信息
@@ -231,3 +242,303 @@ class BaseExperiment:
         result["elapsed_time"] = total_elapsed
 
         return result
+
+    def run_batch(self, queries: list, backend: str = "api", use_mock: bool = True):
+        """
+        批量执行多个查询。
+
+        Args:
+            queries: 查询列表
+            backend: LLM后端 ("api" or "ollama")
+            use_mock: 是否使用Mock模式
+
+        Returns:
+            结果列表
+        """
+        from hydroagent.core.llm_interface import create_llm_interface
+        from configs.config import (
+            DEFAULT_MODEL,
+            DEFAULT_CODE_MODEL,
+            OLLAMA_DEFAULT_MODEL,
+            OLLAMA_DEFAULT_CODE_MODEL
+        )
+        from configs.definitions import OPENAI_API_KEY, OPENAI_BASE_URL
+
+        # 🔧 在批量执行开始时设置工作目录（用于保存汇总结果）
+        if not self.workspace:
+            self.setup()
+
+        # 初始化LLM
+        if backend == "api":
+            llm = create_llm_interface(
+                backend="openai",
+                model_name=DEFAULT_MODEL,
+                api_key=OPENAI_API_KEY,
+                base_url=OPENAI_BASE_URL
+            )
+            code_llm = create_llm_interface(
+                backend="openai",
+                model_name=DEFAULT_CODE_MODEL,
+                api_key=OPENAI_API_KEY,
+                base_url=OPENAI_BASE_URL
+            )
+        else:
+            llm = create_llm_interface(backend="ollama", model_name=OLLAMA_DEFAULT_MODEL)
+            code_llm = create_llm_interface(backend="ollama", model_name=OLLAMA_DEFAULT_CODE_MODEL)
+
+        results = []
+        total_queries = len(queries)
+
+        print(f"\n🚀 开始批量执行 {total_queries} 个查询...")
+        print(f"   后端: {backend}")
+        print(f"   Mock模式: {use_mock}")
+        print(f"   汇总目录: {self.workspace}")
+        print("=" * 70)
+
+        for i, query in enumerate(queries, 1):
+            print(f"\n[{i}/{total_queries}] 执行查询: {query}")
+
+            try:
+                result = self.run_experiment(
+                    query=query,
+                    llm=llm,
+                    use_mock=use_mock,
+                    code_llm=code_llm
+                )
+                results.append(result)
+
+                if result.get("success"):
+                    print(f"[{i}/{total_queries}] ✅ 成功")
+                else:
+                    print(f"[{i}/{total_queries}] ❌ 失败: {result.get('error', 'Unknown error')}")
+
+            except Exception as e:
+                print(f"[{i}/{total_queries}] ❌ 异常: {str(e)}")
+                results.append({
+                    "success": False,
+                    "query": query,
+                    "error": str(e),
+                    "experiment": self.exp_name,
+                    "mode": "mock" if use_mock else "real"
+                })
+
+        print("\n" + "=" * 70)
+        print(f"📊 批量执行完成:")
+        successful = sum(1 for r in results if r.get("success"))
+        print(f"   成功: {successful}/{total_queries}")
+        print(f"   失败: {total_queries - successful}/{total_queries}")
+        print("=" * 70)
+
+        return results
+
+    def setup(self):
+        """设置实验工作目录。"""
+        self.workspace = self.create_workspace()
+        (self.workspace / "data").mkdir(exist_ok=True)
+        (self.workspace / "plots").mkdir(exist_ok=True)
+        (self.workspace / "reports").mkdir(exist_ok=True)
+        print(f"✅ 工作目录已创建: {self.workspace}")
+        return self.workspace
+
+    def save_results(self, results: list, filename: str = "results"):
+        """
+        保存实验结果到JSON和CSV。
+
+        Args:
+            results: 结果列表
+            filename: 文件名（不含扩展名）
+        """
+        if not self.workspace:
+            self.setup()
+
+        # 清理results，确保可序列化
+        from hydroagent.utils.result_serializer import sanitize_results
+        results = sanitize_results(results)
+
+        # 保存JSON（完整数据）
+        json_file = self.workspace / "data" / f"{filename}.json"
+        with open(json_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        print(f"✅ 保存JSON: {json_file}")
+
+        # 保存CSV（摘要数据）
+        import pandas as pd
+        csv_data = []
+        for r in results:
+            row = {
+                "query": r.get("query", ""),
+                "success": r.get("success", False),
+                "elapsed_time": r.get("elapsed_time", 0),
+                "mode": r.get("mode", ""),
+                "error": r.get("error", "")
+            }
+            csv_data.append(row)
+
+        df = pd.DataFrame(csv_data)
+        csv_file = self.workspace / "data" / f"{filename}.csv"
+        df.to_csv(csv_file, index=False, encoding="utf-8-sig")
+        print(f"✅ 保存CSV: {csv_file}")
+
+        return json_file, csv_file
+
+    def calculate_metrics(self, results: list) -> dict:
+        """
+        计算评估指标。
+
+        Args:
+            results: 结果列表
+
+        Returns:
+            指标字典
+        """
+        import numpy as np
+
+        total = len(results)
+        if total == 0:
+            return {}
+
+        success_count = sum(1 for r in results if r.get("success"))
+        times = [r.get("elapsed_time", 0) for r in results]
+
+        metrics = {
+            "total_tasks": total,
+            "success_count": success_count,
+            "failure_count": total - success_count,
+            "success_rate": success_count / total,
+            "average_time": float(np.mean(times)),
+            "median_time": float(np.median(times)),
+            "std_time": float(np.std(times)),
+            "min_time": float(np.min(times)),
+            "max_time": float(np.max(times))
+        }
+
+        return metrics
+
+    def save_metrics(self, metrics: dict, filename: str = "metrics"):
+        """保存评估指标。"""
+        if not self.workspace:
+            self.setup()
+
+        metrics_file = self.workspace / "data" / f"{filename}.json"
+        with open(metrics_file, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2, ensure_ascii=False)
+        print(f"✅ 保存指标: {metrics_file}")
+
+        return metrics_file
+
+    def generate_report(
+        self,
+        results: list,
+        metrics: dict = None,
+        additional_sections: dict = None
+    ):
+        """
+        生成实验报告（Markdown格式）。
+
+        Args:
+            results: 结果列表
+            metrics: 评估指标（可选）
+            additional_sections: 额外的报告章节（可选）
+        """
+        if not self.workspace:
+            self.setup()
+
+        report_file = self.workspace / "reports" / "experiment_report.md"
+
+        # 生成报告内容
+        lines = []
+        lines.append(f"# {self.exp_description}")
+        lines.append(f"\n实验名称: `{self.exp_name}`")
+        lines.append(f"\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("\n---\n")
+
+        # 基本统计
+        lines.append("## 实验统计\n")
+        if metrics:
+            lines.append(f"- **总任务数**: {metrics.get('total_tasks', 0)}")
+            lines.append(f"- **成功数**: {metrics.get('success_count', 0)}")
+            lines.append(f"- **失败数**: {metrics.get('failure_count', 0)}")
+            lines.append(f"- **成功率**: {metrics.get('success_rate', 0):.1%}")
+            lines.append(f"- **平均耗时**: {metrics.get('average_time', 0):.1f}s")
+            lines.append(f"- **中位耗时**: {metrics.get('median_time', 0):.1f}s")
+
+        # 额外章节
+        if additional_sections:
+            for title, content in additional_sections.items():
+                lines.append(f"\n## {title}\n")
+                lines.append(content)
+
+        # 写入文件
+        with open(report_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+        print(f"✅ 生成报告: {report_file}")
+        return report_file
+
+    def plot_results(self, results: list, plot_type: str = "success_rate"):
+        """
+        生成可视化图表。
+
+        Args:
+            results: 结果列表
+            plot_type: 图表类型 ("success_rate", "time_distribution")
+        """
+        if not self.workspace:
+            self.setup()
+
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')  # 使用非交互式后端
+
+        if plot_type == "success_rate":
+            # 成功率饼图
+            success_count = sum(1 for r in results if r.get("success"))
+            failure_count = len(results) - success_count
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.pie(
+                [success_count, failure_count],
+                labels=["成功", "失败"],
+                autopct="%1.1f%%",
+                colors=["#4CAF50", "#F44336"]
+            )
+            ax.set_title("任务成功率")
+
+            plot_file = self.workspace / "plots" / "success_rate.png"
+            plt.savefig(plot_file, dpi=150, bbox_inches="tight")
+            plt.close()
+
+            print(f"✅ 生成图表: {plot_file}")
+
+        elif plot_type == "time_distribution":
+            # 时间分布直方图
+            times = [r.get("elapsed_time", 0) for r in results if r.get("success")]
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.hist(times, bins=20, color="#2196F3", alpha=0.7, edgecolor="black")
+            ax.set_xlabel("执行时间 (秒)")
+            ax.set_ylabel("频次")
+            ax.set_title("任务执行时间分布")
+            ax.grid(True, alpha=0.3)
+
+            plot_file = self.workspace / "plots" / "time_distribution.png"
+            plt.savefig(plot_file, dpi=150, bbox_inches="tight")
+            plt.close()
+
+            print(f"✅ 生成图表: {plot_file}")
+
+        return plot_file
+
+
+def create_experiment(exp_name: str, exp_description: str) -> BaseExperiment:
+    """
+    工厂函数：创建实验对象。
+
+    Args:
+        exp_name: 实验名称（如 "exp_1a_standard_calibration"）
+        exp_description: 实验描述（如 "标准率定测试"）
+
+    Returns:
+        BaseExperiment 实例
+    """
+    return BaseExperiment(exp_name=exp_name, exp_description=exp_description)

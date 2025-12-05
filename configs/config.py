@@ -18,6 +18,12 @@ DEFAULT_MODEL = "qwen3-max"
 # Default code-specific LLM model (for DeveloperAgent code generation)
 DEFAULT_CODE_MODEL = "qwen3-coder-plus"
 
+# Default LLM model for ollama backend
+OLLAMA_DEFAULT_MODEL = "qwen3:8b"
+
+# Default LLM model for ollama backend
+OLLAMA_DEFAULT_CODE_MODEL ="deepseek-coder:6.7b" 
+
 # LLM temperature (0.0 = deterministic, 1.0 = creative)
 TEMPERATURE = 0.1
 
@@ -54,16 +60,18 @@ DEFAULT_SCE_UA_PARAMS = {
     "random_seed": 1234,  # Random seed for reproducibility
 }
 
-# Scipy optimizer default parameters
+# Scipy optimizer default parameters (scipy.optimize.minimize)
 DEFAULT_scipy_PARAMS = {
     "method": "SLSQP",                # Optimization method (default: SLSQP, options: L-BFGS-B, TNC, etc.)
-    "max_iterations": 500             # Maximum number of iterations (default: 500)
+    "max_iterations": 500,            # Maximum number of iterations (default: 500)
+    "ftol": 1e-6,                     # Function tolerance (default: 1e-6)
+    "gtol": 1e-5                      # Gradient tolerance (default: 1e-5)
 }
 
 # Genetic Algorithm (GA) default parameters
 DEFAULT_GA_PARAMS = {
-    "pop_size": 80,                    # Population size (default: 80)
-    "n_generations": 50,               # Number of generations (default: 50, recommended: 100+ for production)
+    "pop_size": 40,                    # Population size (default: 80)
+    "n_generations": 25,               # Number of generations (default: 50, recommended: 100+ for production)
     "cx_prob": 0.7,                    # Crossover probability (default: 0.7)
     "mut_prob": 0.2,                   # Mutation probability (default: 0.2)
     "random_seed": 1234,               # Random seed for reproducibility (default: 1234)
@@ -258,6 +266,61 @@ INITIAL_RANGE_SCALE = 0.6  # 60% of original range
 
 # 自动保存调整后的参数范围文件
 SAVE_ADJUSTED_PARAM_RANGE = True
+
+# ============================================================================
+# PromptPool and FAISS Configuration (v5.0)
+# ============================================================================
+
+# Enable FAISS semantic search in PromptPool
+USE_FAISS_SEMANTIC_SEARCH = True
+
+# FAISS index storage directory
+FAISS_INDEX_PATH = "prompt_pool/faiss_index"
+
+# Sentence transformer model for embedding generation
+FAISS_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Maximum history records in PromptPool (v5.0 increased from 50 to 100)
+PROMPT_POOL_MAX_HISTORY = 100
+
+# Number of similar cases to retrieve for prompt enhancement
+PROMPT_POOL_SIMILAR_CASES_LIMIT = 3
+
+# Enable LLM-driven prompt fusion (vs simple concatenation)
+ENABLE_LLM_PROMPT_FUSION = True
+
+# ============================================================================
+# State Machine Configuration (v5.0)
+# ============================================================================
+
+# Maximum state transitions before aborting (防止无限循环)
+STATE_MACHINE_MAX_TRANSITIONS = 100
+
+# State machine execution timeout (seconds)
+STATE_MACHINE_TIMEOUT = 7200  # 2 hours
+
+# ============================================================================
+# Retry and Recovery Configuration (v5.0)
+# ============================================================================
+
+# RunnerAgent: Maximum retries for failed executions
+RUNNER_MAX_RETRIES = 3
+
+# RunnerAgent: Timeout for single calibration task (seconds)
+RUNNER_TIMEOUT = 3600  # 1 hour
+
+# RunnerAgent: Exponential backoff factor for retries
+RUNNER_RETRY_BACKOFF = 2  # 2^n seconds
+
+# ============================================================================
+# Goal Tracker Configuration (v5.0)
+# ============================================================================
+
+# Convergence tolerance for trend analysis
+GOAL_TRACKER_CONVERGENCE_TOLERANCE = 0.01
+
+# Maximum iterations before stopping iterative optimization
+GOAL_TRACKER_MAX_ITERATIONS = 10
 
 # ============================================================================
 # Experimental Features (Future)

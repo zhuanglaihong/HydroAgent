@@ -29,56 +29,36 @@ Example mappings:
 - "使用SCE-UA，迭代1000次" → {"rep": 1000}
 - "ngs=200, rep=800" → {"ngs": 200, "rep": 800}
 
-═══════════════════════════════════════════════════════════════════════════════
-
-## DE Algorithm (Differential Evolution)
-
-Algorithm ID: "DE"
-
-Parameters:
-- **npop** (int): Population size (default: 50)
-  - User keywords: "种群大小", "population size", "npop"
-
-- **max_generations** (int): Maximum number of generations (default: 1000)
-  - User keywords: "最大代数", "迭代次数", "generations", "iterations"
-  - IMPORTANT: This is the PRIMARY iteration parameter for DE
-
-- **F** (float): Mutation factor (default: 0.5)
-  - User keywords: "变异因子", "mutation factor"
-
-- **CR** (float): Crossover probability (default: 0.9)
-  - User keywords: "交叉概率", "crossover probability"
-
-Example mappings:
-- "DE算法，迭代500轮" → {"max_generations": 500}
-- "种群50，迭代1000" → {"npop": 50, "max_generations": 1000}
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-## PSO Algorithm (Particle Swarm Optimization)
+## scipy Algorithm (scipy.optimize.minimize)
 
-Algorithm ID: "PSO"
+Algorithm ID: "scipy"
 
 Parameters:
-- **n_particles** (int): Number of particles (default: 30)
-  - User keywords: "粒子数量", "particles", "swarm size"
+- **method** (str): Optimization method (default: "SLSQP")
+  - User keywords: "方法", "method", "优化方法"
+  - Options: "SLSQP", "L-BFGS-B", "TNC", "CG", "BFGS"
+  - Example: "使用SLSQP方法" → method="SLSQP"
 
-- **max_iterations** (int): Maximum iterations (default: 1000)
-  - User keywords: "最大迭代次数", "迭代", "iterations"
-  - IMPORTANT: This is the PRIMARY iteration parameter for PSO
+- **max_iterations** (int): Maximum number of iterations (default: 500)
+  - User keywords: "迭代次数", "迭代轮数", "iterations", "迭代", "轮", "次"
+  - IMPORTANT: This is the PRIMARY iteration parameter for scipy
+  - Example: "迭代500轮" → max_iterations=500, "500次迭代" → max_iterations=500
 
-- **w** (float): Inertia weight (default: 0.7)
-  - User keywords: "惯性权重", "inertia"
+- **ftol** (float): Function tolerance for convergence (default: 1e-6)
+  - User keywords: "函数容差", "ftol", "function tolerance"
+  - Example: "函数容差1e-5" → ftol=1e-5
 
-- **c1** (float): Cognitive parameter (default: 1.5)
-  - User keywords: "认知参数", "cognitive"
-
-- **c2** (float): Social parameter (default: 1.5)
-  - User keywords: "社会参数", "social"
+- **gtol** (float): Gradient tolerance for convergence (default: 1e-5)
+  - User keywords: "梯度容差", "gtol", "gradient tolerance"
+  - Example: "梯度容差1e-4" → gtol=1e-4
 
 Example mappings:
-- "PSO算法，迭代500次" → {"max_iterations": 500}
-- "30个粒子，迭代800" → {"n_particles": 30, "max_iterations": 800}
+- "使用scipy算法，迭代500轮" → {"max_iterations": 500}
+- "scipy，方法SLSQP，迭代1000" → {"method": "SLSQP", "max_iterations": 1000}
+- "scipy算法，迭代300次" → {"max_iterations": 300}
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -108,18 +88,36 @@ Example mappings:
 
 ## General Rules for Parameter Extraction
 
+**IMPORTANT: Available Algorithms**
+Only the following THREE algorithms are supported:
+1. **SCE_UA** (Shuffled Complex Evolution)
+2. **scipy** (scipy.optimize.differential_evolution)
+3. **GA** (Genetic Algorithm)
+
+If user mentions any other algorithm name (e.g., "DE", "PSO", "DREAM"), it is NOT available.
+You should either:
+- Map to the closest available algorithm (DE→scipy, PSO→GA)
+- Inform user that only SCE_UA, scipy, and GA are available
+
+---
+
+**Parameter Mapping Rules**:
+
 1. **Algorithm-specific mapping**: Always map iteration keywords to the correct algorithm parameter
-   - SCE-UA: "迭代500轮" → rep=500 (NOT max_iterations)
-   - DE: "迭代500轮" → max_generations=500
-   - PSO: "迭代500轮" → max_iterations=500
+   - SCE_UA: "迭代500轮" → rep=500
+   - scipy: "迭代500轮" → max_iterations=500
    - GA: "迭代500轮" → generations=500
 
 2. **Priority**: User-specified values override defaults
 
 3. **Output format**: Use exact parameter names from this schema
-   - DO NOT use generic names like "max_iterations" for SCE-UA
-   - DO use algorithm-specific names: rep, ngs, max_generations, etc.
+   - DO use algorithm-specific names as defined above:
+     * SCE_UA: rep, ngs, kstop, pcento
+     * scipy: method, max_iterations, ftol, gtol
+     * GA: generations, population_size, mutation_rate, crossover_rate
 
 4. **Validation**: If algorithm is specified, validate parameter names against this schema
+
+5. **Default algorithm**: If no algorithm is specified, use SCE_UA as default
 
 ═══════════════════════════════════════════════════════════════════════════════

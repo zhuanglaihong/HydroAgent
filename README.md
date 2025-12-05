@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![HydroAgent Logo](https://img.shields.io/badge/HydroAgent-v4.0-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjMDA3OEQ0Ii8+Cjwvc3ZnPgo=)
+![HydroAgent Logo](https://img.shields.io/badge/HydroAgent-v5.0-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjMDA3OEQ0Ii8+Cjwvc3ZnPgo=)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python)](https://python.org)
 [![HydroModel](https://img.shields.io/badge/HydroModel-v0.3+-orange.svg?style=for-the-badge)](https://github.com/OuyangWenyu/hydromodel)
@@ -19,28 +19,32 @@
 
 ## 🌟 项目概览
 
-HydroAgent 是一个基于多智能体协作的智能水文建模系统，通过自然语言理解、自动配置生成、模型执行和结果分析，实现从用户意图到水文模拟的端到端自动化。系统采用分层决策架构（战略→战术→执行），支持参数自适应优化、代码自动生成等高级功能。
+HydroAgent 是一个基于多智能体协作的智能水文建模系统，通过自然语言理解、自动配置生成、模型执行和结果分析，实现从用户意图到水文模拟的端到端自动化。**v5.0 采用状态机编排架构**，集成 GoalTracker、FeedbackRouter 和 PromptPool (FAISS)，提供智能错误恢复、断点续传和语义检索功能。
 
 ### 🎯 核心价值
 
 - **🎤 自然语言交互**: 支持中英文对话式任务描述，降低水文建模技术门槛
-- **🧠 智能决策**: 三层决策架构（Intent→TaskPlanner→Interpreter），自动规划复杂任务
+- **🧠 智能决策**: 状态机编排 + 智能路由，18 状态自动流转，错误自动恢复
 - **🔄 端到端自动化**: 从意图识别到结果分析全流程自动化，无需手动编写配置
-- **🔧 自适应优化**: 参数边界检测与范围动态调整，提高率定成功率
-- **💻 代码生成**: 超出 hydromodel 原生功能时自动生成 Python 脚本
+- **🔧 自适应优化**: 参数边界检测与范围动态调整，NSE 收敛追踪，提高率定成功率
+- **💻 代码生成**: 超出 hydromodel 原生功能时自动生成 Python 脚本（双 LLM 架构）
 - **🔌 多后端支持**: 灵活切换 API 后端和本地模型，兼顾性能与成本
+- **💾 断点续传**: 支持任务中断和恢复，长时间任务无忧
 
 ### 📊 技术指标
 
 | 指标 | 规格 | 说明 |
 |------|------|------|
+| **架构版本** | v5.0 状态机 | 18 状态智能编排，自动错误恢复 |
 | **支持模型** | 6+ 水文模型 | GR1Y, GR2M, GR4J, GR5J, GR6J, XAJ |
 | **支持算法** | 3+ 优化算法 | SCE-UA, scipy, GA |
 | **智能体数量** | 5 个专用智能体 | Intent, TaskPlanner, Interpreter, Runner, Developer |
 | **中文理解** | 95%+ 准确率 | 支持"迭代500轮"等自然表达 |
 | **配置生成** | 100% 自动化 | 无需手动编写 hydromodel 配置 |
 | **代码生成** | 双 LLM 架构 | 通用模型分析 + 代码专用模型生成 |
-| **历史案例** | 50 条自动记忆 | Prompt Pool 自动学习成功经验 |
+| **错误恢复率** | 85% (v5.0) | GoalTracker + FeedbackRouter 智能路由 |
+| **历史案例** | 50 条自动记忆 | FAISS 语义检索，动态提示优化 |
+| **断点续传** | ✅ 支持 | Ctrl+C 优雅中断，自动保存进度 |
 
 ---
 
@@ -124,50 +128,61 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 
 ### 30秒体验
 
-```python
-# 方式1: 命令行交互模式
-python scripts/run_developer_agent_pipeline.py --backend api
+```bash
+# 方式1: 交互模式（推荐）
+python run.py --backend api
 
 # 方式2: 单次查询模式
-python scripts/run_developer_agent_pipeline.py --backend api \
-    "率定GR4J模型，流域01013500，使用SCE-UA算法，迭代500轮"
+python run.py "率定GR4J模型，流域01013500，使用SCE-UA算法，迭代500轮"
 
 # 方式3: 使用 Ollama 本地模型
-python scripts/run_developer_agent_pipeline.py --backend ollama \
-    "率定GR4J模型，流域01013500"
+python run.py --backend ollama "率定GR4J模型，流域01013500"
+
+# 方式4: 恢复中断的会话
+python run.py --resume
+
+# 查看版本和帮助
+python run.py --version
+python run.py --help
 ```
 
-**示例对话**:
+**交互模式示例**:
 ```
-🎤 用户: 率定GR4J模型，流域01013500，使用SCE-UA算法，迭代500轮
+🌊 HydroAgent v5.0 - 智能水文模型助手
+   基于状态机的多智能体编排系统
+======================================================================
 
-🧠 IntentAgent:
+💬 HydroAgent> 率定GR4J模型，流域01013500，使用SCE-UA算法，迭代500轮
+
+⏳ 正在处理您的请求...
+
+🎯 Orchestrator [RECOGNIZING_INTENT]
    ✅ 任务类型: CALIBRATION
-   ✅ 模型: gr4j
-   ✅ 流域: 01013500
-   ✅ 算法: SCE_UA (rep=500)
+   ✅ 模型: gr4j, 流域: 01013500, 算法: SCE_UA (rep=500)
 
-📋 TaskPlanner:
+🎯 Orchestrator [PLANNING_TASKS]
    ✅ 拆解为 1 个子任务
-   ✅ 生成执行提示词（含历史成功案例）
+   ✅ PromptPool 检索到 3 条相关历史案例
 
-⚙️  InterpreterAgent:
+🎯 Orchestrator [GENERATING_CONFIG]
    ✅ 生成 hydromodel 配置字典
    ✅ 训练期: 1985-10-01 ~ 1995-09-30
-   ✅ 测试期: 2005-10-01 ~ 2014-09-30
 
-🚀 RunnerAgent:
+🎯 Orchestrator [EXECUTING_CALIBRATION]
    SCE-UA Progress: 100%|███████████| 500/500 [02:15<00:00]
-   ✅ 率定完成: NSE_train = 0.72
-   ✅ 自动评估: NSE_test = 0.65
+   ✅ NSE_train = 0.72 (GoalTracker: goal_achieved)
 
-📊 DeveloperAgent:
+🎯 Orchestrator [ANALYZING_RESULTS]
    质量评估: 良好 (Good)
    最优参数: x1=0.77, x2=0.0002, x3=0.30, x4=0.70
-   改进建议:
-     1. 模型性能接近良好水平，可考虑延长训练期
-     2. 建议在更多流域验证参数迁移性
-     3. 可尝试增加迭代轮数到 800-1000 轮进一步优化
+
+✅ 任务完成！ 📁 结果目录: experiment_results/session_xxx
+
+💬 HydroAgent> status         # 查看系统状态（v5.0 新增）
+💬 HydroAgent> history        # 查看历史会话
+💬 HydroAgent> examples       # 查看更多示例
+💬 HydroAgent> help           # 详细帮助
+💬 HydroAgent> exit           # 退出
 ```
 
 **输出文件** (位于 `results/session_xxx/`):
@@ -182,13 +197,24 @@ python scripts/run_developer_agent_pipeline.py --backend ollama \
 
 ## 🏗️ 系统架构
 
-### 🔄 5-Agent 分层架构
+### 🔄 v5.0 状态机架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Orchestrator (编排器)                     │
-│           统筹调度、会话管理、Checkpoint/Resume              │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                  Orchestrator (状态机编排器)                    │
+│   ┌──────────────────────────────────────────────────────┐    │
+│   │  StateMachine (18 状态智能流转)                       │    │
+│   │  ├─ IDLE → RECOGNIZING_INTENT → PLANNING_TASKS      │    │
+│   │  ├─ → GENERATING_CONFIG → EXECUTING_CALIBRATION     │    │
+│   │  └─ → ANALYZING_RESULTS → COMPLETED                 │    │
+│   └──────────────────────────────────────────────────────┘    │
+│                                                                │
+│   核心组件:                                                    │
+│   • GoalTracker - NSE 收敛追踪，4 种终止条件                   │
+│   • FeedbackRouter - 智能错误路由，6 种错误类型处理             │
+│   • PromptPool (FAISS) - 语义检索历史案例                      │
+│   • CheckpointManager - 断点续传支持                          │
+└────────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
               ▼               ▼               ▼
@@ -217,6 +243,13 @@ python scripts/run_developer_agent_pipeline.py --backend ollama \
                             ▼
                   📊 分析报告 + 结果文件
 ```
+
+**v5.0 核心改进**:
+- 🔄 状态机编排替代线性流程，18 个精细状态
+- 🎯 GoalTracker 自动判断任务终止（NSE 达标、无改善、性能下降）
+- 🔀 FeedbackRouter 智能路由错误恢复策略（6 种错误类型）
+- 🔍 FAISS 语义检索历史成功案例，动态优化提示
+- 💾 Checkpoint 支持优雅中断和断点续传
 
 ### 🧠 智能体职责分工
 
