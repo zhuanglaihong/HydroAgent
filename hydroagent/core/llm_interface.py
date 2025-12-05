@@ -1,10 +1,12 @@
 """
 Author: Claude & zhuanglaihong
 Date: 2025-11-20 19:55:00
-LastEditTime: 2025-11-21 19:45:00
+LastEditTime: 2025-12-05 21:00:00
 LastEditors: Claude
 Description: Unified LLM API interface supporting OpenAI, Claude, and local models (Ollama)
              LLM API 统一接口 - 支持 OpenAI、Claude 和本地模型 (Ollama)
+             + Token consumption tracking (v2.0)
+             + Better timeout handling (v2.0)
 FilePath: /HydroAgent/hydroagent/core/llm_interface.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
@@ -13,8 +15,80 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 import logging
 import os
+import time
 
 logger = logging.getLogger(__name__)
+
+
+class LLMTimeoutError(Exception):
+    """Custom exception for LLM API timeout."""
+    pass
+
+
+class LLMConnectionError(Exception):
+    """Custom exception for LLM API connection errors."""
+    pass
+
+
+class TokenUsageTracker:
+    """
+    Token usage tracker for LLM API calls.
+    跟踪 LLM API 调用的 token 消耗。
+    """
+
+    def __init__(self):
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_tokens = 0
+        self.call_count = 0
+        self.call_history = []
+
+    def record_usage(self, prompt_tokens: int, completion_tokens: int, model: str = "unknown"):
+        """Record token usage from an API call."""
+        self.total_prompt_tokens += prompt_tokens
+        self.total_completion_tokens += completion_tokens
+        self.total_tokens += (prompt_tokens + completion_tokens)
+        self.call_count += 1
+
+        self.call_history.append({
+            "timestamp": time.time(),
+            "model": model,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total": prompt_tokens + completion_tokens
+        })
+
+        logger.debug(
+            f"[TokenTracker] Call #{self.call_count}: "
+            f"{prompt_tokens} prompt + {completion_tokens} completion = {prompt_tokens + completion_tokens} total tokens"
+        )
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get token usage summary."""
+        return {
+            "total_calls": self.call_count,
+            "total_prompt_tokens": self.total_prompt_tokens,
+            "total_completion_tokens": self.total_completion_tokens,
+            "total_tokens": self.total_tokens,
+            "average_tokens_per_call": self.total_tokens / self.call_count if self.call_count > 0 else 0,
+        }
+
+    def reset(self):
+        """Reset token usage statistics."""
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_tokens = 0
+        self.call_count = 0
+        self.call_history = []
+
+    def __repr__(self):
+        summary = self.get_summary()
+        return (
+            f"TokenUsageTracker(calls={summary['total_calls']}, "
+            f"total_tokens={summary['total_tokens']}, "
+            f"prompt={summary['total_prompt_tokens']}, "
+            f"completion={summary['total_completion_tokens']})"
+        )
 
 
 class LLMInterface(ABC):
@@ -26,6 +100,10 @@ class LLMInterface(ABC):
     - OpenAI (GPT-3.5, GPT-4)
     - Claude (Claude 3 series)
     - Ollama (Local models: Qwen, Llama, etc.)
+
+    v2.0 Features:
+    - Token usage tracking
+    - Better timeout handling
     """
 
     def __init__(self, model_name: str, api_key: Optional[str] = None, **kwargs):
@@ -40,6 +118,7 @@ class LLMInterface(ABC):
         self.model_name = model_name
         self.api_key = api_key
         self.config = kwargs
+        self.token_tracker = TokenUsageTracker()  # 🆕 Token tracking
         logger.info(f"Initialized LLM interface: {model_name}")
 
     @abstractmethod
@@ -100,20 +179,66 @@ class LLMInterface(ABC):
         return {
             "model_name": self.model_name,
             "backend": self.__class__.__name__,
-            "config": self.config
+            "config": self.config,
+            "token_usage": self.token_tracker.get_summary()  # 🆕 Include token stats
         }
+
+    def get_token_usage(self) -> Dict[str, Any]:
+        """
+        Get token usage statistics.
+
+        Returns:
+            Dictionary with token usage summary
+        """
+        return self.token_tracker.get_summary()
+
+    def reset_token_usage(self):
+        """Reset token usage statistics."""
+        self.token_tracker.reset()
+        logger.info(f"[{self.model_name}] Token usage statistics reset")
 
 
 class OpenAIInterface(LLMInterface):
     """OpenAI API interface implementation."""
 
-    def __init__(self, model_name: str = "gpt-4", api_key: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: str = "qwen3-max", api_key: Optional[str] = None, **kwargs):
         super().__init__(model_name, api_key, **kwargs)
+
+        # Try to get API key from: 1) parameter, 2) env var, 3) config file
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.base_url = kwargs.get("base_url", None)  # Support custom base_url
+        if not self.api_key:
+            try:
+                from configs import definitions_private
+                self.api_key = getattr(definitions_private, "OPENAI_API_KEY", None)
+            except ImportError:
+                try:
+                    from configs import definitions
+                    self.api_key = getattr(definitions, "OPENAI_API_KEY", None)
+                except ImportError:
+                    pass
+
+        # Try to get base_url from: 1) kwargs, 2) env var, 3) config file
+        self.base_url = kwargs.get("base_url", None)
+        if not self.base_url:
+            self.base_url = os.getenv("OPENAI_BASE_URL")
+        if not self.base_url:
+            try:
+                from configs import definitions_private
+                self.base_url = getattr(definitions_private, "OPENAI_BASE_URL", None)
+            except ImportError:
+                try:
+                    from configs import definitions
+                    self.base_url = getattr(definitions, "OPENAI_BASE_URL", None)
+                except ImportError:
+                    pass
 
         if not self.api_key:
-            raise ValueError("OpenAI API key not provided")
+            raise ValueError(
+                "OpenAI API key not provided. Please set it in:\n"
+                "1. configs/definitions_private.py (OPENAI_API_KEY)\n"
+                "2. Environment variable (OPENAI_API_KEY)\n"
+                "3. Or pass as parameter"
+            )
 
         # Lazy import to avoid dependency if not used
         try:
@@ -136,8 +261,11 @@ class OpenAIInterface(LLMInterface):
         max_tokens: Optional[int] = None,
         **kwargs
     ) -> str:
-        """Generate text using OpenAI API."""
+        """Generate text using OpenAI API with timeout handling and token tracking."""
         try:
+            # Set default timeout if not provided
+            timeout = kwargs.pop("timeout", 60)  # Default 60 seconds
+
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -146,12 +274,67 @@ class OpenAIInterface(LLMInterface):
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
                 **kwargs
             )
+
+            # 🆕 Track token usage
+            if hasattr(response, 'usage') and response.usage:
+                self.token_tracker.record_usage(
+                    prompt_tokens=response.usage.prompt_tokens,
+                    completion_tokens=response.usage.completion_tokens,
+                    model=self.model_name
+                )
+
             return response.choices[0].message.content
+
         except Exception as e:
-            logger.error(f"OpenAI API call failed: {str(e)}")
-            raise
+            error_str = str(e).lower()
+
+            # Handle specific error types with user-friendly messages
+            if "timeout" in error_str or "timed out" in error_str:
+                error_msg = (
+                    f"⚠️ API Request Timeout\n\n"
+                    f"The request to {self.model_name} timed out after {timeout} seconds.\n\n"
+                    f"Please check:\n"
+                    f"1. Your internet connection\n"
+                    f"2. API service status (https://status.openai.com/ or your provider)\n"
+                    f"3. Consider increasing the timeout parameter\n\n"
+                    f"Original error: {str(e)}"
+                )
+                logger.error(error_msg)
+                raise LLMTimeoutError(error_msg) from e
+
+            elif "connection" in error_str or "network" in error_str:
+                error_msg = (
+                    f"⚠️ API Connection Error\n\n"
+                    f"Failed to connect to {self.base_url or 'OpenAI API'}.\n\n"
+                    f"Please check:\n"
+                    f"1. Your internet connection\n"
+                    f"2. Firewall settings\n"
+                    f"3. API base URL: {self.base_url or '(default)'}\n"
+                    f"4. API key validity\n\n"
+                    f"Original error: {str(e)}"
+                )
+                logger.error(error_msg)
+                raise LLMConnectionError(error_msg) from e
+
+            elif "api" in error_str and "key" in error_str:
+                error_msg = (
+                    f"⚠️ API Key Error\n\n"
+                    f"Invalid or missing API key.\n\n"
+                    f"Please check:\n"
+                    f"1. API key is correctly set in configs/definitions_private.py\n"
+                    f"2. API key is valid and not expired\n"
+                    f"3. API key has sufficient quota\n\n"
+                    f"Original error: {str(e)}"
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg) from e
+
+            else:
+                logger.error(f"OpenAI API call failed: {str(e)}")
+                raise
 
     def generate_json(
         self,
@@ -278,7 +461,7 @@ class ClaudeInterface(LLMInterface):
 class OllamaInterface(LLMInterface):
     """Ollama local model interface implementation."""
 
-    def __init__(self, model_name: str = "qwen2:7b", base_url: str = "http://localhost:11434", **kwargs):
+    def __init__(self, model_name: str = "qwen3:8b", base_url: str = "http://localhost:11434", **kwargs):
         super().__init__(model_name, api_key=None, **kwargs)
         self.base_url = base_url
 
@@ -304,12 +487,12 @@ class OllamaInterface(LLMInterface):
         max_tokens: Optional[int] = None,
         **kwargs
     ) -> str:
-        """Generate text using Ollama API with retry logic."""
+        """Generate text using Ollama API with retry logic, timeout handling, and token tracking."""
         import time
 
         # Retry configuration
         max_retries = kwargs.get('max_retries', 2)
-        timeout = kwargs.get('timeout', 30)  # Reduced from 120 to 30 seconds
+        timeout = kwargs.get('timeout', 60)  # Increased to 60 seconds for better stability
 
         last_error = None
         for attempt in range(max_retries + 1):
@@ -339,10 +522,57 @@ class OllamaInterface(LLMInterface):
                 )
                 response.raise_for_status()
 
-                return response.json()["response"]
+                result = response.json()
+
+                # 🆕 Track token usage (Ollama provides approximate token counts)
+                if "prompt_eval_count" in result and "eval_count" in result:
+                    self.token_tracker.record_usage(
+                        prompt_tokens=result.get("prompt_eval_count", 0),
+                        completion_tokens=result.get("eval_count", 0),
+                        model=self.model_name
+                    )
+                else:
+                    # Fallback: Estimate tokens (rough approximation)
+                    prompt_est = len(combined_prompt) // 4
+                    response_est = len(result["response"]) // 4
+                    self.token_tracker.record_usage(
+                        prompt_tokens=prompt_est,
+                        completion_tokens=response_est,
+                        model=self.model_name
+                    )
+
+                return result["response"]
+
+            except self.requests.exceptions.Timeout as e:
+                error_msg = (
+                    f"⚠️ Ollama Request Timeout\n\n"
+                    f"The request to {self.model_name} @ {self.base_url} timed out after {timeout} seconds.\n\n"
+                    f"Please check:\n"
+                    f"1. Ollama service is running (run: ollama list)\n"
+                    f"2. Model {self.model_name} is downloaded (run: ollama pull {self.model_name})\n"
+                    f"3. Consider increasing the timeout parameter\n"
+                    f"4. Check if your system has enough resources (RAM/GPU)\n\n"
+                    f"Original error: {str(e)}"
+                )
+                logger.error(error_msg)
+                raise LLMTimeoutError(error_msg) from e
+
+            except self.requests.exceptions.ConnectionError as e:
+                error_msg = (
+                    f"⚠️ Ollama Connection Error\n\n"
+                    f"Failed to connect to Ollama at {self.base_url}.\n\n"
+                    f"Please check:\n"
+                    f"1. Ollama is running (run: ollama serve)\n"
+                    f"2. Base URL is correct: {self.base_url}\n"
+                    f"3. Firewall settings allow connection\n\n"
+                    f"Original error: {str(e)}"
+                )
+                logger.error(error_msg)
+                raise LLMConnectionError(error_msg) from e
 
             except Exception as e:
                 last_error = e
+                error_str = str(e).lower()
                 logger.warning(f"Ollama API call attempt {attempt + 1} failed: {str(e)}")
 
                 if attempt < max_retries:
@@ -351,8 +581,19 @@ class OllamaInterface(LLMInterface):
                     logger.info(f"Waiting {wait_time}s before retry...")
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"Ollama API call failed after {max_retries + 1} attempts")
-                    raise last_error
+                    # Final failure - provide detailed error message
+                    if "model" in error_str and "not found" in error_str:
+                        error_msg = (
+                            f"⚠️ Ollama Model Not Found\n\n"
+                            f"Model '{self.model_name}' is not available.\n\n"
+                            f"Please run: ollama pull {self.model_name}\n\n"
+                            f"Original error: {str(last_error)}"
+                        )
+                        logger.error(error_msg)
+                        raise ValueError(error_msg) from last_error
+                    else:
+                        logger.error(f"Ollama API call failed after {max_retries + 1} attempts")
+                        raise last_error
 
     def generate_json(
         self,

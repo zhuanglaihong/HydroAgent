@@ -69,11 +69,14 @@ class LLMConfigReviewer:
    - 格式：YYYY-MM-DD（如 "2000-01-01"）
    - 必须是历史时间，不能是未来（如 2050-2060 在 {current_year} 年是不合理的）
    - 开始时间必须早于结束时间
-   - 训练时间段应早于测试时间段
-   - CAMELS数据集通常覆盖 1980-2014 年
+   - **重要**：对于多任务查询（如"率定完成后计算径流系数"），如果用户查询包含多个步骤，
+     单个calibration子任务的train_period和test_period可能相同或重叠，这是可以接受的，
+     因为可能有独立的evaluation子任务会使用不同的时间段。
+     只有当整个任务是单一的标准率定任务时，才需要严格区分train和test period。
+   - CAMELS数据集通常覆盖 1980-2024 年
 
 4. **模型名称 (model_name)**:
-   - 有效值：xaj, xaj_mz, gr4j, gr5j, gr6j, gr1y, gr2m
+   - 有效值：xaj, xaj_mz, gr4j, gr5j, gr6j
    - 大小写不敏感
 
 5. **逻辑一致性**:
@@ -161,11 +164,27 @@ class LLMConfigReviewer:
             "training_cfgs": config.get("training_cfgs", {}),
         }
 
+        # 检测是否是多任务查询
+        multi_task_indicators = [
+            "完成后", "然后", "接着", "之后",
+            "计算", "分析", "画", "生成", "统计",
+            "径流系数", "FDC", "曲线"
+        ]
+        is_multi_task = any(indicator in user_query for indicator in multi_task_indicators)
+
+        # 构建提示词
+        task_context = ""
+        if is_multi_task:
+            task_context = """
+**注意**: 此查询是多任务查询（包含率定 + 后续分析），当前配置可能是其中一个子任务的配置。
+对于多任务查询的calibration子任务，train_period和test_period重叠是可以接受的。
+"""
+
         prompt = f"""请审查以下水文模型配置的合理性。
 
 **用户查询**:
 {user_query}
-
+{task_context}
 **生成的配置**:
 ```json
 {json.dumps(config_summary, indent=2, ensure_ascii=False)}
@@ -175,7 +194,7 @@ class LLMConfigReviewer:
 1. 流域ID是否在合理范围内
 2. 算法参数是否为正数
 3. 时间段是否为历史时间（不是未来）
-4. 训练和测试时间段的逻辑顺序
+4. 训练和测试时间段的逻辑顺序（注意多任务查询的特殊情况）
 5. 配置是否与用户查询一致
 
 如果发现任何不合理之处，请详细说明问题并给出修改建议。

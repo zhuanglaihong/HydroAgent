@@ -241,6 +241,11 @@ class BaseExperiment:
         result["mode"] = "mock" if use_mock else "real"
         result["elapsed_time"] = total_elapsed
 
+        # 🆕 添加 Token 使用统计
+        result["token_usage"] = llm.get_token_usage()
+        if code_llm:
+            result["code_token_usage"] = code_llm.get_token_usage()
+
         return result
 
     def run_batch(self, queries: list, backend: str = "api", use_mock: bool = True):
@@ -327,6 +332,33 @@ class BaseExperiment:
         successful = sum(1 for r in results if r.get("success"))
         print(f"   成功: {successful}/{total_queries}")
         print(f"   失败: {total_queries - successful}/{total_queries}")
+
+        # 🆕 显示 Token 使用统计
+        print(f"\n📈 Token 使用统计:")
+        main_llm_stats = llm.get_token_usage()
+        print(f"   主模型 ({llm.model_name}):")
+        print(f"      总调用次数: {main_llm_stats['total_calls']}")
+        print(f"      总 tokens: {main_llm_stats['total_tokens']:,}")
+        print(f"         - Prompt: {main_llm_stats['total_prompt_tokens']:,}")
+        print(f"         - Completion: {main_llm_stats['total_completion_tokens']:,}")
+        print(f"      平均每次调用: {main_llm_stats['average_tokens_per_call']:.1f} tokens")
+
+        if code_llm:
+            code_llm_stats = code_llm.get_token_usage()
+            if code_llm_stats['total_calls'] > 0:
+                print(f"\n   代码模型 ({code_llm.model_name}):")
+                print(f"      总调用次数: {code_llm_stats['total_calls']}")
+                print(f"      总 tokens: {code_llm_stats['total_tokens']:,}")
+                print(f"         - Prompt: {code_llm_stats['total_prompt_tokens']:,}")
+                print(f"         - Completion: {code_llm_stats['total_completion_tokens']:,}")
+                print(f"      平均每次调用: {code_llm_stats['average_tokens_per_call']:.1f} tokens")
+
+        # 🆕 导出 Token 统计到文件
+        from hydroagent.utils.token_stats import export_token_stats
+        export_token_stats(llm, self.workspace / "data", f"{self.exp_name}_main_llm")
+        if code_llm:
+            export_token_stats(code_llm, self.workspace / "data", f"{self.exp_name}_code_llm")
+
         print("=" * 70)
 
         return results
@@ -361,15 +393,21 @@ class BaseExperiment:
             json.dump(results, f, indent=2, ensure_ascii=False)
         print(f"✅ 保存JSON: {json_file}")
 
-        # 保存CSV（摘要数据）
+        # 保存CSV（摘要数据，包含 Token 统计）
         import pandas as pd
         csv_data = []
         for r in results:
+            token_usage = r.get("token_usage", {})
             row = {
                 "query": r.get("query", ""),
                 "success": r.get("success", False),
                 "elapsed_time": r.get("elapsed_time", 0),
                 "mode": r.get("mode", ""),
+                # 🆕 添加 Token 统计列
+                "total_tokens": token_usage.get("total_tokens", 0) if token_usage else 0,
+                "prompt_tokens": token_usage.get("total_prompt_tokens", 0) if token_usage else 0,
+                "completion_tokens": token_usage.get("total_completion_tokens", 0) if token_usage else 0,
+                "api_calls": token_usage.get("total_calls", 0) if token_usage else 0,
                 "error": r.get("error", "")
             }
             csv_data.append(row)
@@ -383,7 +421,7 @@ class BaseExperiment:
 
     def calculate_metrics(self, results: list) -> dict:
         """
-        计算评估指标。
+        计算评估指标（包括时间和Token统计）。
 
         Args:
             results: 结果列表
@@ -400,16 +438,40 @@ class BaseExperiment:
         success_count = sum(1 for r in results if r.get("success"))
         times = [r.get("elapsed_time", 0) for r in results]
 
+        # 🆕 统计 Token 使用
+        total_tokens = []
+        total_prompt_tokens = []
+        total_completion_tokens = []
+        total_calls = []
+
+        for r in results:
+            token_usage = r.get("token_usage", {})
+            if token_usage and token_usage.get("total_tokens", 0) > 0:
+                total_tokens.append(token_usage.get("total_tokens", 0))
+                total_prompt_tokens.append(token_usage.get("total_prompt_tokens", 0))
+                total_completion_tokens.append(token_usage.get("total_completion_tokens", 0))
+                total_calls.append(token_usage.get("total_calls", 0))
+
         metrics = {
+            # 任务统计
             "total_tasks": total,
             "success_count": success_count,
             "failure_count": total - success_count,
             "success_rate": success_count / total,
+
+            # 时间统计
             "average_time": float(np.mean(times)),
             "median_time": float(np.median(times)),
             "std_time": float(np.std(times)),
             "min_time": float(np.min(times)),
-            "max_time": float(np.max(times))
+            "max_time": float(np.max(times)),
+
+            # 🆕 Token 统计
+            "total_tokens_sum": int(np.sum(total_tokens)) if total_tokens else 0,
+            "average_tokens_per_task": float(np.mean(total_tokens)) if total_tokens else 0,
+            "total_prompt_tokens_sum": int(np.sum(total_prompt_tokens)) if total_prompt_tokens else 0,
+            "total_completion_tokens_sum": int(np.sum(total_completion_tokens)) if total_completion_tokens else 0,
+            "average_api_calls_per_task": float(np.mean(total_calls)) if total_calls else 0,
         }
 
         return metrics
@@ -459,8 +521,23 @@ class BaseExperiment:
             lines.append(f"- **成功数**: {metrics.get('success_count', 0)}")
             lines.append(f"- **失败数**: {metrics.get('failure_count', 0)}")
             lines.append(f"- **成功率**: {metrics.get('success_rate', 0):.1%}")
+
+            # 时间统计
+            lines.append(f"\n### 时间统计\n")
             lines.append(f"- **平均耗时**: {metrics.get('average_time', 0):.1f}s")
             lines.append(f"- **中位耗时**: {metrics.get('median_time', 0):.1f}s")
+            lines.append(f"- **最短耗时**: {metrics.get('min_time', 0):.1f}s")
+            lines.append(f"- **最长耗时**: {metrics.get('max_time', 0):.1f}s")
+            lines.append(f"- **标准差**: {metrics.get('std_time', 0):.1f}s")
+
+            # 🆕 Token 统计
+            if metrics.get('total_tokens_sum', 0) > 0:
+                lines.append(f"\n### Token 使用统计\n")
+                lines.append(f"- **总 Token 数**: {metrics.get('total_tokens_sum', 0):,}")
+                lines.append(f"- **平均每任务**: {metrics.get('average_tokens_per_task', 0):.0f} tokens")
+                lines.append(f"- **Prompt Tokens**: {metrics.get('total_prompt_tokens_sum', 0):,}")
+                lines.append(f"- **Completion Tokens**: {metrics.get('total_completion_tokens_sum', 0):,}")
+                lines.append(f"- **平均API调用数**: {metrics.get('average_api_calls_per_task', 0):.1f} 次/任务")
 
         # 额外章节
         if additional_sections:

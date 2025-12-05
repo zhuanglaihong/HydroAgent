@@ -7,7 +7,7 @@ Description: Utils module initialization - 工具层模块统一导出
 FilePath: \\HydroAgent\\hydroagent\\utils\\__init__.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 
-14个核心工具模块:
+15个核心工具模块:
 ✅ code_generator - 代码生成 (RunnerAgent使用)
 ✅ config_validator - 配置验证 (IntentAgent, InterpreterAgent, RunnerAgent使用)
 ✅ data_loader - 数据加载 (DeveloperAgent, PostProcessor使用)
@@ -22,6 +22,7 @@ Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 ✅ result_parser - 结果解析 (RunnerAgent使用)
 ✅ session_summary - 会话总结 (DeveloperAgent使用)
 ✅ task_detector - 任务类型检测 (DeveloperAgent使用)
+✅ token_stats - Token统计 (Orchestrator, 实验框架使用)
 
 """
 
@@ -106,6 +107,13 @@ from .param_range_adjuster import adjust_from_previous_calibration
 # 任务类型检测函数 (DeveloperAgent使用)
 from .task_detector import get_task_type_description
 
+# Token统计函数 (Orchestrator, 实验框架使用)
+from .token_stats import (
+    export_token_stats,           # 导出token统计
+    format_token_stats_report,    # 格式化token统计报告
+    aggregate_token_stats_from_files,  # 聚合多个文件的token统计
+)
+
 # ============================================================================
 # Public API (__all__)
 # ============================================================================
@@ -180,4 +188,9 @@ __all__ = [
 
     # 任务检测函数 (Task Detection Functions)
     "get_task_type_description",  # 获取任务类型描述
+
+    # Token统计函数 (Token Statistics Functions)
+    "export_token_stats",  # 导出token统计到JSON
+    "format_token_stats_report",  # 格式化token统计报告
+    "aggregate_token_stats_from_files",  # 聚合多个实验的token统计
 ]

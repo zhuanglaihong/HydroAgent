@@ -1,7 +1,7 @@
 """
 Author: Claude
 Date: 2025-01-27 10:30:00
-LastEditTime: 2025-01-27 10:30:00
+LastEditTime: 2025-12-05 21:00:00
 LastEditors: Claude
 Description: Generic plotting utilities for HydroAgent
              通用绘图工具，供DeveloperAgent调用
@@ -14,6 +14,28 @@ from typing import Dict, List, Optional, Any, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_matplotlib_for_english():
+    """
+    Configure matplotlib to use English fonts only.
+    配置matplotlib使用英文字体，避免中文显示问题。
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib
+
+        # Use non-interactive backend
+        matplotlib.use("Agg")
+
+        # Configure to use standard English fonts
+        plt.rcParams['font.family'] = 'DejaVu Sans'
+        plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'sans-serif']
+        plt.rcParams['axes.unicode_minus'] = False  # Fix minus sign display
+
+        logger.debug("[PlottingToolkit] Matplotlib configured for English fonts")
+    except Exception as e:
+        logger.warning(f"[PlottingToolkit] Failed to configure matplotlib: {str(e)}")
 
 
 class PlottingToolkit:
@@ -57,6 +79,9 @@ class PlottingToolkit:
 
             matplotlib.use("Agg")
             import numpy as np
+
+            # Configure for English fonts
+            _configure_matplotlib_for_english()
 
             plt.figure(figsize=kwargs.get("figsize", (12, 6)))
 
