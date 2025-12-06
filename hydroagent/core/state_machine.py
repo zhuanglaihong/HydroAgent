@@ -256,6 +256,46 @@ class StateMachine:
 
 
 # ============================================================================
+# 辅助函数
+# ============================================================================
+
+def _has_pending_subtasks(ctx: Dict[str, Any]) -> bool:
+    """
+    检查执行上下文中是否还有待执行的子任务。
+
+    Args:
+        ctx: Orchestrator执行上下文
+
+    Returns:
+        bool: True if there are pending subtasks, False otherwise
+    """
+    task_plan = ctx.get("task_plan", {})
+    subtasks = task_plan.get("subtasks", [])
+
+    if not subtasks:
+        return False
+
+    # Get completed subtask IDs from execution_results
+    execution_results = ctx.get("execution_results", [])
+    completed_ids = set()
+    for result in execution_results:
+        if result.get("success", False):
+            task_id = result.get("task_id")
+            if task_id:
+                completed_ids.add(task_id)
+
+    # Check if there are any subtasks not completed
+    for subtask in subtasks:
+        task_id = subtask.get("task_id")
+        if task_id and task_id not in completed_ids:
+            logger.debug(f"[StateMachine] Found pending subtask: {task_id}")
+            return True
+
+    logger.debug("[StateMachine] No pending subtasks remaining")
+    return False
+
+
+# ============================================================================
 # 默认状态转移规则构建器
 # ============================================================================
 
@@ -446,15 +486,28 @@ def build_default_transitions() -> List[StateTransition]:
         description="Iterating → Replan with adjusted params"
     ))
 
+    # ⭐ NEW: Check for remaining subtasks before completing
+    # For multi-task scenarios (extended_analysis, batch_processing, etc.)
+    transitions.append(StateTransition(
+        from_state=OrchestratorState.ANALYZING_RESULTS,
+        to_state=OrchestratorState.GENERATING_CONFIG,
+        condition=lambda ctx: (
+            ctx.get("analysis_result", {}).get("success", False) and
+            _has_pending_subtasks(ctx)  # Check if there are more subtasks to execute
+        ),
+        description="Analysis complete, more subtasks remaining → Continue to next subtask"
+    ))
+
     # ⭐ CRITICAL FIX: For standard_calibration, complete after analysis
     transitions.append(StateTransition(
         from_state=OrchestratorState.ANALYZING_RESULTS,
         to_state=OrchestratorState.COMPLETED_SUCCESS,
         condition=lambda ctx: (
             ctx.get("analysis_result", {}).get("success", False) and
-            ctx.get("intent_result", {}).get("task_type") != "iterative_optimization"  # ⭐ Complete for non-iterative tasks
+            ctx.get("intent_result", {}).get("task_type") != "iterative_optimization" and  # ⭐ Complete for non-iterative tasks
+            not _has_pending_subtasks(ctx)  # ⭐ AND no more subtasks remaining
         ),
-        description="Analysis complete (standard task) → Completed"
+        description="Analysis complete (standard task, no more subtasks) → Completed"
     ))
 
     transitions.append(StateTransition(
@@ -469,11 +522,19 @@ def build_default_transitions() -> List[StateTransition]:
     ))
 
     # ======== 成功终止 ========
+    # ⭐ CRITICAL FIX: Check for pending subtasks before completing
+    transitions.append(StateTransition(
+        from_state=OrchestratorState.RESULTS_ACCEPTABLE,
+        to_state=OrchestratorState.GENERATING_CONFIG,
+        condition=lambda ctx: _has_pending_subtasks(ctx),
+        description="Results acceptable but more subtasks remaining → Continue to next subtask"
+    ))
+
     transitions.append(StateTransition(
         from_state=OrchestratorState.RESULTS_ACCEPTABLE,
         to_state=OrchestratorState.COMPLETED_SUCCESS,
-        condition=lambda ctx: True,
-        description="Results acceptable → Completed success"
+        condition=lambda ctx: not _has_pending_subtasks(ctx),
+        description="Results acceptable and no more subtasks → Completed success"
     ))
 
     return transitions

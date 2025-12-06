@@ -311,6 +311,116 @@ class PromptManager:
 # =============================================================================
 
 
+def _build_fdc_prompt(basin_id: str, params: Dict[str, Any]) -> str:
+    """
+    构建FDC代码生成提示词（带数据路径和示例代码）。
+    Build FDC code generation prompt with data paths and examples.
+    """
+    # 获取previous_results，找到evaluation的输出目录
+    previous_results = params.get("previous_results", [])
+    data_dir = None
+    nc_file = None
+
+    # 查找evaluation或calibration的结果目录
+    for result in previous_results:
+        if result.get("success") and result.get("output_dir"):
+            output_dir = Path(result["output_dir"])
+            # 查找.nc文件
+            nc_files = list(output_dir.glob("*.nc"))
+            if nc_files:
+                data_dir = str(output_dir)
+                nc_file = nc_files[0].name
+                break
+
+    # 构建数据路径提示
+    if data_dir and nc_file:
+        data_path_hint = f"""
+📂 **数据文件路径**：
+- 评估结果目录：`{data_dir}`
+- NetCDF文件：`{nc_file}`
+- 完整路径：`{data_dir}/{nc_file}`
+
+💡 **读取NetCDF文件示例**：
+```python
+import xarray as xr
+from pathlib import Path
+
+# 读取hydromodel生成的评估结果
+nc_file = Path(r"{data_dir}") / "{nc_file}"
+ds = xr.open_dataset(nc_file)
+
+# 提取观测值和模拟值（测试期数据）
+qobs = ds['qobs'].values.flatten()  # 观测流量
+qsim = ds['qsim'].values.flatten()  # 模拟流量
+
+# 移除NaN值
+valid_mask = ~(np.isnan(qobs) | np.isnan(qsim))
+qobs = qobs[valid_mask]
+qsim = qsim[valid_mask]
+
+# 确保为正值（用于对数坐标）
+qobs = np.maximum(qobs, 0.001)
+qsim = np.maximum(qsim, 0.001)
+```
+"""
+    else:
+        data_path_hint = """
+⚠️ **未找到previous_results数据路径**
+
+请生成通用的FDC绘制代码，假设数据文件为：
+- `evaluation_results.nc` 或 `flow_data.csv`
+- 包含 'qobs' 和 'qsim' 变量
+
+建议添加文件检查逻辑，如果文件不存在则提示用户。
+"""
+
+    return f"""
+请生成Python代码，绘制流域 {basin_id} 的流量历时曲线（Flow Duration Curve, FDC）。
+
+{data_path_hint}
+
+具体要求：
+1. **读取流量数据**（观测值和模拟值）
+   - 使用 xarray 读取 NetCDF 文件
+   - 提取 qobs（观测流量）和 qsim（模拟流量）
+   - 移除NaN值，确保数据为正值
+
+2. **计算超越概率**（exceedance probability）
+   - 对流量数据进行降序排序
+   - 使用Weibull公式计算：P = m/(n+1) * 100
+
+3. **绘制FDC曲线**
+   - 使用对数坐标（plt.semilogy）
+   - 同时绘制观测值和模拟值的FDC
+   - X轴：超越概率(%)，Y轴：流量(m³/s)
+
+4. **图表美化**
+   - 添加图例、网格、标题
+   - 配置中文字体（见下方）
+   - 保存高分辨率图片（fdc_curve.png, 300 DPI）
+
+5. **打印统计信息**
+   - 数据点数量
+   - 最大/最小流量
+   - 中位数流量（P50）
+
+🔧 **CRITICAL: matplotlib 中文显示配置**
+必须在导入matplotlib后立即添加：
+```python
+import matplotlib.pyplot as plt
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+```
+
+📝 **代码要求**：
+- 使用 type hints
+- 添加详细注释
+- 包含错误处理（文件不存在、数据格式错误）
+- 打印进度信息
+- 代码应该可以直接运行，无需修改路径
+"""
+
+
 def build_code_generation_prompt(analysis_type: str, params: Dict[str, Any]) -> str:
     """
     构建代码生成提示词（实验4：代码生成）。
@@ -356,35 +466,7 @@ plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode M
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 ```
 """,
-        "FDC": f"""
-请生成Python代码，绘制流域 {basin_id} 的流量历时曲线（Flow Duration Curve, FDC）。
-
-具体要求：
-1. 从率定结果读取流量数据（观测值和模拟值）
-2. 对流量数据进行降序排序
-3. 计算超越概率（exceedance probability）
-4. 绘制FDC曲线（使用对数坐标）
-5. 同时绘制观测值和模拟值的FDC，进行对比
-6. 保存高分辨率图片（fdc_curve.png, 300 DPI）
-
-🔧 **CRITICAL: matplotlib 中文显示配置**
-必须在导入matplotlib后立即添加：
-```python
-import matplotlib.pyplot as plt
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
-plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
-```
-
-绘图要求：
-- 使用 matplotlib 并配置中文字体
-- 图表清晰美观，包含图例、网格
-- 保存为PNG格式
-
-代码要求：
-- 使用 type hints
-- 添加详细注释
-- 包含错误处理
-""",
+        "FDC": _build_fdc_prompt(basin_id, params),
         "water_balance": f"""
 请生成Python代码，分析流域 {basin_id} 的水量平衡。
 

@@ -321,18 +321,43 @@ class FeedbackRouter:
         # 获取NSE目标
         nse_target = context.get("nse_target", 0.7)
 
-        # NSE达标,正常结束
+        # NSE达标,检查是否还有剩余子任务
         if nse >= nse_target:
             logger.info(f"[FeedbackRouter] NSE {nse:.4f} meets target {nse_target:.4f}")
-            return {
-                "target_agent": None,
-                "action": "complete_success",
-                "parameters": {
-                    "final_nse": nse,
-                    "metrics": metrics
-                },
-                "retryable": False
-            }
+
+            # ⭐ 检查是否还有pending的子任务需要执行
+            task_plan = context.get("task_plan", {})
+            subtasks = task_plan.get("subtasks", [])
+            execution_results = context.get("execution_results", [])
+
+            completed_ids = {r.get("task_id") for r in execution_results if r.get("success")}
+            pending_subtasks = [st for st in subtasks if st.get("task_id") not in completed_ids]
+
+            if pending_subtasks:
+                # 还有剩余子任务，继续执行
+                logger.info(f"[FeedbackRouter] NSE达标，但还有 {len(pending_subtasks)} 个子任务待执行，继续流程...")
+                return {
+                    "target_agent": None,
+                    "action": "complete_success",  # 完成当前子任务
+                    "parameters": {
+                        "final_nse": nse,
+                        "metrics": metrics,
+                        "continue_subtasks": True  # 标记继续执行剩余子任务
+                    },
+                    "retryable": False
+                }
+            else:
+                # 所有子任务都已完成，正常结束
+                logger.info(f"[FeedbackRouter] NSE达标且所有子任务已完成，结束流程")
+                return {
+                    "target_agent": None,
+                    "action": "complete_success",
+                    "parameters": {
+                        "final_nse": nse,
+                        "metrics": metrics
+                    },
+                    "retryable": False
+                }
 
         # NSE未达标,检查是否达到最大迭代次数
         iteration_count = context.get("iteration_count", 0)
@@ -350,7 +375,37 @@ class FeedbackRouter:
                 "retryable": False
             }
 
-        # NSE未达标,检查建议
+        # ⭐ 重要：检查用户原始任务类型
+        # 只有当用户明确要求iterative_optimization时才触发迭代优化
+        # 对于extended_analysis等其他任务类型，应该完成当前子任务后继续执行后续子任务
+        # task_type从intent_result中获取
+        intent_result = context.get("intent_result", {})
+        if isinstance(intent_result, dict) and "intent_result" in intent_result:
+            # v5.0格式: {"success": True, "intent_result": {"task_type": "...", ...}}
+            task_type = intent_result.get("intent_result", {}).get("task_type")
+        else:
+            # 旧格式: 直接在顶层
+            task_type = intent_result.get("task_type")
+
+        if task_type != "iterative_optimization":
+            logger.info(
+                f"[FeedbackRouter] Task type is '{task_type}', not 'iterative_optimization'. "
+                f"Completing current subtask (NSE={nse:.4f})."
+            )
+            # 对于非迭代优化任务，即使NSE未达标或有优化建议，也应该正常结束当前子任务
+            # 让系统继续执行后续子任务（如extended_analysis的代码生成任务）
+            return {
+                "target_agent": None,
+                "action": "complete_success",
+                "parameters": {
+                    "final_nse": nse,
+                    "metrics": metrics
+                },
+                "retryable": False
+            }
+
+        # 只有明确的iterative_optimization任务才检查建议并触发优化
+        logger.info("[FeedbackRouter] Task type is 'iterative_optimization', checking recommendations...")
         for rec in recommendations:
             if "参数范围" in rec or "parameter range" in rec.lower():
                 # 建议调整参数范围 → 触发迭代优化

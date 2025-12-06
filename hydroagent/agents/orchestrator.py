@@ -659,11 +659,66 @@ Always think step-by-step and explain your reasoning."""
                     "context_updates": {"config_result": {"success": False}},
                 }
 
-            # Generate config for first subtask (simplified for state machine)
-            subtask = subtasks[0]
+            # ⭐ CRITICAL FIX: Select next pending subtask, not always the first one
+            # Get completed subtask IDs
+            execution_results = self.execution_context.get("execution_results", [])
+            completed_ids = {r.get("task_id") for r in execution_results if r.get("success")}
+
+            # Find first pending subtask
+            subtask = None
+            for st in subtasks:
+                if st.get("task_id") not in completed_ids:
+                    subtask = st
+                    break
+
+            if subtask is None:
+                # All subtasks completed (should not reach here if state transitions are correct)
+                logger.warning("[Orchestrator] All subtasks completed, but still in GENERATING_CONFIG state")
+                return {
+                    "context_updates": {"config_result": {"success": False, "error": "No pending subtasks"}},
+                }
+
+            logger.info(f"[Orchestrator] Generating config for next pending subtask: {subtask.get('task_id')}")
             subtask["user_query"] = self.execution_context.get("query", "")
 
             try:
+                # ⭐ CRITICAL FIX: Route analysis/code_generation tasks differently
+                # Analysis tasks don't need hydromodel configs - they need code generation
+                task_type = subtask.get("task_type", "")
+
+                if task_type in ["analysis", "code_generation", "visualization", "custom_analysis"]:
+                    # Skip InterpreterAgent for these tasks - they don't need hydromodel configs
+                    logger.info(f"[Orchestrator] Skipping InterpreterAgent for {task_type} task - using minimal metadata config")
+
+                    # ⭐ Add previous_results to parameters for code generation
+                    # This allows Code LLM to access data from previous calibration/evaluation tasks
+                    task_params = subtask.get("parameters", {}).copy()
+                    task_params["previous_results"] = self.execution_context.get("execution_results", [])
+
+                    config_result = {
+                        "success": True,
+                        "config": {
+                            "task_metadata": {
+                                "task_type": task_type,
+                                "task_id": subtask.get("task_id"),
+                                "parameters": task_params,  # ⭐ Use enhanced parameters
+                                "description": subtask.get("description", ""),
+                                "user_query": subtask.get("user_query", ""),
+                            }
+                        },
+                        "task_id": subtask.get("task_id")
+                    }
+
+                    return {
+                        "context_updates": {
+                            "config_result": config_result,
+                            "current_config": config_result.get("config"),
+                        },
+                        "source_agent": "Orchestrator",  # Direct routing, no InterpreterAgent
+                        "agent_result": config_result,
+                    }
+
+                # For calibration/evaluation/simulation, use InterpreterAgent normally
                 config_result = self.interpreter_agent.process(
                     {"subtask": subtask, "intent_result": intent_result}
                 )
@@ -703,6 +758,9 @@ Always think step-by-step and explain your reasoning."""
             config_result = self.execution_context.get("config_result", {})
             use_mock = self.execution_context.get("use_mock", False)
 
+            # ⭐ CRITICAL FIX: Get task_id from config_result to track which subtask is being executed
+            task_id = config_result.get("task_id")
+
             try:
                 # Apply mock mode if requested
                 if use_mock:
@@ -720,6 +778,10 @@ Always think step-by-step and explain your reasoning."""
                         runner_result = self.runner_agent.process(config_result)
                 else:
                     runner_result = self.runner_agent.process(config_result)
+
+                # ⭐ CRITICAL FIX: Ensure task_id is in runner_result for tracking
+                if task_id and "task_id" not in runner_result:
+                    runner_result["task_id"] = task_id
 
                 # Track retry count for execution
                 if not runner_result.get("success"):
@@ -748,15 +810,25 @@ Always think step-by-step and explain your reasoning."""
                     self.checkpoint_manager.update_phase("runner")
                     task_plan = self.execution_context.get("task_plan", {})
                     subtasks = task_plan.get("subtasks", [])
-                    if subtasks:
-                        task_id = subtasks[0].get("task_id", "subtask_1")
+                    # ⭐ CRITICAL FIX: Use actual task_id from runner_result, not always subtasks[0]
+                    task_id = runner_result.get("task_id")
+                    if not task_id and subtasks:
+                        # Fallback: find the task_id from current config
+                        config_result = self.execution_context.get("config_result", {})
+                        task_id = config_result.get("task_id", subtasks[0].get("task_id", "subtask_1"))
+
+                    if task_id:
                         self.checkpoint_manager.mark_subtask_completed(task_id, runner_result)
                         logger.info(f"[Orchestrator] Checkpoint: subtask {task_id} completed")
+
+                # ⭐ CRITICAL FIX: Append to execution_results, don't overwrite
+                existing_results = self.execution_context.get("execution_results", [])
+                updated_results = existing_results + [runner_result]
 
                 return {
                     "context_updates": {
                         "execution_result": runner_result,
-                        "execution_results": [runner_result],
+                        "execution_results": updated_results,  # ⭐ Append, not overwrite
                     },
                     "source_agent": "RunnerAgent",
                     "agent_result": runner_result,

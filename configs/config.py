@@ -13,7 +13,7 @@ Copyright (c) 2024-2025 HydroAgent. All rights reserved.
 # ============================================================================
 
 # Default LLM model for API backend
-DEFAULT_MODEL = "qwen3-max"
+DEFAULT_MODEL = "qwen-flash"
 
 # Default code-specific LLM model (for DeveloperAgent code generation)
 DEFAULT_CODE_MODEL = "qwen3-coder-plus"

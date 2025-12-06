@@ -14,7 +14,7 @@ client = OpenAI(
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"  # 阿里云Qwen服务的兼容端点
 )
 
-def ask_qwen(question, model="qwen3-max", temperature=0.8):
+def ask_qwen(question, model="qwen-flash", temperature=0.8):
     """
     向Qwen模型提问并获取回答
     """

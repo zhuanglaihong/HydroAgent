@@ -277,17 +277,26 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
             logger.error("[RunnerAgent] No config found in input_data")
             return {"success": False, "error": "Missing 'config' in input_data"}
 
-        # Phase 3: 支持从config的parameters中获取task_type
+        # Phase 3: 支持从config的多个位置获取task_type
+        # 优先从task_metadata获取（Orchestrator直接路由的analysis任务）
+        # 其次从parameters获取（InterpreterAgent生成的任务）
+        task_metadata = config.get("task_metadata", {})
         parameters = config.get("parameters", {})
-        task_type = parameters.get("task_type")
+        task_type = task_metadata.get("task_type") or parameters.get("task_type")
         task_id = input_data.get("task_id", "unknown")
+
+        # Log task_type source for debugging
+        if task_type:
+            source = "task_metadata" if task_metadata.get("task_type") else "parameters"
+            logger.info(f"[RunnerAgent] task_type='{task_type}' (from config.{source})")
 
         # 推断执行模式 TODO
         if task_type == "boundary_check_recalibration":
             mode = "boundary_check"
         elif task_type == "statistical_analysis":
             mode = "statistical_analysis"
-        elif task_type == "custom_analysis":
+        elif task_type in ["custom_analysis", "analysis", "code_generation", "visualization"]:
+            # ⭐ CRITICAL FIX: Route all analysis-related tasks to custom_analysis
             mode = "custom_analysis"
         elif task_type == "auto_iterative_calibration":
             mode = "auto_iterative"
@@ -312,11 +321,17 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         # For custom_analysis tasks, get metadata from task_metadata or parameters
         if mode == "custom_analysis":
             task_metadata = config.get("task_metadata", {})
-            model_name = task_metadata.get("model_name") or parameters.get(
-                "model_name", "N/A"
+            # ⭐ Extract from task_metadata.parameters if available
+            metadata_params = task_metadata.get("parameters", {})
+            model_name = (
+                task_metadata.get("model_name")
+                or metadata_params.get("model_name")
+                or parameters.get("model_name", "N/A")
             )
-            basin_ids = task_metadata.get("basin_id") or parameters.get(
-                "basin_id", "N/A"
+            basin_ids = (
+                task_metadata.get("basin_id")
+                or metadata_params.get("basin_id")
+                or parameters.get("basin_id", "N/A")
             )
             logger.info(f"[RunnerAgent] 模型: {model_name}")
             logger.info(f"[RunnerAgent] 流域: {basin_ids}")
@@ -457,7 +472,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
                 # 运行率定 - 直接传入config dict
                 logger.info("[RunnerAgent] 调用 calibrate(config)")
-                # print('config',config)
+                print('config',config)
                 result = calibrate(config)
 
             finally:
@@ -1403,9 +1418,16 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         """
         logger.info("[RunnerAgent] 开始自定义分析...")
 
-        analysis_type = parameters.get("analysis_type", "unknown")
-        basin_id = parameters.get("basin_id")
-        model_name = parameters.get("model_name")
+        # ⭐ CRITICAL FIX: Extract from task_metadata if available (v5.0 format)
+        task_metadata = config.get("task_metadata", {})
+        metadata_params = task_metadata.get("parameters", {})
+
+        # Merge parameters: task_metadata.parameters > parameters
+        merged_params = {**parameters, **metadata_params}
+
+        analysis_type = merged_params.get("analysis_type", "unknown")
+        basin_id = merged_params.get("basin_id")
+        model_name = merged_params.get("model_name")
 
         logger.info(f"[RunnerAgent] 分析类型: {analysis_type}")
         logger.info(f"[RunnerAgent] 流域: {basin_id}, 模型: {model_name}")
@@ -1425,14 +1447,14 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
         #   v4.0: 使用带错误反馈的代码生成方法
         logger.info("[RunnerAgent] 开始代码生成和执行（带错误反馈循环）...")
-        max_retries = parameters.get("code_gen_max_retries", 3)
+        max_retries = merged_params.get("code_gen_max_retries", 3)
 
         result = code_generator.generate_code_with_feedback(
             code_llm=self.code_llm,
             workspace_dir=self.workspace_dir,
             timeout=self.timeout,
             analysis_type=analysis_type,
-            params=parameters,
+            params=merged_params,  # ⭐ Use merged_params instead of parameters
             max_retries=max_retries,
         )
 

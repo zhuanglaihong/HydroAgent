@@ -4,7 +4,7 @@ Date: 2025-12-04 20:45:00
 LastEditTime: 2025-12-04 20:45:00
 LastEditors: Claude
 Description: 最小标准率定测试脚本 - 测试 HydroAgent v5.0 基本功能
-FilePath: /HydroAgent/scripts/test_basic_calibration.py
+FilePath: /HydroAgent/scripts/run_basic_calibration.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 """
 

@@ -754,6 +754,10 @@ Always explain your analysis and provide actionable recommendations."""
         #  使用ReportGenerator生成文字分析报告
         try:
             from hydroagent.utils import ReportGenerator
+            from pathlib import Path
+
+            # 确保output_path是Path对象
+            output_path_obj = Path(output_dir) if output_dir else Path(self.workspace_dir)
 
             report_path = ReportGenerator.generate_iterative_optimization_report(
                 analysis=analysis,
@@ -761,7 +765,7 @@ Always explain your analysis and provide actionable recommendations."""
                 plots=analysis.get("plot_files", []),
                 converged=converged,
                 total_iterations=total_iterations,
-                output_path=output_dir if output_dir else self.workspace_dir,
+                output_path=output_path_obj,
             )
             analysis["report_path"] = str(report_path)
             logger.info(f"[DeveloperAgent] 迭代优化分析报告已保存: {report_path}")

@@ -568,41 +568,41 @@ class BaseExperiment:
         matplotlib.use('Agg')  # 使用非交互式后端
 
         if plot_type == "success_rate":
-            # 成功率饼图
+            # Success rate pie chart
             success_count = sum(1 for r in results if r.get("success"))
             failure_count = len(results) - success_count
 
             fig, ax = plt.subplots(figsize=(8, 6))
             ax.pie(
                 [success_count, failure_count],
-                labels=["成功", "失败"],
+                labels=["Success", "Failure"],
                 autopct="%1.1f%%",
                 colors=["#4CAF50", "#F44336"]
             )
-            ax.set_title("任务成功率")
+            ax.set_title("Task Success Rate")
 
             plot_file = self.workspace / "plots" / "success_rate.png"
             plt.savefig(plot_file, dpi=150, bbox_inches="tight")
             plt.close()
 
-            print(f"✅ 生成图表: {plot_file}")
+            print(f"✅ Generated plot: {plot_file}")
 
         elif plot_type == "time_distribution":
-            # 时间分布直方图
+            # Time distribution histogram
             times = [r.get("elapsed_time", 0) for r in results if r.get("success")]
 
             fig, ax = plt.subplots(figsize=(10, 6))
             ax.hist(times, bins=20, color="#2196F3", alpha=0.7, edgecolor="black")
-            ax.set_xlabel("执行时间 (秒)")
-            ax.set_ylabel("频次")
-            ax.set_title("任务执行时间分布")
+            ax.set_xlabel("Execution Time (seconds)")
+            ax.set_ylabel("Frequency")
+            ax.set_title("Task Execution Time Distribution")
             ax.grid(True, alpha=0.3)
 
             plot_file = self.workspace / "plots" / "time_distribution.png"
             plt.savefig(plot_file, dpi=150, bbox_inches="tight")
             plt.close()
 
-            print(f"✅ 生成图表: {plot_file}")
+            print(f"✅ Generated plot: {plot_file}")
 
         return plot_file
 

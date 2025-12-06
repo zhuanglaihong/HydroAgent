@@ -805,11 +805,11 @@ Respond with ONLY valid JSON, no extra text."""
             # Type check to prevent crash on list objects
             if (
                 isinstance(basin_id, str)
-                and basin_id.startswith("0")
                 and len(basin_id) == 8
                 and basin_id.isdigit()
             ):
-                # CAMELS_US格式：8位数字，以0开头
+                # ⭐ CRITICAL FIX: CAMELS_US格式：8位数字（不管以什么开头）
+                # CAMELS-US有很多流域不以0开头，如14325000, 12025000, 11532500等
                 intent_result["data_source"] = "camels_us"
                 logger.info(
                     f"[IntentAgent] Inferred data_source: camels_us (basin_id={basin_id})"
