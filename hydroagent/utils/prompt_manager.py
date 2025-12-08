@@ -316,38 +316,72 @@ def _build_fdc_prompt(basin_id: str, params: Dict[str, Any]) -> str:
     构建FDC代码生成提示词（带数据路径和示例代码）。
     Build FDC code generation prompt with data paths and examples.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     # 获取previous_results，找到evaluation的输出目录
     previous_results = params.get("previous_results", [])
+    logger.info(f"[_build_fdc_prompt] Received {len(previous_results)} previous results")
     data_dir = None
     nc_file = None
 
     # 查找evaluation或calibration的结果目录
-    for result in previous_results:
-        if result.get("success") and result.get("output_dir"):
-            output_dir = Path(result["output_dir"])
-            # 查找.nc文件
-            nc_files = list(output_dir.glob("*.nc"))
-            if nc_files:
-                data_dir = str(output_dir)
-                nc_file = nc_files[0].name
-                break
+    # ⭐ CRITICAL FIX: Support both "output_dir" and "calibration_dir" field names
+    for idx, result in enumerate(previous_results):
+        logger.info(f"[_build_fdc_prompt] Result {idx}: keys={list(result.keys())}")
+        if result.get("success"):
+            logger.info(f"[_build_fdc_prompt] Result {idx} has success=True")
+        if result.get("success"):
+            # ✅ FIX: Extract nested result data from RunnerAgent
+            result_data = result.get("result", {})
+            logger.info(f"[_build_fdc_prompt] Result {idx}: result_data keys={list(result_data.keys()) if isinstance(result_data, dict) else 'N/A'}")
+
+            # Try multiple locations: top-level and nested in "result" field
+            output_dir_path = (
+                result.get("output_dir")  # Top-level (some agents)
+                or result.get("calibration_dir")  # Top-level (some agents)
+                or result_data.get("calibration_dir")  # ⭐ Nested in result (RunnerAgent)
+                or result_data.get("output_dir")  # Nested in result (other cases)
+            )
+            logger.info(f"[_build_fdc_prompt] Result {idx}: output_dir_path={output_dir_path}")
+            if output_dir_path:
+                output_dir = Path(output_dir_path)
+                # 查找.nc文件
+                nc_files = list(output_dir.glob("*.nc"))
+                logger.info(f"[_build_fdc_prompt] Found {len(nc_files)} .nc files in {output_dir}")
+                if nc_files:
+                    data_dir = str(output_dir)
+                    nc_file = nc_files[0].name
+                    logger.info(f"[_build_fdc_prompt] ✓ Using data_dir={data_dir}, nc_file={nc_file}")
+                    break
 
     # 构建数据路径提示
     if data_dir and nc_file:
+        full_nc_path = str(Path(data_dir) / nc_file)  # Windows兼容的绝对路径
         data_path_hint = f"""
-📂 **数据文件路径**：
-- 评估结果目录：`{data_dir}`
-- NetCDF文件：`{nc_file}`
-- 完整路径：`{data_dir}/{nc_file}`
+📂 **数据文件路径**（⚠️ 必须使用此绝对路径）：
+- NetCDF文件：`{full_nc_path}`
 
-💡 **读取NetCDF文件示例**：
+⚠️ **CRITICAL REQUIREMENT**:
+你**必须**使用以下绝对路径来读取数据文件，**不要使用相对路径**：
+```python
+nc_file_path = r"{full_nc_path}"
+```
+
+💡 **读取NetCDF文件的完整代码**：
 ```python
 import xarray as xr
-from pathlib import Path
+import numpy as np
+
+# ⭐ 使用绝对路径读取数据文件
+nc_file_path = r"{full_nc_path}"
+
+# 检查文件是否存在
+if not os.path.exists(nc_file_path):
+    raise FileNotFoundError(f"数据文件不存在: {{nc_file_path}}")
 
 # 读取hydromodel生成的评估结果
-nc_file = Path(r"{data_dir}") / "{nc_file}"
-ds = xr.open_dataset(nc_file)
+ds = xr.open_dataset(nc_file_path)
 
 # 提取观测值和模拟值（测试期数据）
 qobs = ds['qobs'].values.flatten()  # 观测流量
@@ -418,6 +452,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 - 包含错误处理（文件不存在、数据格式错误）
 - 打印进度信息
 - 代码应该可以直接运行，无需修改路径
+- ⚠️ **Windows编码兼容性**：在文件开头添加 `# -*- coding: utf-8 -*-`，并在所有print语句中避免使用emoji字符（如🚀、✅、❌等），改用纯文本描述（如"[INFO]"、"[OK]"、"[ERROR]"）以避免Windows GBK编码错误
 """
 
 
@@ -457,6 +492,7 @@ def build_code_generation_prompt(analysis_type: str, params: Dict[str, Any]) -> 
 - 添加详细注释
 - 包含错误处理
 - 打印进度信息
+- ⚠️ **Windows编码兼容性**：在文件开头添加 `# -*- coding: utf-8 -*-`，并在所有print语句中避免使用emoji字符（如🚀、✅、❌等），改用纯文本描述（如"[INFO]"、"[OK]"、"[ERROR]"）以避免Windows GBK编码错误
 
 🔧 **CRITICAL: 中文显示配置**
 如果使用 matplotlib 绘图，必须在代码开头添加：
@@ -490,6 +526,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 - 使用 type hints
 - 添加详细注释
 - 包含错误处理
+- ⚠️ **Windows编码兼容性**：在文件开头添加 `# -*- coding: utf-8 -*-`，并在所有print语句中避免使用emoji字符（如🚀、✅、❌等），改用纯文本描述（如"[INFO]"、"[OK]"、"[ERROR]"）以避免Windows GBK编码错误
 """,
         "seasonal_analysis": f"""
 请生成Python代码，进行流域 {basin_id} 的季节性分析。
@@ -514,6 +551,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 - 使用 type hints
 - 添加详细注释
 - 包含错误处理
+- ⚠️ **Windows编码兼容性**：在文件开头添加 `# -*- coding: utf-8 -*-`，并在所有print语句中避免使用emoji字符（如🚀、✅、❌等），改用纯文本描述（如"[INFO]"、"[OK]"、"[ERROR]"）以避免Windows GBK编码错误
 """,
     }
 
@@ -549,6 +587,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 - 添加详细注释
 - 包含错误处理
 - 打印进度信息
+- ⚠️ **Windows编码兼容性**：在文件开头添加 `# -*- coding: utf-8 -*-`，并在所有print语句中避免使用emoji字符（如🚀、✅、❌等），改用纯文本描述（如"[INFO]"、"[OK]"、"[ERROR]"）以避免Windows GBK编码错误
 """
 
 

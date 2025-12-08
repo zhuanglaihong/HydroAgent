@@ -145,16 +145,18 @@ def main():
     noise_stats = {}
     for noise_type, queries in noise_types.items():
         type_results = [r for r in results if r.get("query", "") in queries]
+        total = len(type_results)
+        success = sum(1 for r in type_results if r.get("success", False))
         noise_stats[noise_type] = {
-            "total": len(type_results),
-            "success": sum(1 for r in type_results if r.get("success", False)),
+            "total": total,
+            "success": success,
+            "success_rate": success / total if total > 0 else 0.0,
         }
 
     # 生成噪音类型统计表格
     noise_table = "| 噪音类型 | 测试数 | 成功数 | 成功率 |\n|---------|--------|--------|--------|\n"
     for noise_type, stats in noise_stats.items():
-        success_rate = stats["success"] / stats["total"] if stats["total"] > 0 else 0
-        noise_table += f"| {noise_type} | {stats['total']} | {stats['success']} | {success_rate:.1%} |\n"
+        noise_table += f"| {noise_type} | {stats['total']} | {stats['success']} | {stats['success_rate']:.1%} |\n"
 
     additional_sections = {
         "按噪音类型统计": f"""
@@ -177,23 +179,23 @@ def main():
 
 **按噪音类型分析**:
 
-1. **拼写错误** ({noise_stats['拼写错误']['success_rate'] if '拼写错误' in noise_stats else 0:.1%})
+1. **拼写错误** ({noise_stats.get('拼写错误', {}).get('success_rate', 0):.1%})
    - 测试LLM对常见拼写错误的纠正能力
    - 关键字识别（率定、模型、流域）的鲁棒性
 
-2. **标点异常** ({noise_stats['标点异常']['success_rate'] if '标点异常' in noise_stats else 0:.1%})
+2. **标点异常** ({noise_stats.get('标点异常', {}).get('success_rate', 0):.1%})
    - 测试系统对标点符号的依赖程度
    - 分词和语义理解的准确性
 
-3. **参数顺序混乱** ({noise_stats['参数顺序混乱']['success_rate'] if '参数顺序混乱' in noise_stats else 0:.1%})
+3. **参数顺序混乱** ({noise_stats.get('参数顺序混乱', {}).get('success_rate', 0):.1%})
    - 测试系统对参数位置的容错能力
    - 语义理解而非规则匹配的能力
 
-4. **口语化表达** ({noise_stats['口语化表达']['success_rate'] if '口语化表达' in noise_stats else 0:.1%})
+4. **口语化表达** ({noise_stats.get('口语化表达', {}).get('success_rate', 0):.1%})
    - 测试系统对日常用语的理解
    - 意图识别的准确性
 
-5. **中英混合** ({noise_stats['中英混合']['success_rate'] if '中英混合' in noise_stats else 0:.1%})
+5. **中英混合** ({noise_stats.get('中英混合', {}).get('success_rate', 0):.1%})
    - 测试系统对双语输入的处理能力
    - 跨语言关键字识别
 
@@ -205,15 +207,7 @@ def main():
 """
     }
 
-    # 计算各类型成功率并添加到stats
-    for noise_type in noise_stats:
-        if noise_stats[noise_type]["total"] > 0:
-            noise_stats[noise_type]["success_rate"] = (
-                noise_stats[noise_type]["success"] / noise_stats[noise_type]["total"]
-            )
-        else:
-            noise_stats[noise_type]["success_rate"] = 0
-
+    # Note: success_rate already calculated in noise_stats (lines 145-154)
     exp.generate_report(results, metrics, additional_sections=additional_sections)
 
     # 生成可视化

@@ -55,7 +55,7 @@ def test_extended_analysis_no_loop():
     logger.info("测试: Extended Analysis任务（代码生成）不陷入循环")
     logger.info("=" * 80)
 
-    query = "率定GR4J模型，流域14325000，完成后画FDC曲线"
+    query = "率定流域02177000的GR4J，然后计算径流系数和画FDC曲线"
 
     logger.info(f"查询: {query}")
     logger.info("预期: 系统应该识别3个子任务并顺序执行，生成FDC曲线，不会进入迭代优化循环")

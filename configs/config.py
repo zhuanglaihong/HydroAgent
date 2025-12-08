@@ -13,7 +13,7 @@ Copyright (c) 2024-2025 HydroAgent. All rights reserved.
 # ============================================================================
 
 # Default LLM model for API backend
-DEFAULT_MODEL = "qwen-flash"
+DEFAULT_MODEL = "qwen-turbo"
 
 # Default code-specific LLM model (for DeveloperAgent code generation)
 DEFAULT_CODE_MODEL = "qwen3-coder-plus"
@@ -52,8 +52,8 @@ DEFAULT_WARMUP_DAYS = 365
 
 # SCE-UA (Shuffled Complex Evolution) default parameters
 DEFAULT_SCE_UA_PARAMS = {
-    "rep": 1000,          # Number of evolution steps (迭代轮数)
-    "ngs": 300,           # Number of complexes (复合体数量)
+    "rep": 500,          # Number of evolution steps (迭代轮数)
+    "ngs": 200,           # Number of complexes (复合体数量)
     "kstop": 500,         # Convergence criterion (收敛判据)
     "peps": 0.1,          # Convergence threshold (收敛阈值)
     "pcento": 0.1,        # Percentage change (百分比变化)

@@ -230,7 +230,8 @@ Always create structured, actionable task plans."""
         task_type = intent_result.get("task_type", "standard_calibration")
 
         # ⭐ OPTIMIZATION: Skip LLM for simple standard tasks (faster performance)
-        simple_tasks = {"standard_calibration", "info_completion", "custom_data"}
+        # batch_processing added: LLM struggles with multi-basin decomposition
+        simple_tasks = {"standard_calibration", "info_completion", "custom_data", "batch_processing"}
         force_rule_based = task_type in simple_tasks
 
         if force_rule_based:
@@ -271,6 +272,25 @@ Always create structured, actionable task plans."""
     # Task-Specific Decomposition Methods
     # ========================================================================
 
+    def _extract_time_periods(self, intent: Dict[str, Any]) -> tuple:
+        """
+        Extract train_period and test_period from intent.
+        从intent中提取train_period和test_period。
+
+        IntentAgent fills time_period as: {"train": [...], "test": [...]}
+        We need to split it into separate fields for InterpreterAgent.
+
+        Args:
+            intent: Intent result dictionary
+
+        Returns:
+            Tuple of (train_period, test_period)
+        """
+        time_period = intent.get("time_period", {})
+        if isinstance(time_period, dict):
+            return time_period.get("train"), time_period.get("test")
+        return None, None
+
     def _decompose_standard_calibration(self, intent: Dict[str, Any]) -> List[SubTask]:
         """
         实验1：标准单任务率定
@@ -278,6 +298,8 @@ Always create structured, actionable task plans."""
 
         Flow: Calibration → Evaluation (single task)
         """
+        train_period, test_period = self._extract_time_periods(intent)
+
         subtasks = [
             SubTask(
                 task_id="task_1",
@@ -288,7 +310,8 @@ Always create structured, actionable task plans."""
                     "model_name": intent.get("model_name"),
                     "basin_id": intent.get("basin_id"),
                     "algorithm": intent.get("algorithm"),
-                    "time_period": intent.get("time_period"),
+                    "train_period": train_period,
+                    "test_period": test_period,
                     "extra_params": intent.get("extra_params", {}),
                     "auto_evaluate": True,  # Auto-run evaluation after calibration
                 },
@@ -434,6 +457,15 @@ Always create structured, actionable task plans."""
         """
         needs = intent.get("needs", [])
 
+        # Extract time_period and split into train/test
+        time_period = intent.get("time_period", {})
+        if isinstance(time_period, dict):
+            train_period = time_period.get("train")
+            test_period = time_period.get("test")
+        else:
+            train_period = None
+            test_period = None
+
         # Task 1: Standard calibration
         subtasks = [
             SubTask(
@@ -445,7 +477,8 @@ Always create structured, actionable task plans."""
                     "model_name": intent.get("model_name"),
                     "basin_id": intent.get("basin_id"),
                     "algorithm": intent.get("algorithm"),
-                    "time_period": intent.get("time_period"),
+                    "train_period": train_period,
+                    "test_period": test_period,
                     "extra_params": intent.get("extra_params", {}),
                     "auto_evaluate": True,
                 },
@@ -852,6 +885,9 @@ Always create structured, actionable task plans."""
             "2. task_type: 任务类型 (calibration, evaluation, analysis等)\n"
             "3. description: 人类可读的描述\n"
             "4. parameters: 任务参数字典\n"
+            "   - ⚠️ **CRITICAL**: 对于 task_type='analysis' 的任务，parameters 中**必须**包含 'analysis_type' 字段\n"
+            "   - analysis_type 可选值: FDC, runoff_coefficient, water_balance, seasonal_analysis 等\n"
+            "   - 从 intent.needs 数组中获取具体的分析类型（如 needs=['FDC'] → analysis_type='FDC'）\n"
             "5. dependencies: 依赖的任务ID列表 (可选)\n\n"
             "请以JSON格式返回子任务列表,格式如下:\n"
             "```json\n"
@@ -859,9 +895,12 @@ Always create structured, actionable task plans."""
             '  {"task_id": "task_1", "task_type": "calibration", '
             '"description": "...", "parameters": {...}, "dependencies": []},\n'
             '  {"task_id": "task_2", "task_type": "evaluation", '
-            '"description": "...", "parameters": {...}, "dependencies": ["task_1"]}\n'
+            '"description": "...", "parameters": {...}, "dependencies": ["task_1"]},\n'
+            '  {"task_id": "task_3", "task_type": "analysis", '
+            '"description": "...", "parameters": {"analysis_type": "FDC", ...}, "dependencies": ["task_1"]}\n'
             "]\n"
-            "```"
+            "```\n\n"
+            "示例: 如果 intent.needs = ['FDC'], 则 task_3 的 parameters 应包含 'analysis_type': 'FDC'"
         )
 
         return "\n".join(prompt_parts)

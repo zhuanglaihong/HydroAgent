@@ -17,6 +17,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from .prompt_manager import build_code_generation_prompt
 from .error_handler import analyze_execution_error
+from .template_manager import TemplateManager, extract_placeholders
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,8 @@ def extract_code_from_markdown(response: str) -> str:
     Returns:
         提取的纯代码字符串
     """
+    import textwrap
+
     code = response
 
     # 提取代码块
@@ -166,6 +169,10 @@ def extract_code_from_markdown(response: str) -> str:
         code = code.split("```python")[1].split("```")[0].strip()
     elif "```" in code:
         code = code.split("```")[1].split("```")[0].strip()
+
+    # ✅ FIX: Use textwrap.dedent to remove common leading whitespace
+    # This fixes indentation errors from LLM-generated code
+    code = textwrap.dedent(code)
 
     return code
 
@@ -178,8 +185,8 @@ def generate_analysis_code(
     project_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
-    调用Code LLM生成分析代码。
-    Call Code LLM to generate analysis code.
+    调用Code LLM生成分析代码（优先使用模板）。
+    Call Code LLM to generate analysis code (template-based first, LLM fallback).
 
     Args:
         code_llm: Code LLM接口实例
@@ -191,12 +198,107 @@ def generate_analysis_code(
     Returns:
         生成结果 {"code_file": str, "code": str} 或 {"error": str}
     """
+    # ✅ PRIORITY 1: Try template-based generation first (100% reliability)
+    template_manager = TemplateManager()
+
+    if template_manager.has_template(analysis_type):
+        logger.info(f"[CodeGenerator] ✓ Template found for '{analysis_type}', using template-based generation")
+
+        try:
+            # Debug: log params (filter out large fields like calibration progress)
+            filtered_params = {
+                k: v for k, v in params.items()
+                if k not in ["calibration_output", "evaluation_output", "previous_results"]
+            }
+            logger.info(f"[CodeGenerator] Params keys: {list(params.keys())}")
+            logger.debug(f"[CodeGenerator] Filtered params: {filtered_params}")
+
+            # ⭐ CRITICAL FIX: Extract nc_file_path from previous_results if available
+            nc_file_path = params.get("output_dir_path") or params.get("nc_file_path", "")
+
+            # If nc_file_path is empty, try to extract from previous_results
+            if not nc_file_path:
+                previous_results = params.get("previous_results", [])
+                if previous_results:
+                    logger.info(f"[CodeGenerator] Extracting nc_file_path from {len(previous_results)} previous results...")
+
+                    # Find the most recent calibration/evaluation task result
+                    for result in reversed(previous_results):
+                        result_data = result.get("result", {})
+
+                        # Try to get output_dir from result
+                        output_dir_candidate = result_data.get("output_dir") or result_data.get("calibration_dir")
+
+                        if output_dir_candidate:
+                            logger.info(f"[CodeGenerator] Found output_dir from previous result: {output_dir_candidate}")
+                            nc_file_path = output_dir_candidate
+                            break
+
+                        # Alternatively, scan for .nc files in result
+                        nc_files = result_data.get("nc_files", [])
+                        if nc_files:
+                            logger.info(f"[CodeGenerator] Found nc_files from previous result: {nc_files[0]}")
+                            nc_file_path = str(nc_files[0])
+                            break
+
+                    if nc_file_path:
+                        logger.info(f"[CodeGenerator] ✓ Extracted nc_file_path from previous_results: {nc_file_path}")
+                    else:
+                        logger.warning("[CodeGenerator] ⚠ No nc_file_path found in previous_results")
+
+            basin_id = params.get("basin_id", "unknown")
+            output_dir = params.get("output_dir", "results")
+
+            logger.info(f"[CodeGenerator] Extracted: nc_file_path='{nc_file_path}', basin_id='{basin_id}', output_dir='{output_dir}'")
+
+            # Support both .nc file and directory paths
+            if nc_file_path and not nc_file_path.endswith('.nc'):
+                # It's a directory, find the .nc file
+                path_obj = Path(nc_file_path)  # Use unique variable name to avoid scope issues
+                if path_obj.exists() and path_obj.is_dir():
+                    nc_files = list(path_obj.glob("*.nc"))
+                    if nc_files:
+                        nc_file_path = str(nc_files[0])
+                        logger.info(f"[CodeGenerator] Found .nc file: {nc_file_path}")
+                    else:
+                        logger.warning(f"[CodeGenerator] No .nc file found in {nc_file_path}")
+
+            placeholders = extract_placeholders(nc_file_path, basin_id, output_dir)
+
+            # Generate code from template
+            code = template_manager.generate_code(analysis_type, placeholders)
+
+            if code:
+                logger.info(f"[CodeGenerator] ✓ Template-based code generated successfully ({len(code)} chars)")
+
+                # Save code to file
+                proj_root = project_root
+                if proj_root is None:
+                    proj_root = Path(__file__).parent.parent.parent
+
+                generated_code_dir = proj_root / "generated_code"
+                generated_code_dir.mkdir(exist_ok=True)
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                code_file = generated_code_dir / f"{analysis_type}_analysis_{timestamp}.py"
+                code_file.write_text(code, encoding="utf-8")
+
+                logger.info(f"[CodeGenerator] ✓ Template-based code saved to: {code_file}")
+
+                return {"code_file": str(code_file), "code": code, "generation_method": "template"}
+
+        except Exception as e:
+            logger.warning(f"[CodeGenerator] Template-based generation failed: {e}, falling back to LLM")
+            import traceback
+            logger.warning(f"[CodeGenerator] Exception traceback: {traceback.format_exc()}")
+
+    # ✅ FALLBACK: LLM-based generation if no template or template failed
     if not code_llm:
-        return {"error": "Code LLM not configured"}
+        return {"error": "Code LLM not configured and no template available"}
 
     try:
         # 使用Code LLM生成代码
-        logger.info(f"[CodeGenerator] 调用Code LLM: {code_llm.model_name}")
+        logger.info(f"[CodeGenerator] Using LLM-based generation: {code_llm.model_name}")
         response = code_llm.generate(
             system_prompt="你是一个专业的Python代码生成助手，擅长编写水文数据分析和可视化代码。",
             user_prompt=prompt,
@@ -225,7 +327,7 @@ def generate_analysis_code(
             f"[CodeGenerator] 💡 Code saved to project directory for easy inspection"
         )
 
-        return {"code_file": str(code_file), "code": code}
+        return {"code_file": str(code_file), "code": code, "generation_method": "llm"}
 
     except Exception as e:
         logger.error(f"[CodeGenerator] Code generation failed: {str(e)}", exc_info=True)

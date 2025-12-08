@@ -472,7 +472,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
                 # 运行率定 - 直接传入config dict
                 logger.info("[RunnerAgent] 调用 calibrate(config)")
-                print('config',config)
+                # print('config',config)
                 result = calibrate(config)
 
             finally:
@@ -1432,6 +1432,15 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
         logger.info(f"[RunnerAgent] 分析类型: {analysis_type}")
         logger.info(f"[RunnerAgent] 流域: {basin_id}, 模型: {model_name}")
 
+        # ⭐ CRITICAL FIX: Create dedicated task directory for analysis tasks
+        # This ensures output files are saved in the correct location
+        task_id = task_metadata.get("task_id", "analysis_task")
+        task_workspace = None
+        if self.workspace_dir:
+            task_workspace = Path(self.workspace_dir) / task_id
+            task_workspace.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[RunnerAgent] Analysis task workspace: {task_workspace}")
+
         #   v4.0: RunnerAgent负责代码生成和执行（带错误反馈循环）
         if not self.code_llm:
             logger.warning(
@@ -1451,7 +1460,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
         result = code_generator.generate_code_with_feedback(
             code_llm=self.code_llm,
-            workspace_dir=self.workspace_dir,
+            workspace_dir=task_workspace or self.workspace_dir,  # ⭐ Use task-specific workspace
             timeout=self.timeout,
             analysis_type=analysis_type,
             params=merged_params,  # ⭐ Use merged_params instead of parameters
@@ -1467,6 +1476,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
 
             return {
                 "status": "success",
+                "success": True,  # ⭐ Add for consistency with other tasks
                 "analysis_type": analysis_type,
                 "basin_id": basin_id,
                 "model_name": model_name,
@@ -1479,6 +1489,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 "output_files": exec_result.get(
                     "output_files", []
                 ),  # 🔧 别名，供DeveloperAgent使用
+                "output_dir": str(task_workspace) if task_workspace else None,  # ⭐ Add output directory
                 "stdout": exec_result.get("stdout", ""),
                 "stderr": exec_result.get("stderr", ""),  # 🔧 添加stderr
                 "retry_count": result.get(
@@ -1486,7 +1497,7 @@ If errors occur, provide detailed diagnostic information to help fix the issue."
                 ),  # 🔧 标准字段名，供DeveloperAgent使用
                 "attempts": result.get("attempts", 1),
                 "error_history": result.get("error_history", []),
-                "message": f"✅ 自定义分析 '{analysis_type}' 执行成功\n📄 生成的代码: {result['code_file']}\n🔄 尝试次数: {result.get('attempts', 1)}",
+                "message": f"✅ 自定义分析 '{analysis_type}' 执行成功\n📄 生成的代码: {result['code_file']}\n📁 输出目录: {task_workspace}\n🔄 尝试次数: {result.get('attempts', 1)}",
             }
         else:
             # 代码生成或执行失败

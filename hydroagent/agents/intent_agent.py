@@ -149,8 +149,11 @@ class IntentAgent(BaseAgent):
    - 中文: "XAJ模型" → xaj, "GR4J模型" → gr4j
    - 英文: "XAJ model" → xaj, "calibrate GR4J" → gr4j
 
-2. **流域ID** (basin_id): 流域编号/站点编号
-   - 关键词: "流域", "basin", "站点", "site"
+2. **流域ID** (basin_id / basin_ids): 流域编号/站点编号
+   - **单流域**: 使用basin_id (字符串), 如"01013500"
+   - **多流域**: 使用basin_ids (数组), 如["11532500", "12025000", "14301000"]
+   - 关键词: "流域", "basin", "站点", "site", "批量"
+   - 分隔符识别: 逗号","、顿号"、"、"和"、空格等
    - 格式: 数字编号如"01013500", "camels_11532500", "11532500"
 
 3. **时间段** (time_period): 训练和测试时期
@@ -187,6 +190,12 @@ class IntentAgent(BaseAgent):
 
 输入: "率定GR4J模型，流域01013500, 使用SCE-UA算法，算法迭代只需要500轮就行"
 输出: {"intent":"calibration","model_name":"gr4j","basin_id":"01013500","algorithm":"SCE_UA","extra_params":{"max_iterations":500},"missing_info":[],"confidence":0.95}
+
+输入: "用XAJ模型批量率定流域11532500,12025000,14301000,14306500,14325000"
+输出: {"intent":"calibration","model_name":"xaj","basin_ids":["11532500","12025000","14301000","14306500","14325000"],"algorithm":"SCE_UA","missing_info":[],"confidence":0.95}
+
+输入: "率定GR4J模型，流域02177000和03346000"
+输出: {"intent":"calibration","model_name":"gr4j","basin_ids":["02177000","03346000"],"algorithm":"SCE_UA","missing_info":[],"confidence":0.9}
 
 输入: "评估XAJ模型在流域11532500的表现"
 输出: {"intent":"evaluation","model_name":"xaj","basin_id":"11532500","algorithm":"SCE_UA","missing_info":[],"confidence":0.9}
@@ -403,7 +412,7 @@ Respond with ONLY valid JSON, no extra text."""
                     user_prompt=final_prompt,
                     temperature=0.2,  # Low temperature for structured output
                 )
-                logger.debug(f"[IntentAgent] LLM response (JSON): {response}")
+                logger.info(f"[IntentAgent] LLM response (JSON): {response}")
                 return self._validate_and_normalize_response(response)
 
         except (AttributeError, NotImplementedError, Exception) as e:
@@ -497,6 +506,7 @@ Respond with ONLY valid JSON, no extra text."""
             "intent": response.get("intent", "unknown"),
             "model_name": response.get("model_name"),
             "basin_id": response.get("basin_id"),
+            "basin_ids": response.get("basin_ids"),  # ⭐ 添加多流域支持
             "time_period": response.get("time_period"),
             "algorithm": response.get("algorithm", "SCE_UA"),
             "extra_params": response.get("extra_params", {}),
@@ -505,18 +515,20 @@ Respond with ONLY valid JSON, no extra text."""
             "confidence": response.get("confidence", 0.8),
         }
 
-        # Normalize basin_id (handle both single and multi-basin from LLM)
-        if normalized["basin_id"]:
-            # If LLM returns a list, take the first element
-            if isinstance(normalized["basin_id"], list):
-                normalized["basin_id"] = (
-                    normalized["basin_id"][0] if normalized["basin_id"] else None
-                )
-                logger.debug(
-                    f"[IntentAgent] Normalized basin_id list to first element: {normalized['basin_id']}"
-                )
-            # Convert non-string to string
+        # Normalize basin_id/basin_ids (handle both single and multi-basin from LLM)
+        # 优先处理多流域basin_ids
+        if normalized.get("basin_ids") and isinstance(normalized["basin_ids"], list):
+            # 有basin_ids，设置第一个为basin_id（向后兼容）
+            if not normalized.get("basin_id") and normalized["basin_ids"]:
+                normalized["basin_id"] = normalized["basin_ids"][0]
+                logger.debug(f"[IntentAgent] Set basin_id from first element of basin_ids: {normalized['basin_id']}")
+        elif normalized.get("basin_id"):
+            # 只有单个basin_id
+            if isinstance(normalized["basin_id"], str):
+                # 保持不变
+                pass
             elif not isinstance(normalized["basin_id"], str):
+                # Convert non-string to string
                 normalized["basin_id"] = str(normalized["basin_id"])
 
         # Normalize model_name to lowercase
@@ -957,7 +969,7 @@ Respond with ONLY valid JSON, no extra text."""
         self, query: str, intent_result: Dict[str, Any]
     ) -> List[str]:
         """
-        提取多个流域ID。
+        提取多个流域ID（优先使用LLM返回的basin_ids）。
 
         Args:
             query: 用户查询
@@ -966,22 +978,21 @@ Respond with ONLY valid JSON, no extra text."""
         Returns:
             流域ID列表
         """
-        import re
+        # 1. 优先使用LLM智能提取的basin_ids（多流域）
+        if intent_result.get("basin_ids") and isinstance(intent_result["basin_ids"], list):
+            basins = intent_result["basin_ids"]
+            logger.info(f"[IntentAgent] Using LLM-extracted basin_ids: {basins}")
+            return basins
 
-        basins = []
-
-        # 先从intent_result获取单一basin_id
+        # 2. 使用单流域basin_id
         if intent_result.get("basin_id"):
-            basins.append(intent_result["basin_id"])
+            basins = [intent_result["basin_id"]]
+            logger.info(f"[IntentAgent] Using single basin_id: {basins}")
+            return basins
 
-        # 在查询中查找额外的流域ID（8位数字格式）
-        pattern = r"\b(0\d{7})\b"  # CAMELS_US格式：0XXXXXXX
-        matches = re.findall(pattern, query)
-        for match in matches:
-            if match not in basins:
-                basins.append(match)
-
-        return basins
+        # 3. 都没有，返回空列表
+        logger.warning("[IntentAgent] No basin_id or basin_ids found in LLM result")
+        return []
 
     def _extract_multiple_algorithms(
         self, query: str, intent_result: Dict[str, Any]

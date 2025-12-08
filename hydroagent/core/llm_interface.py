@@ -636,7 +636,7 @@ class OllamaInterface(LLMInterface):
 
 
 def create_llm_interface(
-    backend: str = "ollama",
+    backend: str = "openai",
     model_name: Optional[str] = None,
     api_key: Optional[str] = None,
     **kwargs

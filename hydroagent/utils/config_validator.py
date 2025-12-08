@@ -13,6 +13,8 @@ from typing import Dict, Any, List, Tuple, Optional
 import logging
 import re
 
+from .basin_validator import validate_basin_id as validate_basin_id_with_dataset
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,10 +30,8 @@ class ConfigValidator:
     4. Provide friendly error messages for users
     """
 
-    # CAMELS-US流域ID范围 (8位数字，通常为 01000000 - 14400000)
-    # 参考: https://ral.ucar.edu/solutions/products/camels
-    CAMELS_US_BASIN_ID_MIN = 1000000
-    CAMELS_US_BASIN_ID_MAX = 14500000
+    # Note: Basin ID validation is now delegated to basin_validator.py
+    # which uses actual dataset information instead of hardcoded ranges
 
     # 算法参数的合理范围
     ALGORITHM_PARAM_RANGES = {
@@ -170,7 +170,7 @@ class ConfigValidator:
 
     def validate_basin_id(self, basin_id: str) -> Optional[str]:
         """
-        验证流域ID的格式和范围。
+        验证流域ID的格式和是否在数据集中存在。
 
         Args:
             basin_id: 流域ID字符串
@@ -178,24 +178,11 @@ class ConfigValidator:
         Returns:
             错误信息（如果无效），否则返回None
         """
-        # 检查格式：应为8位数字
-        if not isinstance(basin_id, str):
-            return f"流域ID必须是字符串格式，当前类型: {type(basin_id).__name__}"
+        # Use basin_validator which checks against actual dataset
+        is_valid, error_msg = validate_basin_id_with_dataset(basin_id, data_source="camels_us")
 
-        if not re.match(r'^\d{8}$', basin_id):
-            return (
-                f"流域ID格式错误: {basin_id}。"
-                f"流域ID应为8位数字（如 01013500）"
-            )
-
-        # 检查范围：CAMELS-US流域ID通常在 01000000 - 14500000 之间
-        basin_id_int = int(basin_id)
-        if not (self.CAMELS_US_BASIN_ID_MIN <= basin_id_int <= self.CAMELS_US_BASIN_ID_MAX):
-            return (
-                f"流域ID超出CAMELS数据集范围: {basin_id}。"
-                f"有效范围: {self.CAMELS_US_BASIN_ID_MIN:08d} - {self.CAMELS_US_BASIN_ID_MAX:08d}。"
-                f"\n💡 提示: 请检查流域ID是否正确，或访问 https://ral.ucar.edu/solutions/products/camels 查看可用流域列表"
-            )
+        if not is_valid:
+            return error_msg
 
         return None
 
