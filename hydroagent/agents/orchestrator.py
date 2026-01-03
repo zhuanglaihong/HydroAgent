@@ -62,6 +62,7 @@ class Orchestrator(BaseAgent):
         max_state_transitions: int = 100,
         enable_faiss: bool = False,  # 🆕 FAISS historical case learning
         faiss_timeout: int = 60,  # 🆕 FAISS initialization timeout
+        use_tool_system: Optional[bool] = None,  # 🆕 Tool System (Phase 1)
         **kwargs,
     ):
         """
@@ -77,6 +78,7 @@ class Orchestrator(BaseAgent):
             max_state_transitions: Maximum state transitions before aborting (防止无限循环)
             enable_faiss: 🆕 Whether to enable FAISS semantic search (default: False)
             faiss_timeout: 🆕 FAISS initialization timeout in seconds (default: 60)
+            use_tool_system: 🆕 Whether to enable tool system (Phase 1, default: from config.USE_TOOL_SYSTEM)
             **kwargs: Additional configuration
         """
         workspace_root = workspace_root or Path.cwd() / "results"
@@ -95,6 +97,18 @@ class Orchestrator(BaseAgent):
         self.max_state_transitions = max_state_transitions
         self.enable_faiss = enable_faiss  # 🆕 FAISS config
         self.faiss_timeout = faiss_timeout  # 🆕 Timeout config
+
+        # 🆕 Tool System (Phase 1) - 优先级: 参数 > config.USE_TOOL_SYSTEM > False
+        if use_tool_system is None:
+            from configs import config as global_config
+            self.use_tool_system = getattr(global_config, 'USE_TOOL_SYSTEM', False)
+        else:
+            self.use_tool_system = use_tool_system
+
+        if self.use_tool_system:
+            logger.info("[Orchestrator] Tool system ENABLED")
+        else:
+            logger.info("[Orchestrator] Tool system DISABLED (legacy mode)")
 
         # Session state
         self.current_session_id: Optional[str] = None
@@ -117,6 +131,17 @@ class Orchestrator(BaseAgent):
         self.config_agent = None  # Alias for interpreter_agent
         self.runner_agent = None
         self.developer_agent = None
+
+        # 🆕 Token tracking system - detailed per-agent statistics
+        self.token_tracking = {
+            "total_tokens": 0,
+            "total_calls": 0,
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "by_agent": {},  # {agent_name: {calls: int, tokens: int, prompt: int, completion: int}}
+            "call_history": [],  # [{agent: str, timestamp: str, tokens: int, ...}]
+            "global_last_recorded": 0  # 🆕 Global last recorded total (for shared LLM)
+        }
 
         logger.info("Orchestrator v5.0 initialized (State Machine Driven)")
 
@@ -156,6 +181,9 @@ Always think step-by-step and explain your reasoning."""
 
         self.conversation_history.clear()
         self.clear_context()
+
+        # 🆕 Reset token tracking for new session
+        self._reset_token_tracking()
 
         # Initialize checkpoint manager if enabled
         if self.enable_checkpoint:
@@ -302,23 +330,29 @@ Always think step-by-step and explain your reasoning."""
                 use_faiss=False
             )
 
+        # 🆕 Phase 1: 传递 use_tool_system 给TaskPlanner
         self.task_planner = TaskPlanner(
             llm_interface=self.llm,
             prompt_pool=prompt_pool,
             workspace_dir=self.current_workspace,
+            use_tool_system=self.use_tool_system,  # 🆕 Tool System
         )
 
         # Agent 3: Configuration Interpretation (配置生成)
+        # ⚠️ v6.0: InterpreterAgent is STILL NEEDED for multi-combination tasks
+        # Even though all tasks use tool chains, InterpreterAgent generates
+        # the hydromodel config for each subtask in multi-model combinations
         self.interpreter_agent = InterpreterAgent(
             llm_interface=self.llm, workspace_dir=self.current_workspace
         )
 
-        # Agent 4: Model Runner (执行) - v4.0: 支持代码生成
+        # Agent 4: Model Runner (执行) - v4.0: 支持代码生成 + 🆕 Tool System
         self.runner_agent = RunnerAgent(
             llm_interface=self.llm,
             workspace_dir=self.current_workspace,
             show_progress=self.show_progress,
             code_llm_interface=self.code_llm,  # 🆕 v4.0: 传入代码专用LLM
+            use_tool_system=self.use_tool_system,  # 🆕 Tool System (Phase 1)
         )
 
         # Agent 5: Result Developer (分析)
@@ -336,6 +370,131 @@ Always think step-by-step and explain your reasoning."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         uid = str(uuid.uuid4())[:8]
         return f"session_{timestamp}_{uid}"
+
+    def _reset_token_tracking(self) -> None:
+        """
+        Reset token tracking for new session.
+        为新会话重置token追踪。
+        """
+        self.token_tracking = {
+            "total_tokens": 0,
+            "total_calls": 0,
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "by_agent": {},
+            "call_history": [],
+            "global_last_recorded": 0  # 🆕 Global tracking for shared LLM
+        }
+
+        # Also reset the LLM interface token tracker
+        # BaseAgent uses self.llm, not self.llm_interface
+        if hasattr(self, 'llm') and hasattr(self.llm, 'reset_token_usage'):
+            self.llm.reset_token_usage()
+
+        logger.debug("[TokenTracking] Token tracking reset for new session")
+
+    def _record_agent_tokens(self, agent_name: str, llm_interface: Optional[LLMInterface] = None) -> None:
+        """
+        Record token usage from an agent.
+        记录agent的token使用情况。
+
+        Args:
+            agent_name: Name of the agent (e.g., "IntentAgent", "RunnerAgent")
+            llm_interface: Optional specific LLM interface (if agent uses different LLM)
+        """
+        from datetime import datetime
+
+        # Use agent's LLM if provided, otherwise use orchestrator's LLM
+        # BaseAgent uses self.llm, not self.llm_interface
+        llm = llm_interface or self.llm
+
+        if not hasattr(llm, 'get_token_usage'):
+            logger.debug(f"[TokenTracking] LLM interface for {agent_name} doesn't have get_token_usage method")
+            return
+
+        # Get current token usage
+        current_usage = llm.get_token_usage()
+
+        # 🆕 Use global last_recorded for shared LLM interfaces
+        # Calculate delta from global last recorded state (not per-agent)
+        last_total = self.token_tracking["global_last_recorded"]
+        current_total = current_usage.get("total_tokens", 0)
+
+        # Calculate tokens used in this call
+        tokens_delta = current_total - last_total
+
+        # Initialize agent stats if needed
+        if agent_name not in self.token_tracking["by_agent"]:
+            self.token_tracking["by_agent"][agent_name] = {
+                "calls": 0,
+                "total_tokens": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0
+            }
+
+        agent_stats = self.token_tracking["by_agent"][agent_name]
+
+        if tokens_delta > 0:
+            # Estimate prompt/completion split (approximate)
+            # We assume the ratio from overall usage
+            total_calls = current_usage.get("total_calls", 1)
+            avg_prompt_ratio = (current_usage.get("total_prompt_tokens", 0) /
+                              max(current_usage.get("total_tokens", 1), 1))
+
+            prompt_delta = int(tokens_delta * avg_prompt_ratio)
+            completion_delta = tokens_delta - prompt_delta
+
+            # Update agent stats
+            agent_stats["calls"] += 1
+            agent_stats["total_tokens"] += tokens_delta
+            agent_stats["prompt_tokens"] += prompt_delta
+            agent_stats["completion_tokens"] += completion_delta
+
+            # Update global stats
+            self.token_tracking["total_tokens"] += tokens_delta
+            self.token_tracking["total_prompt_tokens"] += prompt_delta
+            self.token_tracking["total_completion_tokens"] += completion_delta
+            self.token_tracking["total_calls"] += 1
+
+            # 🆕 Update global last recorded (critical for shared LLM)
+            self.token_tracking["global_last_recorded"] = current_total
+
+            # Add to call history
+            self.token_tracking["call_history"].append({
+                "agent": agent_name,
+                "timestamp": datetime.now().isoformat(),
+                "tokens": tokens_delta,
+                "prompt_tokens": prompt_delta,
+                "completion_tokens": completion_delta,
+                "model": llm.model_name if hasattr(llm, 'model_name') else "unknown"
+            })
+
+            logger.debug(f"[TokenTracking] {agent_name}: +{tokens_delta} tokens "
+                        f"(total: {agent_stats['total_tokens']}, calls: {agent_stats['calls']})")
+
+    def _get_token_summary(self) -> Dict[str, Any]:
+        """
+        Get detailed token usage summary.
+        获取详细的token使用统计。
+
+        Returns:
+            Detailed token statistics with per-agent breakdown
+        """
+        summary = {
+            "total_tokens": self.token_tracking["total_tokens"],
+            "total_calls": self.token_tracking["total_calls"],
+            "total_prompt_tokens": self.token_tracking["total_prompt_tokens"],
+            "total_completion_tokens": self.token_tracking["total_completion_tokens"],
+            "average_tokens_per_call": (
+                self.token_tracking["total_tokens"] / max(self.token_tracking["total_calls"], 1)
+            ),
+            "by_agent": self.token_tracking["by_agent"].copy(),
+            "call_history": self.token_tracking["call_history"].copy()
+        }
+
+        # No need to clean up fields anymore (removed per-agent last_recorded_total)
+
+        return summary
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -396,6 +555,32 @@ Always think step-by-step and explain your reasoning."""
 
             elapsed_time = time.time() - start_time
             result["elapsed_time"] = elapsed_time
+
+            # 🆕 Collect detailed token usage statistics with per-agent breakdown
+            token_summary = self._get_token_summary()
+            result["token_usage"] = token_summary
+
+            # Log summary (总结和breakdown都用info级别，但格式简洁)
+            logger.info(f"[Orchestrator] Token usage: {token_summary['total_tokens']} tokens "
+                       f"({token_summary['total_calls']} calls)")
+
+            # Only log breakdown if there are agents tracked
+            if token_summary["by_agent"]:
+                breakdown_parts = []
+                for agent_name, stats in token_summary["by_agent"].items():
+                    breakdown_parts.append(f"{agent_name}={stats['total_tokens']}")
+                logger.info(f"[Orchestrator] By agent: {', '.join(breakdown_parts)}")
+
+            # 🆕 Save session result with token usage to file
+            if self.current_workspace:
+                import json
+                session_result_file = self.current_workspace / "session_result.json"
+                try:
+                    with open(session_result_file, "w", encoding="utf-8") as f:
+                        json.dump(result, f, indent=2, ensure_ascii=False, default=str)
+                    logger.info(f"[Orchestrator] Session result saved: {session_result_file}")
+                except Exception as e:
+                    logger.warning(f"[Orchestrator] Failed to save session result: {e}")
 
             logger.info(f"[Orchestrator] Completed in {elapsed_time:.1f}s")
             return result
@@ -481,9 +666,40 @@ Always think step-by-step and explain your reasoning."""
             try:
                 state_result = self._execute_state_action(current_state)
             except Exception as e:
-                logger.error(f"[StateMachine] Error in state {current_state.name}: {str(e)}", exc_info=True)
+                error_msg = str(e)
+                # 🆕 v5.1: 区分API错误和代码错误，API错误不打印traceback
+                is_api_error = any(keyword in error_msg.lower() for keyword in [
+                    "error code:", "quota", "rate limit", "api key", "authentication",
+                    "free tier", "exhausted", "403", "401", "429", "500", "503"
+                ])
+
+                if is_api_error:
+                    # API错误：简洁的错误消息，不打印traceback
+                    logger.error(f"[StateMachine] LLM API Error in state {current_state.name}")
+                    logger.error(f"[StateMachine] {error_msg}")
+                    print(f"\n{'='*80}")
+                    print(f"❌ LLM API错误 - 无法继续执行")
+                    print(f"{'='*80}")
+                    print(f"\n错误详情：")
+                    print(f"{error_msg}\n")
+                    print(f"可能的原因：")
+                    print(f"  1. API配额已用完（免费额度耗尽）")
+                    print(f"  2. API密钥无效或已过期")
+                    print(f"  3. 网络连接问题")
+                    print(f"  4. LLM服务暂时不可用")
+                    print(f"\n建议操作：")
+                    print(f"  1. 检查API密钥配置 (configs/definitions_private.py)")
+                    print(f"  2. 确认账户配额状态（访问云服务控制台）")
+                    print(f"  3. 检查网络连接")
+                    print(f"  4. 稍后重试")
+                    print(f"{'='*80}\n")
+                else:
+                    # 代码错误：打印完整traceback供调试
+                    logger.error(f"[StateMachine] Error in state {current_state.name}: {error_msg}", exc_info=True)
+
                 # Mark as unrecoverable failure
-                self.execution_context["error"] = str(e)
+                self.execution_context["error"] = error_msg
+                self.execution_context["is_api_error"] = is_api_error
                 self.state_machine.update_context({"execution_result": {"success": False, "retryable": False}})
                 self.state_machine.transition()
                 continue
@@ -501,6 +717,13 @@ Always think step-by-step and explain your reasoning."""
 
                 logger.info(f"[FeedbackRouter] Action: {routing_decision.get('action')}")
                 self.execution_context["routing_decision"] = routing_decision
+
+                # ⭐ CRITICAL FIX: Preserve should_continue_iterating flag from FeedbackRouter
+                # This flag indicates whether the system should continue iterating based on DeveloperAgent's analysis
+                router_params = routing_decision.get("parameters", {})
+                if "should_continue_iterating" in router_params:
+                    self.execution_context["should_continue_iterating"] = router_params["should_continue_iterating"]
+                    logger.info(f"[Orchestrator] should_continue_iterating = {router_params['should_continue_iterating']}")
 
             # Update goal tracker (if initialized and result available)
             if self.goal_tracker and "execution_result" in self.execution_context:
@@ -600,16 +823,59 @@ Always think step-by-step and explain your reasoning."""
             # Check if intent analysis failed
             if not intent_result.get("success", False):
                 error_msg = intent_result.get("error", "Unknown intent analysis error")
-                logger.error(f"[Orchestrator] Intent analysis failed: {error_msg}")
+                is_api_error = intent_result.get("is_api_error", False)
+
+                # 🆕 v5.1: API错误需要打印友好的错误消息（如果还没打印的话）
+                if is_api_error:
+                    logger.error(f"[Orchestrator] Intent analysis failed: LLM API Error")
+                    # 友好的错误消息已经在_process_intent中记录了
+                else:
+                    logger.error(f"[Orchestrator] Intent analysis failed: {error_msg}")
+
                 return {
                     "context_updates": {
                         "intent_analysis_failed": True,
                         "error": error_msg,
                         "error_phase": "intent_analysis",
+                        "is_api_error": is_api_error,
                     },
                     "source_agent": "IntentAgent",
                     "agent_result": intent_result,
                 }
+
+            # 🆕 Handle compound task (复合任务处理)
+            if intent_data.get("task_type") == "compound_task":
+                compound_tasks = intent_data.get("compound_tasks", [])
+                logger.info(f"[Orchestrator] Detected compound task with {len(compound_tasks)} subtasks")
+
+                # Store compound tasks in execution context for sequential processing
+                self.execution_context["compound_tasks"] = compound_tasks
+                self.execution_context["compound_task_index"] = 0
+                self.execution_context["compound_task_results"] = []
+
+                # Process first subtask
+                if compound_tasks:
+                    first_task = compound_tasks[0]
+                    logger.info(f"[Orchestrator] Processing compound subtask 1/{len(compound_tasks)}: {first_task.get('query')}")
+
+                    # Use the intent_result from first subtask
+                    intent_data = first_task.get("intent_result", {})
+
+                    # Save to checkpoint
+                    if self.checkpoint_manager:
+                        self.checkpoint_manager.update_phase("intent")
+                        self.checkpoint_manager.save_intent_result({"success": True, "intent_result": intent_data})
+
+                    return {
+                        "context_updates": {
+                            "intent_result": intent_data,
+                            "intent_confidence": intent_data.get("confidence", 0),
+                            "intent_analysis_failed": False,
+                            "is_compound_task": True,
+                        },
+                        "source_agent": "IntentAgent",
+                        "agent_result": {"success": True, "intent_result": intent_data},
+                    }
 
             # Initialize goal tracker after intent is known
             if intent_data.get("task_type") == "calibration":
@@ -636,13 +902,34 @@ Always think step-by-step and explain your reasoning."""
 
         elif state == OrchestratorState.PLANNING_TASKS:
             task_plan_result = self._plan_tasks(self.execution_context.get("intent_result", {}))
-            task_plan = task_plan_result.get("task_plan", {})
+
+            # ⭐ CRITICAL FIX: Normalize tool system result to legacy format
+            # Tool system returns: {"success": True, "tool_chain": [...], "execution_mode": "simple", ...}
+            # Legacy returns: {"success": True, "task_plan": {"subtasks": [...], ...}}
+            # We need to ensure task_plan always has subtasks for state machine compatibility
+
+            if "tool_chain" in task_plan_result:
+                # Tool system mode: wrap result in task_plan structure
+                logger.info("[Orchestrator] Tool system mode detected - normalizing result format")
+                task_plan = {
+                    "task_type": task_plan_result.get("task_type", "unknown"),
+                    "subtasks": [],  # Will be populated by tool system executor
+                    "tool_chain": task_plan_result.get("tool_chain", []),
+                    "execution_mode": task_plan_result.get("execution_mode", "simple"),
+                    "mode_params": task_plan_result.get("mode_params", {}),
+                    "total_tools": task_plan_result.get("total_tools", 0),
+                    "use_tool_system": True  # Flag to indicate tool system mode
+                }
+            else:
+                # Legacy mode: extract task_plan directly
+                task_plan = task_plan_result.get("task_plan", {})
 
             # Save to checkpoint and update total tasks
             if self.checkpoint_manager:
                 self.checkpoint_manager.update_phase("planner")
                 self.checkpoint_manager.save_task_plan(task_plan)
-                logger.info(f"[Orchestrator] Checkpoint updated with {len(task_plan.get('subtasks', []))} subtasks")
+                subtask_count = len(task_plan.get("subtasks", [])) if not task_plan.get("use_tool_system") else task_plan.get("total_tools", 0)
+                logger.info(f"[Orchestrator] Checkpoint updated with {subtask_count} tasks")
 
             return {
                 "context_updates": {"task_plan_result": task_plan_result, "task_plan": task_plan},
@@ -651,8 +938,229 @@ Always think step-by-step and explain your reasoning."""
             }
 
         elif state == OrchestratorState.GENERATING_CONFIG:
-            subtasks = self.execution_context.get("task_plan", {}).get("subtasks", [])
+            # 🔧 Check if FeedbackRouter detected a validation loop and requested to skip review
+            routing_decision = self.execution_context.get("routing_decision", {})
+            if routing_decision.get("action") == "skip_review_and_execute":
+                logger.warning("🔁 [Orchestrator] Loop detected by FeedbackRouter - skipping review and executing directly")
+
+                params = routing_decision.get("parameters", {})
+                config = params.get("config", {})
+                skip_reason = params.get("skip_reason", "unknown")
+                original_error = params.get("original_error", "")
+
+                logger.warning(f"   Reason: {skip_reason}")
+                logger.warning(f"   Original error: {original_error}")
+                logger.info("   Proceeding with generated config despite validation failure")
+
+                # Clear routing_decision to avoid reusing it
+                self.execution_context["routing_decision"] = {}
+
+                # Extract task_id from config or current subtask
+                task_id = config.get("task_metadata", {}).get("task_id")
+                if not task_id:
+                    # Fallback: get from current subtask
+                    task_plan = self.execution_context.get("task_plan", {})
+                    subtasks = task_plan.get("subtasks", [])
+                    execution_results = self.execution_context.get("execution_results", [])
+                    completed_ids = {r.get("task_id") for r in execution_results if r.get("success")}
+                    for st in subtasks:
+                        if st.get("task_id") not in completed_ids:
+                            task_id = st.get("task_id")
+                            break
+
+                # Mark config as successful and proceed to execution
+                config_result = {
+                    "success": True,
+                    "config": config,
+                    "skip_review": True,
+                    "skip_reason": skip_reason,
+                    "task_id": task_id or "unknown"
+                }
+
+                return {
+                    "context_updates": {
+                        "config_result": config_result,
+                        "current_config": config,
+                    },
+                    "source_agent": "FeedbackRouter",
+                    "agent_result": config_result,
+                }
+
+            task_plan = self.execution_context.get("task_plan", {})
+            use_tool_chains = task_plan.get("use_tool_chains", False)
+            use_tool_system = task_plan.get("use_tool_system", False)
             intent_result = self.execution_context.get("intent_result", {})
+
+            # ✅ v6.0: Handle multiple tool_chain subtasks (multi-model combinations)
+            if use_tool_chains:
+                subtasks = task_plan.get("subtasks", [])
+                execution_results = self.execution_context.get("execution_results", [])
+                completed_ids = {r.get("task_id") for r in execution_results if r.get("success")}
+
+                # Find next pending subtask
+                current_subtask = None
+                for st in subtasks:
+                    if st.get("task_id") not in completed_ids:
+                        current_subtask = st
+                        break
+
+                if current_subtask is None:
+                    # All subtasks completed
+                    logger.info("[Orchestrator v6.0] All tool_chain subtasks completed")
+                    return {
+                        "context_updates": {"all_subtasks_completed": True},
+                    }
+
+                logger.info(f"[Orchestrator v6.0] Processing tool_chain subtask: {current_subtask.get('task_id')}")
+
+                # Get tool_chain and intent for this subtask
+                tool_chain = current_subtask.get("tool_chain", [])
+                sub_intent = current_subtask.get("intent_result", intent_result)
+
+                # Check if tool chain needs config (has calibrate/evaluate/simulate tool)
+                needs_config = any(step.get("tool") in ["calibrate", "evaluate", "simulate"] for step in tool_chain)
+
+                if needs_config:
+                    # Generate config using InterpreterAgent
+                    logger.info(f"[Orchestrator v6.0] Generating config for {current_subtask.get('task_id')}")
+
+                    subtask_for_interpreter = {
+                        "task_id": current_subtask.get("task_id"),
+                        "task_type": "calibration",
+                        "parameters": sub_intent,
+                        "user_query": self.execution_context.get("query", "")
+                    }
+
+                    interpreter_result = self.interpreter_agent.process({
+                        "subtask": subtask_for_interpreter,
+                        "intent_result": sub_intent,
+                        "user_query": self.execution_context.get("query", "")
+                    })
+
+                    # Record token usage
+                    if hasattr(self.interpreter_agent, 'llm'):
+                        self._record_agent_tokens("InterpreterAgent", llm_interface=self.interpreter_agent.llm)
+
+                    if not interpreter_result.get("success"):
+                        logger.error(f"[Orchestrator v6.0] Config generation failed for {current_subtask.get('task_id')}")
+                        return {
+                            "context_updates": {"error": "Config generation failed for multi-combination subtask"},
+                            "source_agent": "InterpreterAgent",
+                            "agent_result": interpreter_result,
+                        }
+
+                    # Inject config into tool_chain
+                    generated_config = interpreter_result.get("config", {})
+                    for step in tool_chain:
+                        if step.get("tool") in ["calibrate", "evaluate", "simulate"]:
+                            step["inputs"]["config"] = generated_config
+
+                # Prepare config_result for execution
+                config_result = {
+                    "success": True,
+                    "use_tool_system": True,
+                    "tool_chain": tool_chain,
+                    "execution_mode": current_subtask.get("execution_mode", "simple"),
+                    "mode_params": current_subtask.get("mode_params", {}),
+                    "intent_result": sub_intent,
+                    "task_id": current_subtask.get("task_id"),
+                    "user_query": self.execution_context.get("query", ""),
+                }
+
+                return {
+                    "context_updates": {
+                        "config_result": config_result,
+                        "current_config": config_result,
+                        "current_subtask": current_subtask,
+                    },
+                    "source_agent": "Orchestrator",
+                    "agent_result": config_result,
+                }
+
+            # ⭐ CRITICAL FIX: Tool system mode uses different execution path
+            if use_tool_system:
+                tool_chain = task_plan.get("tool_chain", [])
+
+                # Check if tool chain contains calibrate tool (需要config)
+                needs_config = any(step.get("tool") == "calibrate" for step in tool_chain)
+
+                if needs_config:
+                    # Call InterpreterAgent to generate config
+                    logger.info("[Orchestrator] Tool chain requires config - calling InterpreterAgent")
+
+                    # 🆕 Get appropriate query for compound tasks
+                    is_compound_task = self.execution_context.get("is_compound_task", False)
+                    if is_compound_task:
+                        # Use current subtask's query, not the full original query
+                        compound_tasks = self.execution_context.get("compound_tasks", [])
+                        current_index = self.execution_context.get("compound_task_index", 0)
+                        if current_index < len(compound_tasks):
+                            current_subtask_query = compound_tasks[current_index].get("query", "")
+                            logger.info(f"[Orchestrator] Using subtask query for config generation: {current_subtask_query}")
+                        else:
+                            current_subtask_query = self.execution_context.get("query", "")
+                    else:
+                        current_subtask_query = self.execution_context.get("query", "")
+
+                    # Construct subtask for InterpreterAgent (to get proper task_id)
+                    task_type = intent_result.get("task_type") or "calibration"
+                    subtask = {
+                        "task_id": task_type,  # Use task_type as task_id for proper directory naming
+                        "task_type": task_type,
+                        "parameters": intent_result,
+                        "user_query": current_subtask_query  # Use subtask query for compound tasks
+                    }
+
+                    interpreter_result = self.interpreter_agent.process({
+                        "subtask": subtask,
+                        "intent_result": intent_result,
+                        "user_query": current_subtask_query  # Use subtask query for compound tasks
+                    })
+
+                    # 🆕 Record token usage from InterpreterAgent
+                    if hasattr(self.interpreter_agent, 'llm'):
+                        self._record_agent_tokens("InterpreterAgent", llm_interface=self.interpreter_agent.llm)
+
+                    if not interpreter_result.get("success"):
+                        logger.error("[Orchestrator] InterpreterAgent failed to generate config")
+                        return {
+                            "context_updates": {"error": "Config generation failed"},
+                            "source_agent": "InterpreterAgent",
+                            "agent_result": interpreter_result,
+                        }
+
+                    # Inject config into tool_chain's calibrate, evaluate, and simulate steps
+                    generated_config = interpreter_result.get("config", {})
+                    for step in tool_chain:
+                        tool_name = step.get("tool")
+                        if tool_name in ["calibrate", "evaluate", "simulate"]:
+                            step["inputs"]["config"] = generated_config
+                            logger.info(f"[Orchestrator] Injected config into {tool_name} tool")
+                else:
+                    logger.info("[Orchestrator] Tool system mode - no config needed, bypassing InterpreterAgent")
+
+                # Tool system mode: pass tool_chain directly to RunnerAgent
+                config_result = {
+                    "success": True,
+                    "use_tool_system": True,
+                    "tool_chain": tool_chain,
+                    "execution_mode": task_plan.get("execution_mode", "simple"),
+                    "mode_params": task_plan.get("mode_params", {}),
+                    "intent_result": intent_result,
+                    "user_query": self.execution_context.get("query", ""),
+                    "task_type": task_plan.get("task_type", "unknown"),
+                }
+                return {
+                    "context_updates": {
+                        "config_result": config_result,
+                        "current_config": config_result,
+                    },
+                    "source_agent": "Orchestrator",
+                    "agent_result": config_result,
+                }
+
+            # Legacy mode: use subtasks
+            subtasks = task_plan.get("subtasks", [])
 
             if not subtasks:
                 return {
@@ -679,7 +1187,19 @@ Always think step-by-step and explain your reasoning."""
                 }
 
             logger.info(f"[Orchestrator] Generating config for next pending subtask: {subtask.get('task_id')}")
-            subtask["user_query"] = self.execution_context.get("query", "")
+
+            # 🆕 Get appropriate query for compound tasks (legacy mode)
+            is_compound_task = self.execution_context.get("is_compound_task", False)
+            if is_compound_task:
+                compound_tasks = self.execution_context.get("compound_tasks", [])
+                current_index = self.execution_context.get("compound_task_index", 0)
+                if current_index < len(compound_tasks):
+                    subtask["user_query"] = compound_tasks[current_index].get("query", "")
+                    logger.info(f"[Orchestrator] Legacy mode: Using subtask query: {subtask['user_query']}")
+                else:
+                    subtask["user_query"] = self.execution_context.get("query", "")
+            else:
+                subtask["user_query"] = self.execution_context.get("query", "")
 
             try:
                 # ⭐ CRITICAL FIX: Route analysis/code_generation tasks differently
@@ -723,6 +1243,10 @@ Always think step-by-step and explain your reasoning."""
                     {"subtask": subtask, "intent_result": intent_result}
                 )
 
+                # 🆕 Record token usage from InterpreterAgent
+                if hasattr(self.interpreter_agent, 'llm'):
+                    self._record_agent_tokens("InterpreterAgent", llm_interface=self.interpreter_agent.llm)
+
                 # Track retry count for config generation
                 if not config_result.get("success"):
                     retry_count = self.execution_context.get("config_retry_count", 0) + 1
@@ -757,6 +1281,10 @@ Always think step-by-step and explain your reasoning."""
         elif state == OrchestratorState.EXECUTING_TASK:
             config_result = self.execution_context.get("config_result", {})
             use_mock = self.execution_context.get("use_mock", False)
+
+            # 🆕 Pass use_mock to RunnerAgent/tools
+            if use_mock:
+                config_result["use_mock"] = True
 
             # ⭐ CRITICAL FIX: Get task_id from config_result to track which subtask is being executed
             task_id = config_result.get("task_id")
@@ -862,6 +1390,74 @@ Always think step-by-step and explain your reasoning."""
                 metrics = analysis_result.get("analysis", {}).get("metrics", {})
                 nse = metrics.get("NSE", 0)
 
+                # 🆕 Check if this is a compound task and if there are more subtasks to process
+                is_compound_task = self.execution_context.get("is_compound_task", False)
+                if is_compound_task:
+                    compound_tasks = self.execution_context.get("compound_tasks", [])
+                    current_index = self.execution_context.get("compound_task_index", 0)
+                    compound_results = self.execution_context.get("compound_task_results", [])
+
+                    # Store current subtask result
+                    compound_results.append({
+                        "subtask_index": current_index,
+                        "query": compound_tasks[current_index].get("query") if current_index < len(compound_tasks) else "",
+                        "execution_result": execution_result,
+                        "analysis_result": analysis_result,
+                    })
+
+                    # Check if there are more subtasks
+                    next_index = current_index + 1
+                    if next_index < len(compound_tasks):
+                        logger.info(f"[Orchestrator] Compound task: completed subtask {current_index + 1}/{len(compound_tasks)}")
+                        logger.info(f"[Orchestrator] Processing next subtask {next_index + 1}/{len(compound_tasks)}")
+
+                        # Get next subtask
+                        next_task = compound_tasks[next_index]
+                        next_intent_result = next_task.get("intent_result", {})
+
+                        # 🔧 For simulation tasks, inject calibration results (optimal parameters)
+                        if next_intent_result.get("intent") == "simulation" and current_index == 0:
+                            # Extract calibration results from previous subtask
+                            prev_result = execution_result.get("result", {})
+                            calibration_dir = prev_result.get("calibration_dir")
+                            optimal_params = prev_result.get("optimal_params")
+
+                            if calibration_dir:
+                                next_intent_result["calibration_dir"] = calibration_dir
+                                logger.info(f"[Orchestrator] Injected calibration_dir for simulation: {calibration_dir}")
+                            if optimal_params:
+                                next_intent_result["optimal_params"] = optimal_params
+                                logger.info(f"[Orchestrator] Injected optimal_params for simulation")
+
+                        # Update execution context to process next subtask
+                        return {
+                            "context_updates": {
+                                "compound_task_index": next_index,
+                                "compound_task_results": compound_results,
+                                "intent_result": next_intent_result,  # Switch to next subtask's intent
+                                "analysis_result": analysis_result,
+                                "nse": nse,
+                                "should_continue_compound_task": True,  # Signal to restart from PLANNING_TASKS
+                            },
+                            "source_agent": "DeveloperAgent",
+                            "agent_result": analysis_result,
+                        }
+                    else:
+                        # All compound subtasks completed
+                        logger.info(f"[Orchestrator] Compound task completed: all {len(compound_tasks)} subtasks finished")
+
+                        return {
+                            "context_updates": {
+                                "compound_task_results": compound_results,
+                                "analysis_result": analysis_result,
+                                "nse": nse,
+                                "compound_task_completed": True,
+                            },
+                            "source_agent": "DeveloperAgent",
+                            "agent_result": analysis_result,
+                        }
+
+                # Normal single task
                 return {
                     "context_updates": {
                         "analysis_result": analysis_result,
@@ -1125,7 +1721,19 @@ Always think step-by-step and explain your reasoning."""
         if self.task_planner is None:
             raise RuntimeError("TaskPlanner not initialized")
 
-        return self.task_planner.process({"intent_result": intent_result})
+        # 🆕 Phase 2 Fix: Pass original_query to TaskPlanner for analysis detection
+        # Get original query from execution context (supports both "query" and "original_query" keys)
+        original_query = self.execution_context.get("original_query") or self.execution_context.get("query", "")
+        if original_query and "original_query" not in intent_result:
+            intent_result["original_query"] = original_query
+
+        result = self.task_planner.process({"intent_result": intent_result})
+
+        # 🆕 Record token usage from TaskPlanner
+        if hasattr(self.task_planner, 'llm'):
+            self._record_agent_tokens("TaskPlanner", llm_interface=self.task_planner.llm)
+
+        return result
 
     def _generate_configs(
         self, subtasks: List[Dict], intent_result: Dict
@@ -1151,6 +1759,10 @@ Always think step-by-step and explain your reasoning."""
             config_result = self.interpreter_agent.process(
                 {"subtask": subtask, "intent_result": intent_result}
             )
+
+            # 🆕 Record token usage from InterpreterAgent
+            if hasattr(self.interpreter_agent, 'llm'):
+                self._record_agent_tokens("InterpreterAgent", llm_interface=self.interpreter_agent.llm)
 
             if not config_result.get("success"):
                 error_type = config_result.get("error_type", "ConfigGenerationError")
@@ -1435,16 +2047,38 @@ Always think step-by-step and explain your reasoning."""
 
         result = self.intent_agent.process({"query": query})
 
+        # 🆕 Record token usage from IntentAgent
+        # CRITICAL: Pass IntentAgent's LLM, not Orchestrator's
+        if hasattr(self.intent_agent, 'llm'):
+            self._record_agent_tokens("IntentAgent", llm_interface=self.intent_agent.llm)
+
         if not result.get("success"):
             error_msg = result.get("error", "Unknown error")
             error_type = result.get("error_type", "IntentAnalysisError")
 
-            # For user-friendly errors, return detailed message without wrapping
-            if error_type in ["BasinIDValidationError", "AlgorithmParameterValidationError"]:
+            # 🆕 v5.1: 检测API错误，优雅地返回错误状态而不是抛出异常
+            # API错误通常包含 "Error code: 403", "quota", "rate limit" 等关键词
+            is_api_error = any(keyword in error_msg.lower() for keyword in [
+                "error code:", "quota", "rate limit", "api key", "authentication",
+                "free tier", "exhausted", "403", "401", "429", "500", "503"
+            ])
+
+            if is_api_error:
+                # API错误：返回错误状态，不抛出异常
+                logger.error(f"[Orchestrator] LLM API Error: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "error_type": "LLM_API_Error",
+                    "is_api_error": True,
+                    "intent_result": {}
+                }
+            elif error_type in ["BasinIDValidationError", "AlgorithmParameterValidationError"]:
+                # 用户输入错误：抛出ValueError
                 logger.error(f"[Orchestrator] {error_msg}")
-                # Return the error directly without wrapping in RuntimeError
                 raise ValueError(error_msg)
             else:
+                # 其他错误：抛出RuntimeError
                 raise RuntimeError(f"Intent analysis failed: {error_msg}")
 
         logger.info(f"[Orchestrator] Intent: {result['intent_result'].get('intent')}")
@@ -1521,6 +2155,13 @@ Always think step-by-step and explain your reasoning."""
             raise RuntimeError(
                 "DeveloperAgent not initialized. Call start_new_session() first."
             )
+
+        # Inject user query and intent result for report generation
+        if self.execution_context:
+            if "user_query" not in execution_result:
+                execution_result["user_query"] = self.execution_context.get("query", "")
+            if "intent_result" not in execution_result:
+                execution_result["intent_result"] = self.execution_context.get("intent_result", {})
 
         result = self.developer_agent.process(execution_result)
 

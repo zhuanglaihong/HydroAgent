@@ -89,6 +89,7 @@ class TaskPlanner(BaseAgent):
         prompt_pool: Optional[PromptPool] = None,
         workspace_dir: Optional[Path] = None,
         use_llm_planning: bool = True,  # 🆕 v5.0
+        use_tool_system: Optional[bool] = None,  # 🆕 Phase 1: Tool System
         **kwargs,
     ):
         """
@@ -99,6 +100,7 @@ class TaskPlanner(BaseAgent):
             prompt_pool: PromptPool instance for historical cases
             workspace_dir: Working directory for results
             use_llm_planning: 🆕 v5.0 Whether to use LLM for dynamic planning (default: True)
+            use_tool_system: 🆕 Phase 1: Whether to use tool system (default: read from config)
             **kwargs: Additional configuration
         """
         super().__init__(
@@ -128,6 +130,25 @@ class TaskPlanner(BaseAgent):
             "auto_iterative_calibration": self._decompose_auto_iterative_calibration,
         }
 
+        # 🆕 Phase 1: Tool Orchestrator Integration
+        # Check if tool system is enabled (parameter takes priority over config)
+        if use_tool_system is None:
+            try:
+                from configs import config as global_config
+                use_tool_system = getattr(global_config, 'USE_TOOL_SYSTEM', False)
+            except ImportError:
+                use_tool_system = False
+
+        self.use_tool_system = use_tool_system
+
+        if self.use_tool_system:
+            from hydroagent.agents.tool_orchestrator import ToolOrchestrator
+            self.orchestrator = ToolOrchestrator(llm_interface=self.llm)
+            logger.info("[TaskPlanner v5.0] Tool orchestrator ENABLED with LLM support")
+        else:
+            self.orchestrator = None
+            logger.info("[TaskPlanner v5.0] Tool orchestrator DISABLED - using legacy decomposition")
+
         logger.info(
             f"[TaskPlanner v5.0] Initialized with LLM planning={'enabled' if use_llm_planning else 'disabled'}"
         )
@@ -149,8 +170,8 @@ Always create structured, actionable task plans."""
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        🆕 v5.0: Decompose task using LLM or fallback to rule-based methods.
-        使用 LLM 动态拆解任务,或回退到基于规则的方法。
+        🆕 v6.0: All tasks use tool system (Legacy mode removed).
+        所有任务都使用工具系统（Legacy模式已移除）。
 
         Args:
             input_data: Intent result from IntentAgent
@@ -168,53 +189,32 @@ Always create structured, actionable task plans."""
             Dict containing:
                 {
                     "success": True,
+                    "tool_chain": [...],  # Tool execution sequence
+                    "execution_mode": "simple|iterative|repeated",
+                    "mode_params": {...}
+                }
+                或 (多模型组合时):
+                {
+                    "success": True,
                     "task_plan": {
-                        "task_type": "iterative_optimization",
-                        "subtasks": [SubTask, SubTask, ...],
-                        "total_subtasks": 2
+                        "subtasks": [...],  # Multiple tool_chain subtasks
+                        "use_tool_chains": True
                     }
                 }
         """
         intent_result = input_data.get("intent_result", {})
-        error_log = input_data.get("error_log")
-
         task_type = intent_result.get("task_type", "standard_calibration")
 
-        logger.info(f"[TaskPlanner] Decomposing task: {task_type}")
+        logger.info(f"[TaskPlanner v6.0] Processing task: {task_type} (tool system only)")
 
-        try:
-            # Step 1: Decompose task into subtasks
-            subtasks = self._decompose_task(intent_result)
+        # ✅ v6.0: All tasks use tool system
+        return self._process_with_tools(intent_result, task_type)
 
-            # Step 2: Generate prompts for each subtask
-            for subtask in subtasks:
-                subtask.prompt = self._generate_subtask_prompt(
-                    subtask, intent_result, error_log
-                )
-
-                # Store prompt in PromptPool
-                self.prompt_pool.store_prompt(
-                    task_id=subtask.task_id,
-                    prompt=subtask.prompt,
-                    params=subtask.parameters,
-                )
-
-            # Step 3: Create task plan
-            task_plan = {
-                "task_type": task_type,
-                "subtasks": [st.to_dict() for st in subtasks],
-                "total_subtasks": len(subtasks),
-            }
-
-            logger.info(f"[TaskPlanner] Task plan created: {len(subtasks)} subtasks")
-
-            return {"success": True, "task_plan": task_plan}
-
-        except Exception as e:
-            logger.error(
-                f"[TaskPlanner] Task decomposition failed: {str(e)}", exc_info=True
-            )
-            return {"success": False, "error": str(e)}
+    # ========================================================================
+    # ⚠️ DEPRECATED (v6.0): Legacy decomposition methods no longer used
+    # All tasks now use tool chains, not subtask-based decomposition
+    # Kept for reference, may be removed in future versions
+    # ========================================================================
 
     def _decompose_task(self, intent_result: Dict[str, Any]) -> List[SubTask]:
         """
@@ -304,11 +304,11 @@ Always create structured, actionable task plans."""
             SubTask(
                 task_id="task_1",
                 task_type="calibration",
-                description=f"Calibrate {intent.get('model_name', 'model')} on basin {intent.get('basin_id', 'N/A')}",
+                description=f"Calibrate {intent.get('model_name', 'model')} on basins {intent.get('basin_ids', ['N/A'])}",
                 prompt="",  # Will be filled by _generate_subtask_prompt
                 parameters={
                     "model_name": intent.get("model_name"),
-                    "basin_id": intent.get("basin_id"),
+                    "basin_ids": intent.get("basin_ids"),
                     "algorithm": intent.get("algorithm"),
                     "train_period": train_period,
                     "test_period": test_period,
@@ -367,11 +367,11 @@ Always create structured, actionable task plans."""
             SubTask(
                 task_id="iterative_boundary_optimization",
                 task_type="boundary_check_recalibration",
-                description=f"Iterative optimization for {intent.get('basin_id', 'N/A')} (internal loop until convergence)",
+                description=f"Iterative optimization for {intent.get('basin_ids', ['N/A'])} (internal loop until convergence)",
                 prompt="",
                 parameters={
                     "model_name": intent.get("model_name"),
-                    "basin_id": intent.get("basin_id"),
+                    "basin_ids": intent.get("basin_ids"),
                     "algorithm": intent.get("algorithm"),
                     "time_period": intent.get("time_period"),
                     "extra_params": intent.get("extra_params", {}),
@@ -418,7 +418,7 @@ Always create structured, actionable task plans."""
                     prompt="",
                     parameters={
                         "model_name": intent.get("model_name"),
-                        "basin_id": intent.get("basin_id"),
+                        "basin_ids": intent.get("basin_ids"),
                         "algorithm": intent.get("algorithm"),
                         "time_period": intent.get("time_period"),
                         "extra_params": extra_params,
@@ -471,11 +471,11 @@ Always create structured, actionable task plans."""
             SubTask(
                 task_id="task_1_calibration",
                 task_type="calibration",
-                description=f"Calibrate {intent.get('model_name', 'model')} on basin {intent.get('basin_id', 'N/A')}",
+                description=f"Calibrate {intent.get('model_name', 'model')} on basins {intent.get('basin_ids', ['N/A'])}",
                 prompt="",
                 parameters={
                     "model_name": intent.get("model_name"),
-                    "basin_id": intent.get("basin_id"),
+                    "basin_ids": intent.get("basin_ids"),
                     "algorithm": intent.get("algorithm"),
                     "train_period": train_period,
                     "test_period": test_period,
@@ -497,7 +497,7 @@ Always create structured, actionable task plans."""
                     parameters={
                         "task_type": "custom_analysis",  # ⭐ CRITICAL: RunnerAgent needs this
                         "analysis_type": need,
-                        "basin_id": intent.get("basin_id"),
+                        "basin_ids": intent.get("basin_ids"),
                         "model_name": intent.get("model_name"),
                     },
                     dependencies=["task_1_calibration"],  # Depends on calibration
@@ -511,15 +511,21 @@ Always create structured, actionable task plans."""
         批量处理 - 多流域/多算法/多模型
         Decompose batch processing task.
 
-        Flow: Multiple calibrations for basins × algorithms × models
+        Flow:
+        1. Multiple calibrations for basins × algorithms × models (parallel)
+        2. Optional: Aggregated analysis tasks (depend on all calibrations)
+
+        Example: "批量率定3个流域，完成后计算各流域的径流系数"
+        → Creates 3 parallel calibration tasks + 1 aggregated analysis task
         """
-        basins = intent.get("basin_ids", [intent.get("basin_id")])
+        basins = intent.get("basin_ids", [])
         algorithms = intent.get("algorithms", [intent.get("algorithm")])
         models = intent.get("model_names", [intent.get("model_name")])
+        needs = intent.get("needs", [])
 
-        # Handle single basin/algorithm/model case
-        if isinstance(basins, str):
-            basins = [basins]
+        # Ensure basins/algorithms/models are lists
+        if not isinstance(basins, list):
+            basins = [basins] if basins else []
         if isinstance(algorithms, str):
             algorithms = [algorithms]
         if isinstance(models, str):
@@ -528,6 +534,7 @@ Always create structured, actionable task plans."""
         subtasks = []
         task_counter = 1
 
+        # ========== STEP 1: Create parallel calibration tasks ==========
         # Create combinations of basins × algorithms × models
         for basin in basins:
             for algorithm in algorithms:
@@ -540,7 +547,7 @@ Always create structured, actionable task plans."""
                             prompt="",
                             parameters={
                                 "model_name": model,
-                                "basin_id": basin,
+                                "basin_ids": [basin],  # hydromodel requires array format
                                 "algorithm": algorithm,
                                 "time_period": intent.get("time_period"),
                                 "extra_params": intent.get("extra_params", {}),
@@ -550,6 +557,30 @@ Always create structured, actionable task plans."""
                         )
                     )
                     task_counter += 1
+
+        # ========== STEP 2: Create aggregated analysis tasks if needed ==========
+        if needs:
+            # Collect all calibration task IDs for dependency
+            calib_task_ids = [f"task_{i+1}" for i in range(len(subtasks))]
+
+            # Create one analysis task for each "need"
+            for need in needs:
+                subtasks.append(
+                    SubTask(
+                        task_id=f"task_{task_counter}_analysis",
+                        task_type="custom_analysis",
+                        description=f"Aggregated analysis: {need} for {len(basins)} basin(s)",
+                        prompt="",
+                        parameters={
+                            "task_type": "custom_analysis",  # ⭐ CRITICAL: RunnerAgent needs this
+                            "analysis_type": need,
+                            "basin_ids": basins,  # All basins for aggregation
+                            "model_name": models[0] if models else intent.get("model_name"),
+                        },
+                        dependencies=calib_task_ids,  # Depends on ALL calibration tasks
+                    )
+                )
+                task_counter += 1
 
         return subtasks
 
@@ -568,7 +599,7 @@ Always create structured, actionable task plans."""
                 prompt="",
                 parameters={
                     "model_name": intent.get("model_name"),
-                    "basin_id": intent.get("basin_id"),
+                    "basin_ids": intent.get("basin_ids"),
                     "algorithm": intent.get("algorithm"),
                     "time_period": intent.get("time_period"),
                     "extra_params": intent.get("extra_params", {}),
@@ -606,7 +637,7 @@ Always create structured, actionable task plans."""
                 prompt="",
                 parameters={
                     "model_name": intent.get("model_name"),
-                    "basin_id": intent.get("basin_id"),
+                    "basin_ids": intent.get("basin_ids"),
                     "algorithm": intent.get("algorithm"),
                     "time_period": intent.get("time_period"),
                     "extra_params": intent.get("extra_params", {}),
@@ -981,12 +1012,48 @@ Always create structured, actionable task plans."""
                     )
                     continue
 
+                # Get parameters from LLM
+                parameters = st_data.get("parameters", {})
+
+                # ⭐ FIX: Ensure critical fields from intent are propagated
+                # LLM may forget to include test_period, algorithm, etc.
+                task_type = st_data.get("task_type", "calibration")
+
+                if task_type in ["calibration", "evaluation"]:
+                    # Extract time_period from intent
+                    time_period = intent_result.get("time_period", {})
+
+                    # Ensure train_period and test_period are set
+                    if "train_period" not in parameters or not parameters.get("train_period"):
+                        if isinstance(time_period, dict):
+                            parameters["train_period"] = time_period.get("train")
+                        elif isinstance(time_period, list) and len(time_period) == 2:
+                            # Legacy format: [train_start, train_end]
+                            parameters["train_period"] = time_period
+
+                    if "test_period" not in parameters or not parameters.get("test_period"):
+                        if isinstance(time_period, dict):
+                            parameters["test_period"] = time_period.get("test")
+                        # Else leave as None/empty - it's optional for some workflows
+
+                    # Ensure other critical fields
+                    if "model_name" not in parameters:
+                        parameters["model_name"] = intent_result.get("model_name")
+                    if "basin_ids" not in parameters:
+                        parameters["basin_ids"] = intent_result.get("basin_ids")
+                    if "algorithm" not in parameters:
+                        parameters["algorithm"] = intent_result.get("algorithm")
+
+                    logger.debug(f"[TaskPlanner] Auto-filled parameters for {st_data.get('task_id')}: "
+                                f"train_period={parameters.get('train_period')}, "
+                                f"test_period={parameters.get('test_period')}")
+
                 subtask = SubTask(
                     task_id=st_data.get("task_id", f"task_{i+1}"),
-                    task_type=st_data.get("task_type", "calibration"),
+                    task_type=task_type,
                     description=st_data.get("description", ""),
                     prompt="",  # Will be generated later
-                    parameters=st_data.get("parameters", {}),
+                    parameters=parameters,
                     dependencies=st_data.get("dependencies", [])
                 )
 
@@ -1000,3 +1067,143 @@ Always create structured, actionable task plans."""
         except Exception as e:
             logger.error(f"[TaskPlanner v5.0] Parse error: {str(e)}", exc_info=True)
             return []
+
+    def _process_with_tools(
+        self,
+        intent_result: Dict[str, Any],
+        task_type: str
+    ) -> Dict[str, Any]:
+        """
+        Process task using tool orchestrator (Phase 1 implementation).
+        使用工具编排器处理任务（Phase 1实现）。
+
+        Args:
+            intent_result: Intent recognition result
+            task_type: Task type
+
+        Returns:
+            Dict containing tool_chain instead of subtasks
+        """
+        try:
+            # ✅ v6.0: Multi-model combination support via tool_chain subtasks
+            # Decompose into multiple single-combination tool chains and let Orchestrator loop
+            if task_type == "batch_processing":
+                models = intent_result.get("model_names", [intent_result.get("model_name")])
+                basins = intent_result.get("basin_ids", [])
+                algorithms = intent_result.get("algorithms", [intent_result.get("algorithm")])
+
+                # Normalize to lists
+                if isinstance(models, str):
+                    models = [models]
+                if not isinstance(basins, list):
+                    basins = [basins] if basins else []
+                if isinstance(algorithms, str):
+                    algorithms = [algorithms]
+
+                # Check if we have multiple combinations
+                num_combinations = len(models) * len(basins) * len(algorithms)
+                if num_combinations > 1:
+                    logger.info(
+                        f"[TaskPlanner v6.0] Detected multi-combination batch: {len(models)} model(s) × {len(basins)} basin(s) × {len(algorithms)} algorithm(s) = {num_combinations} combinations"
+                    )
+                    logger.info("[TaskPlanner v6.0] Generating tool_chain subtasks (Orchestrator will loop)")
+
+                    # ✅ Generate tool_chain for each combination
+                    subtasks = []
+                    task_counter = 1
+
+                    for model in models:
+                        for basin in basins:
+                            for algorithm in algorithms:
+                                task_id = f"task_{task_counter}"
+
+                                # Create sub-intent for this combination (single model × single basin)
+                                sub_intent = {
+                                    **intent_result,
+                                    "model_name": model,
+                                    "basin_ids": [basin],  # Single basin
+                                    "algorithm": algorithm
+                                }
+
+                                # Generate tool chain for this single combination
+                                logger.info(f"[TaskPlanner v6.0] Generating tool_chain for {task_id}: {model} × {basin} × {algorithm}")
+                                tool_chain_result = self.orchestrator.generate_tool_chain(
+                                    task_type="standard_calibration",  # Each combination is a standard calibration
+                                    intent_result=sub_intent,
+                                    use_llm=False  # Use rule-based for efficiency
+                                )
+
+                                if not tool_chain_result.get("success", True):
+                                    logger.error(f"[TaskPlanner] Tool chain generation failed for {task_id}")
+                                    continue
+
+                                # Create subtask with tool_chain
+                                subtasks.append({
+                                    "task_id": task_id,
+                                    "description": f"Calibrate {model} on basin {basin} with {algorithm}",
+                                    "tool_chain": tool_chain_result.get("tool_chain"),
+                                    "execution_mode": tool_chain_result.get("execution_mode", "simple"),
+                                    "mode_params": tool_chain_result.get("mode_params", {}),
+                                    "intent_result": sub_intent,  # Store intent for config generation
+                                })
+
+                                task_counter += 1
+
+                    logger.info(f"[TaskPlanner v6.0] Generated {len(subtasks)} tool_chain subtasks")
+
+                    # Return in task_plan format for Orchestrator to loop
+                    return {
+                        "success": True,
+                        "task_plan": {
+                            "task_type": task_type,
+                            "subtasks": subtasks,
+                            "use_tool_chains": True,  # ✅ Flag: subtasks contain tool_chains
+                            "total_subtasks": len(subtasks)
+                        }
+                    }
+
+            # Generate tool chain using orchestrator (returns dict with tool_chain + execution_mode)
+            orchestration_result = self.orchestrator.generate_tool_chain(
+                task_type=task_type,
+                intent_result=intent_result,
+                use_llm=True  # Enable LLM-based intelligent orchestration (with rule-based fallback)
+            )
+
+            tool_chain = orchestration_result["tool_chain"]
+            execution_mode = orchestration_result["execution_mode"]
+            mode_params = orchestration_result["mode_params"]
+            # 🆕 Get updated task_type (may have been upgraded by ToolOrchestrator)
+            updated_task_type = orchestration_result.get("task_type", task_type)
+
+            # Validate tool chain
+            is_valid, error = self.orchestrator.validate_tool_chain(tool_chain)
+            if not is_valid:
+                logger.error(f"[TaskPlanner] Invalid tool chain: {error}")
+                return {
+                    "success": False,
+                    "error": f"Tool chain validation failed: {error}"
+                }
+
+            # Get tool chain summary for logging
+            summary = self.orchestrator.get_tool_chain_summary(tool_chain)
+            logger.info(f"[TaskPlanner] Generated tool chain ({execution_mode} mode):\n{summary}")
+
+            # Return tool chain format (different from legacy subtasks format)
+            return {
+                "success": True,
+                "task_type": updated_task_type,  # 🆕 Use updated task_type from orchestrator
+                "tool_chain": tool_chain,  # List of tool calls
+                "execution_mode": execution_mode,  # simple/iterative/repeated
+                "mode_params": mode_params,  # Parameters for execution mode
+                "total_tools": len(tool_chain)
+            }
+
+        except Exception as e:
+            logger.error(
+                f"[TaskPlanner] Tool orchestration failed: {str(e)}",
+                exc_info=True
+            )
+            return {
+                "success": False,
+                "error": f"Tool orchestration error: {str(e)}"
+            }
