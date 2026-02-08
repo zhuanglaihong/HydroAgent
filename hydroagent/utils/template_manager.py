@@ -183,6 +183,8 @@ def extract_placeholders(nc_file_path: str, basin_id: str, output_dir: str) -> D
     """
     Helper function to extract common placeholders from analysis parameters
 
+    🆕 v5.1: 自动修复Windows路径转义问题
+
     Args:
         nc_file_path: Path to NetCDF data file
         basin_id: Basin ID
@@ -191,8 +193,24 @@ def extract_placeholders(nc_file_path: str, basin_id: str, output_dir: str) -> D
     Returns:
         Dict[str, str]: Placeholder dictionary ready for fill_template()
     """
+    # 🆕 修复Windows路径转义问题：
+    # 将反斜杠转换为双反斜杠，确保在Python字符串中正确解析
+    # 例如：D:\project\... → D:\\project\\...
+    def fix_windows_path(path: str) -> str:
+        """修复Windows路径，避免转义序列错误"""
+        if not isinstance(path, str):
+            return str(path)
+
+        # 如果路径包含反斜杠，加上原始字符串前缀
+        if '\\' in path:
+            # 替换单反斜杠为双反斜杠（用于字符串字面量）
+            # 或者使用原始字符串标记
+            # 这里我们保持路径不变，但在模板中使用r""字符串
+            return path.replace('\\', '\\\\')
+        return path
+
     return {
-        'NC_FILE_PATH': nc_file_path,
+        'NC_FILE_PATH': fix_windows_path(nc_file_path),
         'BASIN_ID': basin_id,
-        'OUTPUT_DIR': output_dir
+        'OUTPUT_DIR': fix_windows_path(output_dir)
     }

@@ -700,6 +700,31 @@ Always think step-by-step and explain your reasoning."""
                 # Mark as unrecoverable failure
                 self.execution_context["error"] = error_msg
                 self.execution_context["is_api_error"] = is_api_error
+
+                # 🔧 v6.1 Fix: Set state-specific failure flags for state transitions
+                # Different states check different flags in transition rules (see state_machine.py)
+                if current_state == OrchestratorState.ANALYZING_INTENT:
+                    # Transition rule checks: intent_analysis_failed or intent == "UNKNOWN"
+                    self.execution_context["intent_analysis_failed"] = True
+                    self.state_machine.update_context({"intent_analysis_failed": True})
+                    logger.info("[StateMachine] Set intent_analysis_failed=True for transition")
+
+                elif current_state == OrchestratorState.PLANNING_TASKS:
+                    # Transition rule checks: task_plan_result.success
+                    self.state_machine.update_context({
+                        "task_plan_result": {"success": False, "error": error_msg}
+                    })
+                    logger.info("[StateMachine] Set task_plan_result.success=False for transition")
+
+                elif current_state == OrchestratorState.GENERATING_CONFIG:
+                    # Transition rule checks: config_result.success and config_retry_count >= 3
+                    self.state_machine.update_context({
+                        "config_result": {"success": False, "error": error_msg},
+                        "config_retry_count": 999  # Force transition by exceeding retry limit
+                    })
+                    logger.info("[StateMachine] Set config_result.success=False for transition")
+
+                # For all states, also set execution_result (used by EXECUTING_TASK and others)
                 self.state_machine.update_context({"execution_result": {"success": False, "retryable": False}})
                 self.state_machine.transition()
                 continue
@@ -717,6 +742,51 @@ Always think step-by-step and explain your reasoning."""
 
                 logger.info(f"[FeedbackRouter] Action: {routing_decision.get('action')}")
                 self.execution_context["routing_decision"] = routing_decision
+
+                # 🚨 CRITICAL FIX: Handle "abort" action from FeedbackRouter
+                # When FeedbackRouter detects unrecoverable errors (e.g., config validation failure),
+                # it returns action="abort" to stop execution immediately
+                if routing_decision.get("action") == "abort":
+                    router_params = routing_decision.get("parameters", {})
+                    error_reason = router_params.get("reason", "Unknown abort reason")
+                    error_type = router_params.get("error_type", "unknown")
+
+                    logger.error(f"[Orchestrator] FeedbackRouter requested abort: {error_reason}")
+
+                    # Set error context
+                    self.execution_context["error"] = error_reason
+                    self.execution_context["error_phase"] = current_state.name
+                    self.execution_context["error_type"] = error_type
+
+                    # 🔧 CRITICAL: Set state-specific flags to trigger FAILED_UNRECOVERABLE transition
+                    # Different states have different transition conditions to FAILED_UNRECOVERABLE
+                    if current_state == OrchestratorState.ANALYZING_INTENT:
+                        # ANALYZING_INTENT → FAILED_UNRECOVERABLE requires intent_analysis_failed=True
+                        self.execution_context["intent_analysis_failed"] = True
+                        self.state_machine.update_context({"intent_analysis_failed": True})
+                    elif current_state == OrchestratorState.PLANNING_TASKS:
+                        # PLANNING_TASKS → FAILED_UNRECOVERABLE requires task_plan_result.success=False
+                        self.execution_context["task_plan_result"] = {"success": False}
+                        self.state_machine.update_context({"task_plan_result": {"success": False}})
+                    elif current_state == OrchestratorState.GENERATING_CONFIG:
+                        # GENERATING_CONFIG → FAILED_UNRECOVERABLE requires config_retry_count >= 3
+                        self.execution_context["config_retry_count"] = 999
+                        self.execution_context["config_result"] = {"success": False}
+                        self.state_machine.update_context({
+                            "config_retry_count": 999,
+                            "config_result": {"success": False}
+                        })
+                    else:
+                        # For other states, set execution_result to trigger failure
+                        self.execution_context["execution_result"] = {"success": False, "retryable": False}
+                        self.state_machine.update_context({
+                            "execution_result": {"success": False, "retryable": False}
+                        })
+
+                    # Trigger transition (should go to FAILED_UNRECOVERABLE)
+                    logger.warning(f"[Orchestrator] Forcing transition from {current_state.name} to FAILED_UNRECOVERABLE due to abort")
+                    self.state_machine.transition()
+                    continue
 
                 # ⭐ CRITICAL FIX: Preserve should_continue_iterating flag from FeedbackRouter
                 # This flag indicates whether the system should continue iterating based on DeveloperAgent's analysis
@@ -750,6 +820,26 @@ Always think step-by-step and explain your reasoning."""
         final_state = self.state_machine.current_state
         logger.info(f"[StateMachine] Reached terminal state: {final_state.name}")
 
+        # 🚨 CRITICAL FIX: Execute terminal state action (e.g., failure report generation)
+        # The main loop exits when reaching a terminal state, but we need to execute
+        # the terminal state's action (like generating failure reports for FAILED_UNRECOVERABLE)
+        try:
+            terminal_state_result = self._execute_state_action(final_state)
+            self.execution_context.update(terminal_state_result.get("context_updates", {}))
+        except Exception as e:
+            logger.error(f"[Orchestrator] Error executing terminal state action: {e}", exc_info=True)
+
+        # 🚨 CRITICAL FIX: Clear xarray file cache to prevent NetCDF HDF errors
+        # When running multiple queries in batch, xarray's file cache can become corrupted
+        # This manifests as "NetCDF: HDF error" or KeyError in xarray.backends.lru_cache
+        try:
+            import xarray as xr
+            if hasattr(xr.backends.file_manager, '_FILE_CACHE'):
+                xr.backends.file_manager._FILE_CACHE.clear()
+                logger.info("[Orchestrator] Cleared xarray file cache to prevent NetCDF conflicts")
+        except Exception as e:
+            logger.warning(f"[Orchestrator] Failed to clear xarray cache: {e}")
+
         # Determine overall success
         overall_success = final_state == OrchestratorState.COMPLETED_SUCCESS
 
@@ -776,7 +866,29 @@ Always think step-by-step and explain your reasoning."""
             error_phase = self.execution_context.get("error_phase", "unknown")
             result["error"] = error_msg
             result["error_phase"] = error_phase
-            logger.error(f"[Orchestrator] Task failed in {error_phase}: {error_msg}")
+
+            # 🔧 v6.1 Fix: Add error classification for Experiment C
+            # Use ErrorHandler to classify errors if not already classified
+            error_category = self.execution_context.get("error_category")
+            error_type = self.execution_context.get("error_type")
+
+            if not error_category:
+                # Classify error using ErrorHandler
+                from hydroagent.utils.error_handler import ErrorHandler
+                error_handler = ErrorHandler()
+
+                # Create a temporary exception for classification
+                try:
+                    raise RuntimeError(error_msg)
+                except Exception as e:
+                    error_info = error_handler.handle_exception(e)
+                    error_category = error_info["analysis"].get("error_category", "unknown")
+                    error_type = error_info.get("error_type", "RuntimeError")
+
+            result["error_category"] = error_category
+            result["error_type"] = error_type
+
+            logger.error(f"[Orchestrator] Task failed in {error_phase}: [{error_category}] {error_msg}")
 
         if self.goal_tracker:
             result["goal_progress"] = self.goal_tracker.get_progress_summary()
@@ -1043,10 +1155,15 @@ Always think step-by-step and explain your reasoning."""
 
                     if not interpreter_result.get("success"):
                         logger.error(f"[Orchestrator v6.0] Config generation failed for {current_subtask.get('task_id')}")
+                        # 🚨 CRITICAL FIX: Set agent_result to trigger FeedbackRouter
+                        # FeedbackRouter will detect the failure and return "abort" action
                         return {
-                            "context_updates": {"error": "Config generation failed for multi-combination subtask"},
+                            "context_updates": {
+                                "error": "Config generation failed for multi-combination subtask",
+                                "error_phase": "GENERATING_CONFIG"
+                            },
                             "source_agent": "InterpreterAgent",
-                            "agent_result": interpreter_result,
+                            "agent_result": interpreter_result,  # This triggers FeedbackRouter
                         }
 
                     # Inject config into tool_chain
@@ -1073,8 +1190,8 @@ Always think step-by-step and explain your reasoning."""
                         "current_config": config_result,
                         "current_subtask": current_subtask,
                     },
-                    "source_agent": "Orchestrator",
-                    "agent_result": config_result,
+                    # ✅ v6.0: No source_agent/agent_result - Orchestrator internal flow control
+                    # FeedbackRouter should not route Orchestrator's own decisions
                 }
 
             # ⭐ CRITICAL FIX: Tool system mode uses different execution path
@@ -1123,10 +1240,15 @@ Always think step-by-step and explain your reasoning."""
 
                     if not interpreter_result.get("success"):
                         logger.error("[Orchestrator] InterpreterAgent failed to generate config")
+                        # 🚨 CRITICAL FIX: Set agent_result to trigger FeedbackRouter
+                        # FeedbackRouter will detect the failure and return "abort" action
                         return {
-                            "context_updates": {"error": "Config generation failed"},
+                            "context_updates": {
+                                "error": "Config generation failed",
+                                "error_phase": "GENERATING_CONFIG"
+                            },
                             "source_agent": "InterpreterAgent",
-                            "agent_result": interpreter_result,
+                            "agent_result": interpreter_result,  # This triggers FeedbackRouter
                         }
 
                     # Inject config into tool_chain's calibrate, evaluate, and simulate steps
@@ -1155,128 +1277,22 @@ Always think step-by-step and explain your reasoning."""
                         "config_result": config_result,
                         "current_config": config_result,
                     },
-                    "source_agent": "Orchestrator",
-                    "agent_result": config_result,
+                    # ✅ v6.0: No source_agent/agent_result - Orchestrator internal flow control
                 }
 
-            # Legacy mode: use subtasks
-            subtasks = task_plan.get("subtasks", [])
-
-            if not subtasks:
-                return {
-                    "context_updates": {"config_result": {"success": False}},
-                }
-
-            # ⭐ CRITICAL FIX: Select next pending subtask, not always the first one
-            # Get completed subtask IDs
-            execution_results = self.execution_context.get("execution_results", [])
-            completed_ids = {r.get("task_id") for r in execution_results if r.get("success")}
-
-            # Find first pending subtask
-            subtask = None
-            for st in subtasks:
-                if st.get("task_id") not in completed_ids:
-                    subtask = st
-                    break
-
-            if subtask is None:
-                # All subtasks completed (should not reach here if state transitions are correct)
-                logger.warning("[Orchestrator] All subtasks completed, but still in GENERATING_CONFIG state")
-                return {
-                    "context_updates": {"config_result": {"success": False, "error": "No pending subtasks"}},
-                }
-
-            logger.info(f"[Orchestrator] Generating config for next pending subtask: {subtask.get('task_id')}")
-
-            # 🆕 Get appropriate query for compound tasks (legacy mode)
-            is_compound_task = self.execution_context.get("is_compound_task", False)
-            if is_compound_task:
-                compound_tasks = self.execution_context.get("compound_tasks", [])
-                current_index = self.execution_context.get("compound_task_index", 0)
-                if current_index < len(compound_tasks):
-                    subtask["user_query"] = compound_tasks[current_index].get("query", "")
-                    logger.info(f"[Orchestrator] Legacy mode: Using subtask query: {subtask['user_query']}")
-                else:
-                    subtask["user_query"] = self.execution_context.get("query", "")
-            else:
-                subtask["user_query"] = self.execution_context.get("query", "")
-
-            try:
-                # ⭐ CRITICAL FIX: Route analysis/code_generation tasks differently
-                # Analysis tasks don't need hydromodel configs - they need code generation
-                task_type = subtask.get("task_type", "")
-
-                if task_type in ["analysis", "code_generation", "visualization", "custom_analysis"]:
-                    # Skip InterpreterAgent for these tasks - they don't need hydromodel configs
-                    logger.info(f"[Orchestrator] Skipping InterpreterAgent for {task_type} task - using minimal metadata config")
-
-                    # ⭐ Add previous_results to parameters for code generation
-                    # This allows Code LLM to access data from previous calibration/evaluation tasks
-                    task_params = subtask.get("parameters", {}).copy()
-                    task_params["previous_results"] = self.execution_context.get("execution_results", [])
-
-                    config_result = {
-                        "success": True,
-                        "config": {
-                            "task_metadata": {
-                                "task_type": task_type,
-                                "task_id": subtask.get("task_id"),
-                                "parameters": task_params,  # ⭐ Use enhanced parameters
-                                "description": subtask.get("description", ""),
-                                "user_query": subtask.get("user_query", ""),
-                            }
-                        },
-                        "task_id": subtask.get("task_id")
+            # ❌ v6.0: Legacy subtasks mode removed
+            # All tasks now use tool_chains (either single or multiple subtasks with tool_chains)
+            # If we reach here, it means task_plan format is incorrect
+            logger.error("[Orchestrator v6.0] Reached unexpected state: no tool system mode detected")
+            logger.error(f"[Orchestrator v6.0] task_plan keys: {list(task_plan.keys())}")
+            return {
+                "context_updates": {
+                    "config_result": {
+                        "success": False,
+                        "error": "v6.0: All tasks must use tool_chains. Legacy subtasks mode removed."
                     }
-
-                    return {
-                        "context_updates": {
-                            "config_result": config_result,
-                            "current_config": config_result.get("config"),
-                        },
-                        "source_agent": "Orchestrator",  # Direct routing, no InterpreterAgent
-                        "agent_result": config_result,
-                    }
-
-                # For calibration/evaluation/simulation, use InterpreterAgent normally
-                config_result = self.interpreter_agent.process(
-                    {"subtask": subtask, "intent_result": intent_result}
-                )
-
-                # 🆕 Record token usage from InterpreterAgent
-                if hasattr(self.interpreter_agent, 'llm'):
-                    self._record_agent_tokens("InterpreterAgent", llm_interface=self.interpreter_agent.llm)
-
-                # Track retry count for config generation
-                if not config_result.get("success"):
-                    retry_count = self.execution_context.get("config_retry_count", 0) + 1
-                    return {
-                        "context_updates": {
-                            "config_result": config_result,
-                            "config_retry_count": retry_count,
-                        },
-                        "source_agent": "InterpreterAgent",
-                        "agent_result": config_result,
-                    }
-
-                return {
-                    "context_updates": {
-                        "config_result": config_result,
-                        "current_config": config_result.get("config"),
-                    },
-                    "source_agent": "InterpreterAgent",
-                    "agent_result": config_result,
-                }
-
-            except Exception as e:
-                logger.error(f"[Orchestrator] Config generation error: {str(e)}", exc_info=True)
-                retry_count = self.execution_context.get("config_retry_count", 0) + 1
-                return {
-                    "context_updates": {
-                        "config_result": {"success": False, "error": str(e)},
-                        "config_retry_count": retry_count,
-                    },
-                }
+                },
+            }
 
         elif state == OrchestratorState.EXECUTING_TASK:
             config_result = self.execution_context.get("config_result", {})
@@ -1348,6 +1364,9 @@ Always think step-by-step and explain your reasoning."""
                     if task_id:
                         self.checkpoint_manager.mark_subtask_completed(task_id, runner_result)
                         logger.info(f"[Orchestrator] Checkpoint: subtask {task_id} completed")
+
+                        # 🔥 CRITICAL: Clear NetCDF cache after each subtask to prevent accumulation
+                        self._clear_netcdf_cache()
 
                 # ⭐ CRITICAL FIX: Append to execution_results, don't overwrite
                 existing_results = self.execution_context.get("execution_results", [])
@@ -1499,6 +1518,49 @@ Always think step-by-step and explain your reasoning."""
             # Terminal states - save to PromptPool if applicable
             if state == OrchestratorState.COMPLETED_SUCCESS:
                 self._save_to_prompt_pool()
+
+            # ✅ CRITICAL FIX: Generate failure report when task fails
+            # User requirement: "哪怕没执行成功也要有一个总结说一下遇到的报错和类型以及可能的原因解决办法之类的"
+            elif state == OrchestratorState.FAILED_UNRECOVERABLE:
+                logger.info("[Orchestrator] Task failed, generating failure report...")
+                try:
+                    # Prepare execution_result with error information
+                    error_msg = self.execution_context.get("error", "Unknown error")
+                    error_phase = self.execution_context.get("error_phase", "unknown")
+                    error_type = self.execution_context.get("error_type", "unknown")
+
+                    # 🚨 CRITICAL FIX: Format failure_result to match DeveloperAgent's expected input
+                    # DeveloperAgent expects "tool_results" to trigger _analyze_tool_system_output()
+                    # which will generate analysis_report.md even for failures
+                    failure_result = {
+                        "success": False,
+                        "error": error_msg,
+                        "error_phase": error_phase,
+                        "error_type": error_type,
+                        "user_query": self.execution_context.get("query", ""),
+                        "intent_result": self.execution_context.get("intent_result", {}),
+                        "task_plan": self.execution_context.get("task_plan", {}),
+                        "execution_results": self.execution_context.get("execution_results", []),
+                        # Add tool_results to trigger tool system output analysis
+                        "tool_results": [],  # Empty because execution failed before tools ran
+                        "execution_mode": "simple",  # Default mode
+                        "aggregated_data": {},  # Empty aggregated data
+                    }
+
+                    # Call DeveloperAgent to analyze failure
+                    failure_analysis = self._analyze_results(failure_result)
+
+                    # Store failure analysis in context
+                    return {
+                        "context_updates": {
+                            "analysis_result": failure_analysis,
+                        }
+                    }
+
+                except Exception as e:
+                    logger.error(f"[Orchestrator] Failed to generate failure report: {e}", exc_info=True)
+                    # Continue even if failure report generation fails
+                    return {"context_updates": {}}
 
             return {"context_updates": {}}
 
@@ -1860,6 +1922,8 @@ Always think step-by-step and explain your reasoning."""
                     self.checkpoint_manager.mark_subtask_completed(
                         task_id, runner_result
                     )
+                    # 🔥 CRITICAL: Clear NetCDF cache after each subtask
+                    self._clear_netcdf_cache()
 
                 execution_results.append(runner_result)
 
@@ -2216,3 +2280,27 @@ Always think step-by-step and explain your reasoning."""
             Path to current workspace directory
         """
         return self.current_workspace
+
+    def _clear_netcdf_cache(self) -> None:
+        """
+        Clear NetCDF file cache to prevent accumulation in multi-task execution.
+        清理NetCDF文件缓存，防止多任务执行中累积损坏。
+
+        Called after each subtask completion to ensure clean state for next task.
+        在每个子任务完成后调用，确保下一个任务的干净状态。
+        """
+        try:
+            # Clear xarray file cache
+            import xarray as xr
+            if hasattr(xr.backends.file_manager, '_FILE_CACHE'):
+                cache_size = len(xr.backends.file_manager._FILE_CACHE)
+                xr.backends.file_manager._FILE_CACHE.clear()
+                logger.info(f"[Orchestrator] Cleared xarray NetCDF cache ({cache_size} files)")
+
+            # Force garbage collection
+            import gc
+            collected = gc.collect()
+            logger.debug(f"[Orchestrator] Garbage collected {collected} objects")
+
+        except Exception as e:
+            logger.warning(f"[Orchestrator] Failed to clear NetCDF cache: {e}")

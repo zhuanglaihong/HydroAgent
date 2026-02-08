@@ -304,6 +304,168 @@ class PromptManager:
             **kwargs,
         )
 
+    def get_custom_analysis_report_prompt(
+        self,
+        user_question: str,
+        analysis_request: str,
+        execution_results: List[Dict[str, Any]],
+        generated_files: List[str],
+        calibration_metrics: Optional[Dict[str, Any]] = None,
+        basin_id: Optional[str] = None,
+        is_batch: bool = False,  # 🆕 批量处理标记
+        basin_ids: Optional[List[str]] = None,  # 🆕 所有流域ID列表
+        all_basins_metrics: Optional[Dict[str, Dict]] = None  # 🆕 所有流域指标
+    ) -> str:
+        """
+        生成自定义分析报告的prompt。
+
+        Args:
+            user_question: 用户的原始问题
+            analysis_request: 分析请求描述
+            execution_results: 代码执行结果列表
+            generated_files: 生成的文件列表（图像、数据等）
+            calibration_metrics: 率定/评估指标（可选，单流域）
+            basin_id: 流域ID（可选，单流域）
+            is_batch: 是否批量处理（可选，新增）
+            basin_ids: 所有流域ID列表（可选，批量处理时使用）
+            all_basins_metrics: 所有流域指标字典（可选，批量处理时使用）
+
+        Returns:
+            Prompt字符串
+        """
+        import json
+
+        # 收集执行输出
+        outputs = []
+        for i, result in enumerate(execution_results, 1):
+            if result.get("status") == "success":
+                execution_result = result.get("execution_result", {})
+                stdout = execution_result.get("stdout", "")
+                if stdout:
+                    outputs.append(f"### 执行结果 {i}:\n```\n{stdout}\n```")
+            else:
+                error_msg = result.get("error", "Unknown error")
+                outputs.append(f"### 执行结果 {i}: 失败\n```\n{error_msg}\n```")
+
+        outputs_text = "\n\n".join(outputs) if outputs else "无执行输出"
+
+        # 收集生成的文件
+        files_list = []
+        for f in generated_files:
+            # 提取文件名
+            from pathlib import Path
+            filename = Path(f).name
+            files_list.append(f"- `{filename}` (完整路径: {f})")
+
+        files_text = "\n".join(files_list) if files_list else "无生成文件"
+
+        # 🔧 修复：批量处理vs单流域 - 生成不同的prompt
+        if is_batch and all_basins_metrics:
+            # ========== 批量处理分支 ==========
+            basin_count = len(basin_ids) if basin_ids else len(all_basins_metrics)
+            basins_list = ", ".join(basin_ids) if basin_ids else ", ".join(all_basins_metrics.keys())
+
+            # 格式化所有流域的指标
+            metrics_text = f"\n## 批量处理结果 - {basin_count}个流域\n\n"
+            for bid, metrics in all_basins_metrics.items():
+                metrics_text += f"### 流域 {bid}\n```json\n{json.dumps(metrics, indent=2, ensure_ascii=False)}\n```\n\n"
+
+            prompt = f"""你是一位资深的水文学专家，负责为用户生成专业的批量分析报告。
+
+## 用户的原始问题
+{user_question}
+
+## 分析任务描述
+{analysis_request}
+
+## 流域信息
+- **批量处理**: {basin_count}个流域
+- **流域列表**: {basins_list}
+
+{metrics_text}
+## 代码执行输出
+
+{outputs_text}
+
+## 生成的文件
+
+{files_text}
+
+----
+
+**请生成一份专业的Markdown格式批量分析报告**，**必须回答用户的原始问题**。报告包含：
+
+1. **分析目标** (明确说明用户要求"分别评估{basin_count}个流域的性能")
+2. **分析方法** (说明批量率定的流程和方法)
+3. **各流域性能对比** (逐个流域分析NSE、KGE等关键指标)
+4. **流域排名** (根据NSE指标说明哪些流域性能好、哪些差)
+5. **差异原因分析** (解释不同流域性能差异的可能原因)
+6. **结论与建议** (总结批量率定的整体表现)
+
+**要求**:
+- **必须分析所有{basin_count}个流域**（不要只分析第一个！）
+- **必须针对用户查询"{user_question}"给出具体回答**
+- 逐个流域给出NSE、KGE、RMSE等关键指标
+- 对比不同流域的性能，找出最佳和最差流域
+- 报告长度适中（800-1200字）
+
+**直接输出Markdown内容，不要包含代码块标记。**
+"""
+        else:
+            # ========== 单流域分支 ==========
+            metrics_text = ""
+            if calibration_metrics:
+                metrics_text = f"""
+## 模型性能指标
+
+```json
+{json.dumps(calibration_metrics, indent=2, ensure_ascii=False)}
+```
+"""
+
+            prompt = f"""你是一位资深的水文学专家，负责为用户生成专业的分析报告。
+
+## 用户的原始问题
+{user_question}
+
+## 分析任务描述
+{analysis_request}
+
+## 流域信息
+- 流域ID: {basin_id if basin_id else '未指定'}
+{metrics_text}
+## 代码执行输出
+
+{outputs_text}
+
+## 生成的文件
+
+{files_text}
+
+----
+
+**请生成一份专业的Markdown格式分析报告**，**必须回答用户的原始问题"{user_question}"**。报告包含：
+
+1. **分析目标** (明确说明用户想要了解什么)
+2. **分析方法** (简要说明使用了什么方法和数据)
+3. **主要结果** (提取执行输出中的关键数值和发现)
+4. **图表解读** (如果有生成图像，说明图表展示的内容和意义)
+5. **专业见解** (基于结果，从水文学角度给出专业的解读)
+6. **结论与建议** (总结发现，给出改进建议)
+
+**要求**:
+- **必须针对用户的具体问题给出回答**，不要生成模板内容
+- 使用Markdown格式，层次清晰
+- 数值结果要准确引用执行输出中的内容
+- 专业术语准确，解释通俗易懂
+- 如果结果显示存在问题，要客观指出原因和改进方向
+- 报告长度适中（500-1000字）
+
+**直接输出Markdown内容，不要包含代码块标记。**
+"""
+
+        return prompt
+
 
 # =============================================================================
 #   Code Generation Prompt Builder (v4.0)
@@ -556,11 +718,12 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
     }
 
     # 获取对应的模板，如果没有则使用通用模板
+    base_prompt = ""
     if analysis_type in templates:
-        return templates[analysis_type]
+        base_prompt = templates[analysis_type]
     else:
         # 通用模板
-        return f"""
+        base_prompt = f"""
 请生成Python代码，进行流域 {basin_id} 的 {analysis_type} 分析。
 
 具体要求：
@@ -569,6 +732,23 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 3. 如果适用，生成可视化图表
 4. 将结果保存到文件（CSV或图片）
 5. 打印清晰的分析结果
+
+📁 **CRITICAL: 工作目录参数化**
+代码将通过命令行接收率定结果目录，请在main()函数开头使用：
+```python
+import sys
+from pathlib import Path
+
+def main():
+    # 从命令行参数获取工作目录（率定结果目录）
+    workspace_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+    workspace_dir = Path(workspace_dir)
+
+    # 后续使用workspace_dir访问文件
+    json_file = workspace_dir / "calibration_results.json"
+    nc_files = list(workspace_dir.glob("*.nc"))
+```
+⚠️ **绝对不允许硬编码路径**（如 `r"D:\\project\\calibration_results"`），必须使用上述参数化方式。
 
 数据源：
 - 从 workspace_dir 中的 calibration_results.json 或 NetCDF 文件读取
@@ -583,12 +763,92 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 ```
 
 代码要求：
-- 使用 type hints
-- 添加详细注释
-- 包含错误处理
-- 打印进度信息
+- 代码简洁（100-150行以内），避免过度封装
+- 基本type hints（不要过度使用）
+- 关键位置的错误处理
+- 打印关键进度信息（不要过度）
 - ⚠️ **Windows编码兼容性**：在文件开头添加 `# -*- coding: utf-8 -*-`，并在所有print语句中避免使用emoji字符（如🚀、✅、❌等），改用纯文本描述（如"[INFO]"、"[OK]"、"[ERROR]"）以避免Windows GBK编码错误
 """
+
+    # 🆕 v5.1: 如果是重试，附加错误反馈信息
+    if "retry_attempt" in params and params["retry_attempt"] > 1:
+        error_feedback = f"""
+
+⚠️ **代码修复请求** (重试 {params['retry_attempt']})
+
+之前生成的代码执行失败，请根据以下实际执行输出修复代码：
+
+**错误信息**:
+{params.get('previous_error', 'N/A')}
+
+**标准输出 (stdout)**:
+```
+{params.get('previous_stdout', '(无输出)')}
+```
+
+**错误输出 (stderr)**:
+```
+{params.get('previous_stderr', '(无错误输出)')}
+```
+
+**修复要求**:
+1. **仔细阅读错误信息**：上述stderr中的完整堆栈跟踪显示了错误的具体位置和原因
+
+2. **常见错误修复指南**:
+
+   A. **时间序列处理错误**（最常见！）
+   - `'numpy.datetime64' object has no attribute 'strftime'`
+     ```python
+     # ❌ 错误写法
+     time_index = [t.strftime() for t in time_var]
+
+     # ✅ 正确写法
+     time_index = pd.to_datetime(time_var.values)  # 或 pd.DatetimeIndex(time_var.values)
+     ```
+
+   B. **NetCDF变量名错误**
+   - `KeyError: 'observed_streamflow'` 或类似错误
+     ```python
+     # ✅ 先检查可用变量
+     ds = xr.open_dataset(nc_file)
+     print(f"可用变量: {{list(ds.variables.keys())}}")
+
+     # hydromodel常用变量名：qobs, qsim, prcp, pet
+     # 不要使用 observed_streamflow, simulated_flow 等假设的名称
+     ```
+
+   C. **路径错误**
+   - `SyntaxError (unicode escape)` 或 `FileNotFoundError`
+     ```python
+     # ✅ 使用原始字符串
+     file_path = r"D:\project\data.nc"
+     # 或者从命令行参数读取
+     workspace_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+     ```
+
+   D. **数据类型错误**
+   - `AttributeError`, `TypeError`
+     ```python
+     # ✅ 添加类型检查和转换
+     if isinstance(value, np.ndarray):
+         value = value.item()  # 转换为Python标量
+     ```
+
+3. **修复策略**:
+   - 根据stderr中的**具体行号**定位错误位置
+   - 保持其他代码不变，只修改出错的部分
+   - 如果不确定变量名，先打印可用的变量列表
+
+4. **验证修复**:
+   - 确保修复后的代码能在Windows系统上正常运行
+   - 确保所有路径使用原始字符串或从sys.argv读取
+   - 确保时间序列处理使用正确的pandas/xarray方法
+
+**只返回修复后的完整可执行代码，不要markdown标记，不要额外说明。**
+"""
+        base_prompt += error_feedback
+
+    return base_prompt
 
 
 # =============================================================================

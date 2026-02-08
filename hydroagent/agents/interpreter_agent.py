@@ -139,6 +139,14 @@ Your role is to generate hydromodel-compatible configuration dictionaries from t
 6. **experiment_name**: MUST be empty string "" to avoid nested directories
    - Use "" for flat structure (recommended)
    - OLD (deprecated): "{{model_name}}_{{algorithm}}_{{task_type}}" creates nested dirs
+7. **obj_func**: Loss function to MINIMIZE during calibration
+   - **IMPORTANT**: NSE threshold (like "NSE≥0.65") is a STOPPING CONDITION, NOT the optimization objective!
+   - Extract ONLY if user explicitly says "优化NSE" / "minimize RMSE" / "maximize KGE"
+   - If query mentions "优化RMSE" / "minimize RMSE": use "RMSE" (uppercase)
+   - If query mentions "优化KGE" / "maximize KGE": use "spotpy_kge"
+   - If query mentions "优化NSE" / "maximize NSE": use "spotpy_nashsutcliffe"
+   - **Default**: "RMSE" (best performance for most cases)
+   - **CRITICAL**: Hydromodel uses spotpy loss functions with exact names!
 
 **Configuration Structure**:
 
@@ -156,9 +164,11 @@ Your role is to generate hydromodel-compatible configuration dictionaries from t
   "model_cfgs": {{
     "model_name": "xaj" | "gr4j" | "gr5j" | "gr6j",
     "model_params": {{
-      "source_type": "sources",
-      "source_book": "HF",
-      "kernel_size": 15
+      // **IMPORTANT**: For GR models (gr4j/gr5j/gr6j), use empty dict {{}}
+      // For XAJ models only, use:
+      "source_type": "sources",  // Only for XAJ
+      "source_book": "HF",       // Only for XAJ
+      "kernel_size": 15          // Only for XAJ
     }}
   }},
   "training_cfgs": {{
@@ -168,7 +178,7 @@ Your role is to generate hydromodel-compatible configuration dictionaries from t
     }},
     "loss_config": {{
       "type": "time_series",
-      "obj_func": "RMSE"
+      "obj_func": "RMSE"  // **CRITICAL**: Default is "RMSE" (best performance). Only change if user explicitly requests different objective function.
     }},
     "param_range_file": null,
     "output_dir": "results",
@@ -367,13 +377,61 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
 
         Args:
             prompt: Complete prompt from TaskPlanner
-            parameters: Subtask parameters
+            parameters: Subtask parameters (contains basin_id, model_name, etc. from intent_result)
 
         Returns:
             Generated config dict
         """
-        # Construct user message
-        user_message = f"{prompt}\n\n**直接输出JSON配置，不要任何解释。**"
+        # ⭐ OPTIMIZED: Only include explicitly user-specified parameters (not defaults or empty values)
+        # Extract key parameters from intent_result, but only if they are meaningful
+        param_str = "**用户指定的参数（必须使用这些值，不要使用示例值）**:\n"
+
+        # Get missing_info to identify which fields were auto-filled with defaults
+        missing_info = parameters.get("missing_info", [])
+        has_user_params = False  # Track if we have any user-specified params
+
+        # Basin IDs (only if explicitly specified and not in missing_info)
+        basin_ids = parameters.get("basin_ids")
+        if basin_ids and "basin_ids" not in missing_info:
+            if not isinstance(basin_ids, list):
+                basin_ids = [basin_ids]
+            param_str += f"- basin_ids: {basin_ids}\n"
+            has_user_params = True
+
+        # Model name (only if explicitly specified and not in missing_info)
+        model_name = parameters.get("model_name")
+        if model_name and "model_name" not in missing_info:
+            param_str += f"- model_name: {model_name}\n"
+            has_user_params = True
+
+        # Algorithm (only if explicitly specified and not in missing_info)
+        algorithm = parameters.get("algorithm")
+        if algorithm and "algorithm" not in missing_info:
+            param_str += f"- algorithm: {algorithm}\n"
+            has_user_params = True
+
+        # Time periods (only if explicitly specified and not in missing_info)
+        time_period = parameters.get("time_period", {})
+        if isinstance(time_period, dict) and "time_period" not in missing_info:
+            if time_period.get("train"):
+                param_str += f"- train_period: {time_period['train']}\n"
+                has_user_params = True
+            if time_period.get("test"):
+                param_str += f"- test_period: {time_period['test']}\n"
+                has_user_params = True
+
+        # Extra params (always include if present, as these are user-specified by nature)
+        extra_params = parameters.get("extra_params", {})
+        if extra_params:
+            param_str += f"- 额外参数: {extra_params}\n"
+            has_user_params = True
+
+        # Construct user message with parameters (only if we have user-specified params)
+        if has_user_params:
+            user_message = f"{param_str}\n{prompt}\n\n**直接输出JSON配置，必须使用上述用户指定的参数值。对于未指定的参数，使用合理的默认值。**"
+        else:
+            # No user-specified params, just use the prompt
+            user_message = f"{prompt}\n\n**直接输出JSON配置，不要任何解释。**"
 
         # Call LLM
         try:
@@ -473,8 +531,8 @@ If you include explanations, wrap the JSON in ```json ... ``` tags.
             # For custom_analysis, only validate task_metadata
             if not task_metadata.get("analysis_type"):
                 errors.append("task_metadata.analysis_type is required")
-            if not task_metadata.get("basin_id"):
-                errors.append("task_metadata.basin_id is required")
+            if not task_metadata.get("basin_ids"):
+                errors.append("task_metadata.basin_ids is required")
             if not task_metadata.get("model_name"):
                 errors.append("task_metadata.model_name is required")
 

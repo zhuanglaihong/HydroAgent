@@ -101,7 +101,7 @@ class BaseExperiment:
         workspace_dir.mkdir(parents=True, exist_ok=True)
         return workspace_dir
 
-    def run_experiment(self, query: str, llm, use_mock: bool = True, code_llm=None):
+    def run_experiment(self, query: str, llm, use_mock: bool = True, code_llm=None, use_tool_system: bool = None):
         """
         运行完整的实验流程（使用Orchestrator统一接口）。
 
@@ -112,6 +112,7 @@ class BaseExperiment:
             code_llm: 代码专用LLM接口（可选）
                 如果提供，RunnerAgent将使用此模型生成代码
                 例如: qwen-coder-turbo, deepseek-coder:6.7b
+            use_tool_system: 🆕 是否使用工具系统（Phase 1，默认从config.USE_TOOL_SYSTEM读取）
 
         Returns:
             实验结果字典
@@ -123,6 +124,8 @@ class BaseExperiment:
         print("=" * 70)
         print(f"查询: {query}")
         print(f"模式: {'Mock (模拟)' if use_mock else 'Real (真实hydromodel)'}")
+        if use_tool_system is not None:
+            print(f"工具系统: {'启用' if use_tool_system else '禁用 (legacy)'}")
         print()
 
         # 设置日志记录
@@ -137,9 +140,9 @@ class BaseExperiment:
         total_start = time.time()
 
         # ====================================================================
-        # 使用 Orchestrator 统一接口（5-Agent + checkpoint）
+        # 使用 Orchestrator 统一接口（5-Agent + checkpoint + 🆕 Tool System）
         # ====================================================================
-        print("🎯 初始化 Orchestrator（统一接口）...\n")
+        print("[*] 初始化 Orchestrator（统一接口）...\n")
 
         orchestrator = Orchestrator(
             llm_interface=llm,
@@ -147,16 +150,18 @@ class BaseExperiment:
             show_progress=True,
             enable_code_gen=True,
             enable_checkpoint=True,  # 自动支持checkpoint
+            enable_faiss=False,  # 禁用FAISS知识库（避免卡顿）
+            use_tool_system=use_tool_system,  # 🆕 Tool System (Phase 1)
             code_llm_interface=code_llm  # 🆕 v4.0: 传入代码专用LLM
         )
 
         # 开始新会话
         session_id = orchestrator.start_new_session()
-        print(f"✅ Session ID: {session_id}")
-        print(f"   工作目录: {orchestrator.current_workspace}\n")
+        print(f"[OK] Session ID: {session_id}")
+        print(f"     工作目录: {orchestrator.current_workspace}\n")
 
         # 执行完整流程（一行代码完成 5-Agent pipeline）
-        print("🚀 开始执行完整流程...\n")
+        print("[RUN] 开始执行完整流程...\n")
         result = orchestrator.process({
             "query": query,
             "use_mock": use_mock,
@@ -172,30 +177,30 @@ class BaseExperiment:
         print("=" * 70)
 
         if result.get("success"):
-            print("\n✅ 实验执行成功!\n")
+            print("\n[OK] 实验执行成功!\n")
 
             # Intent
-            intent_data = result.get("intent", {}).get("intent_result", {})
-            print("🔍 Intent识别:")
-            print(f"   任务类型: {intent_data.get('task_type')}")
-            print(f"   模型: {intent_data.get('model_name')}")
-            print(f"   流域: {intent_data.get('basin_id')}")
+            intent_data = result.get("intent", {})  # 修复: 直接获取intent,没有intent_result这一层
+            print("[INFO] Intent识别:")
+            print(f"       任务类型: {intent_data.get('task_type')}")
+            print(f"       模型: {intent_data.get('model_name')}")
+            print(f"       流域: {intent_data.get('basin_id')}")
 
             # Task Plan
             task_plan = result.get("task_plan", {})
             subtasks = task_plan.get("subtasks", [])
-            print(f"\n📋 任务规划:")
-            print(f"   子任务数量: {len(subtasks)}")
+            print(f"\n[PLAN] 任务规划:")
+            print(f"       子任务数量: {len(subtasks)}")
 
             # Execution
             execution_results = result.get("execution_results", [])
             successful = sum(1 for r in execution_results if r.get("success"))
-            print(f"\n🚀 执行结果:")
-            print(f"   成功: {successful}/{len(execution_results)}")
+            print(f"\n[RUN] 执行结果:")
+            print(f"      成功: {successful}/{len(execution_results)}")
 
             # Analysis
             analysis = result.get("analysis", {}).get("analysis", {})
-            print(f"\n📊 分析报告:")
+            print(f"\n[STATS] 分析报告:")
 
             if "quality" in analysis:
                 print(f"   质量评估: {analysis['quality']}")
@@ -218,16 +223,16 @@ class BaseExperiment:
             if orchestrator.checkpoint_manager:
                 progress = orchestrator.checkpoint_manager.get_progress_summary()
                 if progress:  # 检查是否为空字典
-                    print(f"\n🔖 Checkpoint:")
-                    print(f"   进度: {progress['completed']}/{progress['total']} 任务完成")
-                    print(f"   文件: {orchestrator.checkpoint_manager.checkpoint_file}")
+                    print(f"\n[CHECKPOINT] Checkpoint:")
+                    print(f"             进度: {progress['completed']}/{progress['total']} 任务完成")
+                    print(f"             文件: {orchestrator.checkpoint_manager.checkpoint_file}")
 
         else:
             # 失败情况：显示详细错误信息
-            print(f"\n❌ 实验失败")
+            print(f"\n[FAIL] 实验失败")
             print(f"\n错误类型: {result.get('error_type', 'Unknown')}")
             print(f"错误信息: {result.get('error', 'No error message')}")
-            print(f"\n💡 详细日志文件: {log_file}")
+            print(f"\n[TIP] 详细日志文件: {log_file}")
             if result.get('workspace'):
                 print(f"   工作目录: {result['workspace']}")
             print(f"   已执行时长: {total_elapsed:.1f}s")
@@ -248,7 +253,7 @@ class BaseExperiment:
 
         return result
 
-    def run_batch(self, queries: list, backend: str = "api", use_mock: bool = True):
+    def run_batch(self, queries: list, backend: str = "api", use_mock: bool = True, use_tool_system: bool = None):
         """
         批量执行多个查询。
 
@@ -256,6 +261,7 @@ class BaseExperiment:
             queries: 查询列表
             backend: LLM后端 ("api" or "ollama")
             use_mock: 是否使用Mock模式
+            use_tool_system: 🆕 是否使用工具系统 (Phase 1, 默认从config读取)
 
         Returns:
             结果列表
@@ -294,10 +300,10 @@ class BaseExperiment:
         results = []
         total_queries = len(queries)
 
-        print(f"\n🚀 开始批量执行 {total_queries} 个查询...")
-        print(f"   后端: {backend}")
-        print(f"   Mock模式: {use_mock}")
-        print(f"   汇总目录: {self.workspace}")
+        print(f"\n[RUN] 开始批量执行 {total_queries} 个查询...")
+        print(f"      后端: {backend}")
+        print(f"      Mock模式: {use_mock}")
+        print(f"      汇总目录: {self.workspace}")
         print("=" * 70)
 
         for i, query in enumerate(queries, 1):
@@ -308,33 +314,49 @@ class BaseExperiment:
                     query=query,
                     llm=llm,
                     use_mock=use_mock,
-                    code_llm=code_llm
+                    code_llm=code_llm,
+                    use_tool_system=use_tool_system  # 🆕 传递工具系统参数
                 )
                 results.append(result)
 
                 if result.get("success"):
-                    print(f"[{i}/{total_queries}] ✅ 成功")
+                    print(f"[{i}/{total_queries}] [OK] 成功")
                 else:
-                    print(f"[{i}/{total_queries}] ❌ 失败: {result.get('error', 'Unknown error')}")
+                    print(f"[{i}/{total_queries}] [FAIL] 失败: {result.get('error', 'Unknown error')}")
 
             except Exception as e:
-                print(f"[{i}/{total_queries}] ❌ 异常: {str(e)}")
+                # ✅ Use ErrorHandler to classify error
+                from hydroagent.utils.error_handler import ErrorHandler
+                error_handler = ErrorHandler()
+                error_info = error_handler.handle_exception(e)
+
+                error_category = error_info["analysis"].get("error_category", "unknown")
+                error_type = error_info.get("error_type", "Exception")
+
+                print(f"[{i}/{total_queries}] [FAIL] 异常: {str(e)}")
+                print(f"                        错误类型: {error_category}")
+
                 results.append({
                     "success": False,
                     "query": query,
                     "error": str(e),
+                    "error_type": error_type,
+                    "error_category": error_category,
                     "experiment": self.exp_name,
                     "mode": "mock" if use_mock else "real"
                 })
 
-        print("\n" + "=" * 70)
-        print(f"📊 批量执行完成:")
-        successful = sum(1 for r in results if r.get("success"))
-        print(f"   成功: {successful}/{total_queries}")
-        print(f"   失败: {total_queries - successful}/{total_queries}")
+            # 🆕 实时保存：每完成一个任务就保存进度
+            self._save_incremental_results(results, llm, code_llm, i, total_queries)
 
-        # 🆕 显示 Token 使用统计
-        print(f"\n📈 Token 使用统计:")
+        print("\n" + "=" * 70)
+        print(f"[STATS] 批量执行完成:")
+        successful = sum(1 for r in results if r.get("success"))
+        print(f"        成功: {successful}/{total_queries}")
+        print(f"        失败: {total_queries - successful}/{total_queries}")
+
+        # 显示 Token 使用统计
+        print(f"\n[STATS] Token 使用统计:")
         main_llm_stats = llm.get_token_usage()
         print(f"   主模型 ({llm.model_name}):")
         print(f"      总调用次数: {main_llm_stats['total_calls']}")
@@ -363,13 +385,78 @@ class BaseExperiment:
 
         return results
 
+    def _save_incremental_results(self, results: list, llm, code_llm, current: int, total: int):
+        """
+        实时保存实验进度（每完成一个任务就保存一次）。
+
+        Args:
+            results: 当前累积的结果列表
+            llm: 主LLM接口
+            code_llm: 代码LLM接口
+            current: 当前完成的任务数
+            total: 总任务数
+        """
+        if not self.workspace:
+            return
+
+        data_dir = self.workspace / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        # 1. 保存results.json（累积所有结果）
+        from hydroagent.utils.result_serializer import sanitize_results
+        sanitized_results = sanitize_results(results)
+
+        results_file = data_dir / "results_incremental.json"
+        with open(results_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "progress": f"{current}/{total}",
+                "last_updated": datetime.now().isoformat(),
+                "results": sanitized_results
+            }, f, indent=2, ensure_ascii=False)
+
+        # 2. 保存token统计（实时更新）
+        token_stats_file = data_dir / "token_usage_realtime.json"
+        main_llm_stats = llm.get_token_usage()
+        stats_data = {
+            "progress": f"{current}/{total}",
+            "last_updated": datetime.now().isoformat(),
+            "main_llm": {
+                "model": llm.model_name,
+                "total_calls": main_llm_stats["total_calls"],
+                "total_tokens": main_llm_stats["total_tokens"],
+                "prompt_tokens": main_llm_stats["total_prompt_tokens"],
+                "completion_tokens": main_llm_stats["total_completion_tokens"],
+                "avg_tokens_per_call": main_llm_stats["average_tokens_per_call"]
+            }
+        }
+
+        if code_llm:
+            code_llm_stats = code_llm.get_token_usage()
+            if code_llm_stats["total_calls"] > 0:
+                stats_data["code_llm"] = {
+                    "model": code_llm.model_name,
+                    "total_calls": code_llm_stats["total_calls"],
+                    "total_tokens": code_llm_stats["total_tokens"],
+                    "prompt_tokens": code_llm_stats["total_prompt_tokens"],
+                    "completion_tokens": code_llm_stats["total_completion_tokens"],
+                    "avg_tokens_per_call": code_llm_stats["average_tokens_per_call"]
+                }
+
+        with open(token_stats_file, "w", encoding="utf-8") as f:
+            json.dump(stats_data, f, indent=2, ensure_ascii=False)
+
+        # 3. 打印实时统计（简洁版）
+        print(f"\n[💾 实时保存] 进度: {current}/{total} | "
+              f"Token总计: {main_llm_stats['total_tokens']:,} | "
+              f"文件: {results_file.name}, {token_stats_file.name}")
+
     def setup(self):
         """设置实验工作目录。"""
         self.workspace = self.create_workspace()
         (self.workspace / "data").mkdir(exist_ok=True)
         (self.workspace / "plots").mkdir(exist_ok=True)
         (self.workspace / "reports").mkdir(exist_ok=True)
-        print(f"✅ 工作目录已创建: {self.workspace}")
+        print(f"[OK] 工作目录已创建: {self.workspace}")
         return self.workspace
 
     def save_results(self, results: list, filename: str = "results"):
@@ -391,31 +478,46 @@ class BaseExperiment:
         json_file = self.workspace / "data" / f"{filename}.json"
         with open(json_file, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
-        print(f"✅ 保存JSON: {json_file}")
+        print(f"[OK] 保存JSON: {json_file}")
 
-        # 保存CSV（摘要数据，包含 Token 统计）
+        # 保存CSV（摘要数据，包含 Token 统计 + 错误分类）
         import pandas as pd
         csv_data = []
         for r in results:
             token_usage = r.get("token_usage", {})
+
+            # ✅ Enhanced error information with classification
+            error_msg = r.get("error", "")
+            error_category = r.get("error_category", "")
+            error_type = r.get("error_type", "")
+
+            # Format error: "category: message" for better readability
+            if error_msg and error_category:
+                formatted_error = f"[{error_category}] {error_msg}"
+            else:
+                formatted_error = error_msg
+
             row = {
                 "query": r.get("query", ""),
                 "success": r.get("success", False),
                 "elapsed_time": r.get("elapsed_time", 0),
                 "mode": r.get("mode", ""),
-                # 🆕 添加 Token 统计列
+                # 添加 Token 统计列
                 "total_tokens": token_usage.get("total_tokens", 0) if token_usage else 0,
                 "prompt_tokens": token_usage.get("total_prompt_tokens", 0) if token_usage else 0,
                 "completion_tokens": token_usage.get("total_completion_tokens", 0) if token_usage else 0,
                 "api_calls": token_usage.get("total_calls", 0) if token_usage else 0,
-                "error": r.get("error", "")
+                # ✅ Enhanced error columns
+                "error_category": error_category,
+                "error_type": error_type,
+                "error": formatted_error
             }
             csv_data.append(row)
 
         df = pd.DataFrame(csv_data)
         csv_file = self.workspace / "data" / f"{filename}.csv"
         df.to_csv(csv_file, index=False, encoding="utf-8-sig")
-        print(f"✅ 保存CSV: {csv_file}")
+        print(f"[OK] 保存CSV: {csv_file}")
 
         return json_file, csv_file
 
@@ -484,7 +586,7 @@ class BaseExperiment:
         metrics_file = self.workspace / "data" / f"{filename}.json"
         with open(metrics_file, "w", encoding="utf-8") as f:
             json.dump(metrics, f, indent=2, ensure_ascii=False)
-        print(f"✅ 保存指标: {metrics_file}")
+        print(f"[OK] 保存指标: {metrics_file}")
 
         return metrics_file
 
@@ -549,7 +651,7 @@ class BaseExperiment:
         with open(report_file, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
-        print(f"✅ 生成报告: {report_file}")
+        print(f"[OK] 生成报告: {report_file}")
         return report_file
 
     def plot_results(self, results: list, plot_type: str = "success_rate"):
@@ -585,7 +687,7 @@ class BaseExperiment:
             plt.savefig(plot_file, dpi=150, bbox_inches="tight")
             plt.close()
 
-            print(f"✅ Generated plot: {plot_file}")
+            print(f"[OK] Generated plot: {plot_file}")
 
         elif plot_type == "time_distribution":
             # Time distribution histogram
@@ -602,7 +704,7 @@ class BaseExperiment:
             plt.savefig(plot_file, dpi=150, bbox_inches="tight")
             plt.close()
 
-            print(f"✅ Generated plot: {plot_file}")
+            print(f"[OK] Generated plot: {plot_file}")
 
         return plot_file
 

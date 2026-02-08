@@ -211,7 +211,13 @@ Always explain your analysis and provide actionable recommendations."""
             logger.info("[DeveloperAgent] 检测到Orchestrator多任务输出，进行结果分析")
             return self._analyze_orchestrator_output(input_data)
 
-        # 检测输入类型2：RunnerAgent单任务输出
+        # 检测输入类型2：工具系统输出（Tool System）
+        # 特征：有"tool_results"或"execution_mode"字段
+        if "tool_results" in input_data or "execution_mode" in input_data:
+            logger.info("[DeveloperAgent] 检测到工具系统输出，进行结果分析")
+            return self._analyze_tool_system_output(input_data)
+
+        # 检测输入类型3：RunnerAgent单任务输出（传统模式）
         # 特征：有"success"和"mode"字段
         if "success" in input_data and "mode" in input_data:
             # RunnerAgent输出 - 自动分析模式
@@ -337,7 +343,52 @@ Always explain your analysis and provide actionable recommendations."""
                     "fallback_mode": True,
                 }
 
-        # Step 4: 汇总返回
+        # Step 4: 🆕 Generate comprehensive session report (markdown)
+        # v6.0: All execution paths generate session report
+        report_file = None
+        try:
+            # Build analysis text summary
+            analysis_parts = []
+            analysis_parts.append("=" * 60)
+            analysis_parts.append(f"多任务执行结果分析 ({task_type.upper()})")
+            analysis_parts.append("=" * 60)
+            analysis_parts.append("")
+
+            for i, analysis in enumerate(analyses, 1):
+                success_mark = "✓" if analysis.get("success") else "✗"
+                analysis_parts.append(f"{i}. 子任务 {i}: {success_mark}")
+                if analysis.get("quality"):
+                    analysis_parts.append(f"   质量: {analysis.get('quality')}")
+                analysis_parts.append("")
+
+            analysis_parts.append("=" * 60)
+            analysis_parts.append(f"总结: {sum(1 for a in analyses if a.get('success'))}/{len(analyses)} 个任务成功")
+            analysis_parts.append("=" * 60)
+
+            analysis_text = "\n".join(analysis_parts)
+
+            # Construct tool_output-like structure for report generation
+            # This ensures both legacy and tool system modes use the same report generation logic
+            orchestrator_as_tool_output = {
+                "success": all_success,
+                "user_query": orchestrator_output.get("user_query", ""),
+                "intent_result": intent,
+                "tool_results": [],  # Empty for legacy mode
+                "aggregated_data": {},
+                "subtask_results": subtask_results,  # Pass through for legacy data
+                "task_plan": task_plan,
+            }
+
+            report_file = self._generate_session_report(
+                tool_output=orchestrator_as_tool_output,
+                analysis_text=analysis_text
+            )
+            if report_file:
+                logger.info(f"[DeveloperAgent] ✓ Session report generated: {report_file}")
+        except Exception as e:
+            logger.error(f"[DeveloperAgent] Failed to generate session report: {e}", exc_info=True)
+
+        # Step 5: 汇总返回
         return {
             "success": all_success and post_processing_result.get("success", True),
             "task_type": task_type,  #  添加任务类型
@@ -345,7 +396,573 @@ Always explain your analysis and provide actionable recommendations."""
             "total_subtasks": len(subtask_results),
             "successful_subtasks": sum(1 for a in analyses if a.get("success")),
             "post_processing": post_processing_result,  #  后处理结果
+            "analysis_text": analysis_text,  # 🆕 添加分析文本
+            "report_file": report_file,  # 🆕 添加报告文件路径
         }
+
+    def _analyze_tool_system_output(self, tool_output: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        分析工具系统的输出结果。
+        Analyze Tool System output.
+
+        Args:
+            tool_output: Tool system execution result
+                {
+                    "success": True,
+                    "tool_results": [...],
+                    "aggregated_data": {...},
+                    "metrics": {...},
+                    "output_files": [...],
+                    "execution_mode": "simple"
+                }
+
+        Returns:
+            Analysis result with text summary
+        """
+        logger.info("[DeveloperAgent] 分析工具系统输出...")
+
+        # 🚨 CRITICAL FIX: Generate failure report even when execution failed
+        # User requirement: "哪怕没执行成功也要有一个总结说一下遇到的报错"
+        execution_failed = not tool_output.get("success")
+
+        if execution_failed:
+            logger.warning("[DeveloperAgent] Tool execution failed, generating failure report...")
+
+            # Prepare failure analysis
+            error_msg = tool_output.get("error", "Unknown error")
+            error_phase = tool_output.get("error_phase", "unknown")
+            error_type = tool_output.get("error_type", "unknown")
+
+            analysis_text = (
+                "=" * 60 + "\n"
+                "任务执行失败 (Task Execution Failed)\n"
+                "=" * 60 + "\n\n"
+                f"**错误阶段 (Error Phase)**: {error_phase}\n"
+                f"**错误类型 (Error Type)**: {error_type}\n\n"
+                f"**错误详情 (Error Details)**:\n{error_msg}\n\n"
+                "=" * 60 + "\n"
+                "请检查日志获取更多详细信息。\n"
+                "Please check logs for more details.\n"
+                "=" * 60
+            )
+
+            # Generate failure report
+            report_file = None
+            try:
+                report_file = self._generate_session_report(
+                    tool_output=tool_output,
+                    analysis_text=analysis_text
+                )
+                if report_file:
+                    logger.info(f"[DeveloperAgent] ✓ Failure report generated: {report_file}")
+            except Exception as e:
+                logger.warning(f"[DeveloperAgent] Failed to generate failure report: {e}", exc_info=True)
+
+            return {
+                "success": False,
+                "error": error_msg,
+                "error_type": error_type,
+                "error_phase": error_phase,
+                "analysis_text": analysis_text,
+                "report_file": report_file
+            }
+
+        tool_results = tool_output.get("tool_results", [])
+        aggregated_data = tool_output.get("aggregated_data", {})
+
+        # 生成分析文本
+        analysis_parts = []
+        analysis_parts.append("=" * 60)
+        analysis_parts.append("工具执行结果分析")
+        analysis_parts.append("=" * 60)
+        analysis_parts.append("")
+
+        # 遍历每个工具的结果
+        for idx, tool_result in enumerate(tool_results, 1):
+            tool_name = tool_result.get("tool_name", f"Tool {idx}")
+            success = tool_result.get("success", False)
+            data = tool_result.get("data", {})
+
+            analysis_parts.append(f"{idx}. {tool_name}")
+            analysis_parts.append(f"   状态: {'✓ 成功' if success else '✗ 失败'}")
+
+            # 根据工具类型生成详细分析
+            if tool_name == "validate_data":
+                # 数据验证结果
+                valid_basins = data.get("valid_basins", [])
+                invalid_basins = data.get("invalid_basins", [])
+                warnings = data.get("warnings", [])
+                data_availability = data.get("data_availability", {})
+
+                valid_count = len(valid_basins)
+                total_count = valid_count + len(invalid_basins)
+
+                analysis_parts.append(f"   验证结果: {valid_count}/{total_count} 个流域数据有效")
+
+                if valid_basins or invalid_basins:
+                    analysis_parts.append("")
+                    analysis_parts.append("   流域详情:")
+                    for basin_id in valid_basins:
+                        analysis_parts.append(f"     - {basin_id}: ✓ 有效")
+                    for invalid_info in invalid_basins:
+                        basin_id = invalid_info.get("basin_id", "Unknown")
+                        reason = invalid_info.get("reason", "未知原因")
+                        analysis_parts.append(f"     - {basin_id}: ✗ 无效 ({reason})")
+
+                if warnings:
+                    analysis_parts.append("")
+                    analysis_parts.append("   ⚠️  警告信息:")
+                    for warning in warnings:
+                        analysis_parts.append(f"     - {warning}")
+
+            elif tool_name == "calibrate":
+                # 率定结果
+                # Support both "metrics" and "calibration_metrics" for compatibility
+                metrics = data.get("metrics") or data.get("calibration_metrics", {})
+                best_params = data.get("best_params", {})
+
+                if metrics:
+                    analysis_parts.append(f"   性能指标:")
+                    for metric_name, metric_value in metrics.items():
+                        analysis_parts.append(f"     - {metric_name}: {metric_value:.4f}")
+
+                if best_params:
+                    analysis_parts.append(f"   最优参数: {len(best_params)} 个")
+
+            elif tool_name == "evaluate":
+                # 评估结果
+                metrics = data.get("metrics", {})
+
+                if metrics:
+                    analysis_parts.append(f"   评估指标:")
+                    for metric_name, metric_value in metrics.items():
+                        analysis_parts.append(f"     - {metric_name}: {metric_value:.4f}")
+
+            elif tool_name == "visualize":
+                # 可视化结果
+                plot_files = data.get("plot_files", [])
+                analysis_parts.append(f"   生成图表: {len(plot_files)} 个")
+
+            analysis_parts.append("")
+
+        # 总结
+        analysis_parts.append("=" * 60)
+        total_tools = len(tool_results)
+        successful_tools = sum(1 for r in tool_results if r.get("success", False))
+        analysis_parts.append(f"总结: {successful_tools}/{total_tools} 个工具执行成功")
+        analysis_parts.append("=" * 60)
+
+        analysis_text = "\n".join(analysis_parts)
+
+        # Generate comprehensive session report (markdown)
+        report_file = None
+        try:
+            report_file = self._generate_session_report(
+                tool_output=tool_output,
+                analysis_text=analysis_text
+            )
+            if report_file:
+                logger.info(f"[DeveloperAgent] ✓ Session report generated: {report_file}")
+        except Exception as e:
+            logger.warning(f"[DeveloperAgent] Failed to generate session report: {e}", exc_info=True)
+
+        return {
+            "success": True,
+            "analysis": {
+                "tool_count": len(tool_results),
+                "successful_tools": successful_tools,
+                "aggregated_data": aggregated_data
+            },
+            "analysis_text": analysis_text,
+            "report_file": report_file
+        }
+
+    def _generate_session_report(
+        self,
+        tool_output: Dict[str, Any],
+        analysis_text: str
+    ) -> Optional[str]:
+        """
+        生成会话级别的智能分析报告（Markdown格式）。
+        Generate intelligent session-level analysis report in Markdown format.
+
+        这是系统层面的功能，由DeveloperAgent（后处理智能体）统一生成。
+
+        Args:
+            tool_output: Tool system execution output
+            analysis_text: Generated text analysis
+
+        Returns:
+            Report file path if successful, None otherwise
+        """
+        logger.info("[DeveloperAgent] Generating session report...")
+
+        if not self.llm:
+            logger.warning("[DeveloperAgent] No LLM interface, skipping report generation")
+            return None
+
+        try:
+            # Extract key information
+            tool_results = tool_output.get("tool_results", [])
+            aggregated_data = tool_output.get("aggregated_data", {})
+            user_query = tool_output.get("user_query", "")
+            intent_result = tool_output.get("intent_result", {})
+            subtask_results = tool_output.get("subtask_results", [])  # Backward compatibility
+
+            # Use PromptManager to generate prompt
+            from hydroagent.utils.prompt_manager import PromptManager
+            pm = PromptManager()
+
+            # 🔧 修复：支持批量处理 - 收集所有流域的metrics
+            calibration_metrics = None
+            is_batch_processing = False
+            all_basins_metrics = {}  # {basin_id: metrics}
+
+            # Backward compatibility: Support subtask_results format (used by older Orchestrator loops)
+            # If tool_results is empty but subtask_results exists, extract metrics from subtasks
+            if not tool_results and subtask_results:
+                logger.info("[DeveloperAgent] Extracting metrics from subtask_results (backward compatibility)")
+                is_batch_processing = len(subtask_results) > 1
+
+                for subtask_result in subtask_results:
+                    if not subtask_result.get("success"):
+                        continue
+
+                    # Extract metrics from subtask result
+                    result_data = subtask_result.get("result", {})
+
+                    # Try to extract basin_id and metrics from various locations
+                    subtask_basin_ids = []
+
+                    # Method 1: From result data keys (e.g., {'01013500': {...}})
+                    if isinstance(result_data, dict):
+                        for key in result_data.keys():
+                            if key.isdigit() or (isinstance(key, str) and len(key) == 8):
+                                subtask_basin_ids.append(str(key))
+
+                    # Method 2: From execution_log
+                    exec_log = subtask_result.get("execution_log", {})
+                    config_basin_ids = exec_log.get("basin_ids", [])
+                    if config_basin_ids:
+                        subtask_basin_ids = config_basin_ids
+
+                    # Extract metrics for each basin
+                    for basin_id in subtask_basin_ids:
+                        basin_data = result_data.get(basin_id, {})
+                        metrics = basin_data.get("metrics") or basin_data.get("performance")
+                        if metrics:
+                            all_basins_metrics[str(basin_id)] = metrics
+                            logger.info(f"[DeveloperAgent] Extracted metrics for basin {basin_id}")
+
+                if all_basins_metrics:
+                    logger.info(f"[DeveloperAgent] Collected metrics for {len(all_basins_metrics)} basins from legacy subtasks")
+                    is_batch_processing = True
+
+            for tool_result in tool_results:
+                if tool_result.get("tool_name") == "evaluate" and tool_result.get("success"):
+                    data = tool_result.get("data", {})
+                    # 尝试从data中获取metrics（单流域或批量）
+                    metrics = data.get("metrics") or data.get("performance")
+
+                    # 检查是否是批量处理（有basins_metrics_file）
+                    basins_metrics_file = data.get("basins_metrics_file")
+                    if basins_metrics_file and Path(basins_metrics_file).exists():
+                        logger.info(f"[DeveloperAgent] 检测到批量处理，读取: {basins_metrics_file}")
+                        is_batch_processing = True
+
+                        # 读取CSV文件（包含所有流域）
+                        import pandas as pd
+                        try:
+                            df = pd.read_csv(basins_metrics_file, index_col=0)
+                            for basin_id in df.index:
+                                all_basins_metrics[str(basin_id)] = df.loc[basin_id].to_dict()
+                            logger.info(f"[DeveloperAgent] 读取到 {len(all_basins_metrics)} 个流域的指标")
+                        except Exception as e:
+                            logger.error(f"[DeveloperAgent] 读取basins_metrics.csv失败: {e}")
+
+                    # 兼容单流域情况
+                    if not is_batch_processing and metrics:
+                        calibration_metrics = metrics
+
+                    break
+
+            # Collect generated files from custom_analysis tool
+            generated_files = []
+            execution_results = []
+            analysis_request = None
+            for tool_result in tool_results:
+                if tool_result.get("tool_name") == "custom_analysis" and tool_result.get("success"):
+                    data = tool_result.get("data", {})
+                    generated_files = data.get("generated_files", [])
+                    exec_result = data.get("execution_result", {})
+                    execution_results = exec_result.get("execution_results", [])
+                    metadata = tool_result.get("metadata", {})
+                    analysis_request = metadata.get("analysis_request", "")
+                    break
+
+            # 🔧 修复：支持批量处理 - 获取所有basin_ids
+            basin_ids = []
+            if "validate_data" in aggregated_data:
+                basin_ids = aggregated_data["validate_data"].get("valid_basins", [])
+
+            # Fallback: Extract basin_ids from all_basins_metrics keys
+            if not basin_ids and all_basins_metrics:
+                basin_ids = list(all_basins_metrics.keys())
+                logger.info(f"[DeveloperAgent] Extracted {len(basin_ids)} basin IDs from metrics")
+
+            if not basin_ids and intent_result:
+                # 尝试从intent中获取
+                basin_ids_from_intent = intent_result.get("basin_ids", [])
+                basin_id_from_intent = intent_result.get("basin_id")
+                if basin_ids_from_intent:
+                    basin_ids = basin_ids_from_intent
+                elif basin_id_from_intent:
+                    basin_ids = [basin_id_from_intent]
+
+            # 兼容性：保留basin_id变量（单流域情况）
+            basin_id = basin_ids[0] if basin_ids else None
+
+            # Generate prompt - ensure user question is prominent
+            final_user_question = user_query or intent_result.get("original_query", "")
+
+            # Use analysis_request if available, otherwise use user_question
+            final_analysis_request = analysis_request if analysis_request else final_user_question
+            if not final_analysis_request:
+                final_analysis_request = "模型率定与评估结果分析"
+
+            # 🔧 修复：根据是否批量处理，传递不同参数
+            if is_batch_processing and all_basins_metrics:
+                # 批量处理：传递所有流域的指标
+                prompt = pm.get_custom_analysis_report_prompt(
+                    user_question=final_user_question,
+                    analysis_request=final_analysis_request,
+                    execution_results=execution_results,
+                    generated_files=generated_files,
+                    calibration_metrics=None,  # 批量时不使用单流域metrics
+                    basin_id=None,  # 批量时不使用单个basin_id
+                    is_batch=True,  # 🆕 标记为批量处理
+                    basin_ids=basin_ids,  # 🆕 传递所有流域ID
+                    all_basins_metrics=all_basins_metrics  # 🆕 传递所有流域指标
+                )
+            else:
+                # 单流域：使用原有逻辑
+                prompt = pm.get_custom_analysis_report_prompt(
+                    user_question=final_user_question,
+                    analysis_request=final_analysis_request,
+                    execution_results=execution_results,
+                    generated_files=generated_files,
+                    calibration_metrics=calibration_metrics,
+                    basin_id=basin_id
+                )
+
+            # Call LLM to generate report
+            logger.info("[DeveloperAgent] Calling LLM to generate session report...")
+            response = self.llm.generate(
+                system_prompt="你是一位资深的水文学专家，负责生成专业的分析报告。",
+                user_prompt=prompt,
+                temperature=0.7
+            )
+
+            # Clean response (remove markdown code block markers)
+            report_content = response.strip()
+            if report_content.startswith("```markdown"):
+                report_content = report_content[len("```markdown"):].strip()
+            if report_content.startswith("```"):
+                report_content = report_content[3:].strip()
+            if report_content.endswith("```"):
+                report_content = report_content[:-3].strip()
+
+            # Save report to workspace
+            if self.workspace_dir:
+                workspace_path = Path(self.workspace_dir)
+                workspace_path.mkdir(parents=True, exist_ok=True)
+                report_file = workspace_path / "analysis_report.md"
+
+                with open(report_file, "w", encoding="utf-8") as f:
+                    f.write(report_content)
+
+                logger.info(f"[DeveloperAgent] ✓ Session report saved to: {report_file}")
+                return str(report_file)
+            else:
+                logger.warning("[DeveloperAgent] No workspace_dir, cannot save report")
+                return None
+
+        except Exception as e:
+            logger.error(f"[DeveloperAgent] Failed to generate session report with LLM: {e}")
+            logger.warning("[DeveloperAgent] Generating fallback report (LLM-free)...")
+
+            # ✅ CRITICAL FIX: Generate fallback report when LLM fails (e.g., timeout)
+            # User requirement: "无论什么类型的问题都要生成总结报告"
+            try:
+                fallback_content = self._generate_fallback_report(
+                    tool_output=tool_output,
+                    final_basin_ids=basin_ids,  # ✅ FIX: Use basin_ids instead of undefined final_basin_ids
+                    all_basins_metrics=all_basins_metrics,
+                    calibration_metrics=calibration_metrics
+                )
+
+                # Save fallback report
+                if self.workspace_dir:
+                    workspace_path = Path(self.workspace_dir)
+                    workspace_path.mkdir(parents=True, exist_ok=True)
+                    report_file = workspace_path / "analysis_report.md"
+
+                    with open(report_file, "w", encoding="utf-8") as f:
+                        f.write(fallback_content)
+
+                    logger.info(f"[DeveloperAgent] ✓ Fallback report saved to: {report_file}")
+                    return str(report_file)
+                else:
+                    logger.warning("[DeveloperAgent] No workspace_dir, cannot save fallback report")
+                    return None
+
+            except Exception as fallback_error:
+                logger.error(f"[DeveloperAgent] Fallback report generation also failed: {fallback_error}", exc_info=True)
+                return None
+
+    def _generate_fallback_report(
+        self,
+        tool_output: Dict[str, Any],
+        final_basin_ids: list,
+        all_basins_metrics: Dict[str, Dict[str, float]],
+        calibration_metrics: Dict[str, float]
+    ) -> str:
+        """
+        生成fallback报告（当LLM API超时或失败时）
+        Generate fallback report when LLM API fails (e.g., timeout).
+
+        Args:
+            tool_output: Tool execution output
+            final_basin_ids: Basin IDs
+            all_basins_metrics: All basins metrics
+            calibration_metrics: Calibration metrics
+
+        Returns:
+            Markdown formatted report content
+        """
+        from datetime import datetime
+
+        # Extract basic information
+        user_query = tool_output.get("user_query", "未知查询")
+        intent_result = tool_output.get("intent_result", {})
+        task_type = intent_result.get("task_type", "unknown")
+        model_name = intent_result.get("model_name", "unknown")
+
+        # Get workspace directory for checkpoint path
+        workspace_dir = self.workspace_dir or "unknown"
+
+        # Build report content
+        report_lines = [
+            "# 分析报告（未完成）",
+            "",
+            "## ⚠️ API请求超时",
+            "",
+            "生成报告时LLM API请求超时，无法完成完整的分析总结。",
+            "",
+            "**任务执行状态**: ✅ 已完成",
+            "**报告生成状态**: ❌ 超时未完成",
+            "",
+            "---",
+            "",
+            "## 📋 任务基本信息",
+            "",
+            f"- **用户查询**: {user_query}",
+            f"- **任务类型**: {task_type}",
+            f"- **模型**: {model_name}",
+            f"- **流域**: {', '.join(final_basin_ids) if final_basin_ids else '未知'}",
+            f"- **时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            "---",
+            "",
+            "## 📊 执行结果数据",
+            "",
+        ]
+
+        # Add metrics if available
+        if all_basins_metrics:
+            report_lines.append("### 模型性能指标")
+            report_lines.append("")
+            for basin_id, metrics in all_basins_metrics.items():
+                report_lines.append(f"**流域 {basin_id}**:")
+                report_lines.append("")
+                for metric_name, metric_value in metrics.items():
+                    if isinstance(metric_value, (int, float)):
+                        report_lines.append(f"- {metric_name}: {metric_value:.4f}")
+                    else:
+                        report_lines.append(f"- {metric_name}: {metric_value}")
+                report_lines.append("")
+        elif calibration_metrics:
+            report_lines.append("### 率定指标")
+            report_lines.append("")
+            for metric_name, metric_value in calibration_metrics.items():
+                if isinstance(metric_value, (int, float)):
+                    report_lines.append(f"- {metric_name}: {metric_value:.4f}")
+                else:
+                    report_lines.append(f"- {metric_name}: {metric_value}")
+            report_lines.append("")
+        else:
+            report_lines.append("*无可用的性能指标数据*")
+            report_lines.append("")
+
+        report_lines.extend([
+            "---",
+            "",
+            "## 🔄 如何重新生成完整报告",
+            "",
+            "任务执行已完成，所有率定/评估数据都已保存。您可以在API恢复后重新生成报告，**无需重新执行率定**。",
+            "",
+            "### 方法1: 使用checkpoint恢复（推荐）",
+            "",
+            "```bash",
+            "# 恢复session并重新生成报告",
+            f"python scripts/resume_and_report.py --session {workspace_dir}",
+            "```",
+            "",
+            "### 方法2: 手动调用DeveloperAgent",
+            "",
+            "```python",
+            "from hydroagent.agents.developer_agent import DeveloperAgent",
+            "from pathlib import Path",
+            "",
+            f"workspace = Path('{workspace_dir}')",
+            "session_result = workspace / 'session_result.json'",
+            "",
+            "# 读取session结果",
+            "import json",
+            "with open(session_result) as f:",
+            "    result = json.load(f)",
+            "",
+            "# 重新生成报告",
+            "agent = DeveloperAgent(...)",
+            "agent.process(result)",
+            "```",
+            "",
+            "### 方法3: 增加API超时时间",
+            "",
+            "在 `configs/config.py` 中增加LLM超时时间：",
+            "",
+            "```python",
+            "LLM_TIMEOUT = 120  # 从60秒增加到120秒",
+            "```",
+            "",
+            "然后重新运行原始查询。",
+            "",
+            "---",
+            "",
+            "## 📁 输出文件位置",
+            "",
+            f"- **工作目录**: `{workspace_dir}`",
+            "- **率定结果**: `iteration_*/calibration_results.json`",
+            "- **评估指标**: `iteration_*/basins_metrics.csv`",
+            "- **可视化图表**: `*.png`",
+            "- **Session结果**: `session_result.json`",
+            "",
+            "---",
+            "",
+            "*本报告由HydroAgent自动生成（Fallback模式，无LLM分析）*"
+        ])
+
+        return "\n".join(report_lines)
 
     def _analyze_runner_output(self, runner_output: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -718,8 +1335,10 @@ Always explain your analysis and provide actionable recommendations."""
                     "💡 NSE仍在上升中，建议增加max_iterations继续优化"
                 )
             elif trend == "stable":
+                # ⭐ CRITICAL FIX: 不建议"调整参数范围"，因为auto_iterative已经尝试过了
+                # 避免触发外层的iterative_optimization循环
                 recommendations.append(
-                    "💡 NSE趋于稳定，建议调整参数范围或算法参数（如增加ngs、rep）"
+                    "💡 NSE趋于稳定，已尝试参数范围调整但未收敛。建议增加算法参数（如ngs、rep）或延长训练期"
                 )
             elif trend == "degrading":
                 recommendations.append(

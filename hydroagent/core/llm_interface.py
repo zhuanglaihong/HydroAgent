@@ -201,7 +201,7 @@ class LLMInterface(ABC):
 class OpenAIInterface(LLMInterface):
     """OpenAI API interface implementation."""
 
-    def __init__(self, model_name: str = "qwen3-max", api_key: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: str , api_key: Optional[str] = None, **kwargs):
         super().__init__(model_name, api_key, **kwargs)
 
         # Try to get API key from: 1) parameter, 2) env var, 3) config file

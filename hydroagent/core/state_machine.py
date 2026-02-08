@@ -164,13 +164,22 @@ class StateMachine:
             转移后的新状态
 
         Raises:
-            RuntimeError: 如果达到最大转移次数
+            RuntimeError: 如果达到最大转移次数或检测到循环
         """
         # 检查转移次数限制
         if self.transition_count >= self.max_transitions:
             raise RuntimeError(
                 f"[StateMachine] Exceeded max transitions ({self.max_transitions}). "
                 f"Possible infinite loop detected."
+            )
+
+        # 🔧 新增：早期循环检测
+        # 检查最近10次转换中是否有重复的2状态循环模式（A→B→A→B→...）
+        if self._detect_short_cycle(cycle_length=2, max_repeats=3):
+            recent_states = [h['to_state'] for h in self.state_history[-10:]]
+            raise RuntimeError(
+                f"[StateMachine] Detected short-cycle loop (2-state pattern repeated 3+ times). "
+                f"Recent transitions: {' → '.join(recent_states)}"
             )
 
         # 更新上下文
@@ -213,6 +222,46 @@ class StateMachine:
         # 无匹配转移,保持当前状态
         logger.debug(f"[StateMachine] No matching transition from {old_state.name}, staying in current state")
         return self.current_state
+
+    def _detect_short_cycle(self, cycle_length: int = 2, max_repeats: int = 3) -> bool:
+        """
+        检测短循环模式（早期循环检测）
+
+        检测最近的状态转换中是否有重复的循环模式。
+        例如: A→B→A→B→A→B (2-state cycle repeated 3 times)
+
+        Args:
+            cycle_length: 循环长度（默认2，即A→B→A→B模式）
+            max_repeats: 允许的最大重复次数（超过此值视为循环）
+
+        Returns:
+            True if cycle detected, False otherwise
+        """
+        if len(self.state_history) < cycle_length * max_repeats:
+            return False  # 历史记录不足，无法检测
+
+        # 提取最近的状态序列
+        recent = [h['to_state'] for h in self.state_history[-(cycle_length * (max_repeats + 1)):]]
+
+        # 检查是否有重复模式
+        # 例如: [A, B, A, B, A, B] -> pattern=[A, B], 重复3次
+        pattern = recent[:cycle_length]
+
+        # 检查pattern是否在后续序列中重复出现
+        repeat_count = 0
+        for i in range(0, len(recent) - cycle_length + 1, cycle_length):
+            if recent[i:i+cycle_length] == pattern:
+                repeat_count += 1
+            else:
+                break  # 模式中断
+
+        if repeat_count >= max_repeats:
+            logger.warning(
+                f"[StateMachine] Detected {repeat_count} repeats of pattern {pattern}"
+            )
+            return True
+
+        return False
 
     def _record_history(self, from_state: OrchestratorState, to_state: OrchestratorState, description: str):
         """记录状态转移历史"""
@@ -467,16 +516,34 @@ def build_default_transitions() -> List[StateTransition]:
         description="Results meet threshold → Results acceptable"
     ))
 
+    # ⭐ CRITICAL FIX: Only iterate if FeedbackRouter explicitly recommends it
+    # Previous logic only checked NSE threshold, causing infinite loops when no improvements were possible
+    # Now we check should_continue_iterating flag set by FeedbackRouter based on DeveloperAgent's analysis
     transitions.append(StateTransition(
         from_state=OrchestratorState.ANALYZING_RESULTS,
         to_state=OrchestratorState.ITERATING,
         condition=lambda ctx: (
             ctx.get("analysis_result", {}).get("success", False) and
             ctx.get("intent_result", {}).get("task_type") == "iterative_optimization" and  # ⭐ ONLY for iterative tasks
-            ctx.get("nse", 0) < ctx.get("nse_target", 0.7) and
+            ctx.get("should_continue_iterating", False) and  # ⭐ CRITICAL: Only iterate if FeedbackRouter recommends it
             ctx.get("iteration_count", 0) < ctx.get("max_iterations", 10)
         ),
-        description="Results below threshold (iterative task) → Iterating"
+        description="Results below threshold AND actionable recommendations exist → Iterating"
+    ))
+
+    # ⭐ CRITICAL FIX #4: Complete iterative task when no further recommendations
+    # When FeedbackRouter sets should_continue_iterating=False (no actionable recommendations),
+    # complete the task even if NSE is below threshold and iteration_count < max_iterations
+    transitions.append(StateTransition(
+        from_state=OrchestratorState.ANALYZING_RESULTS,
+        to_state=OrchestratorState.COMPLETED_SUCCESS,
+        condition=lambda ctx: (
+            ctx.get("analysis_result", {}).get("success", False) and
+            ctx.get("intent_result", {}).get("task_type") == "iterative_optimization" and
+            not ctx.get("should_continue_iterating", False) and  # ⭐ No actionable recommendations
+            not _has_pending_subtasks(ctx)  # ⭐ All subtasks completed
+        ),
+        description="Iterative task complete (no further recommendations) → Completed Success"
     ))
 
     transitions.append(StateTransition(

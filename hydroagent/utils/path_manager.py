@@ -267,8 +267,8 @@ class PathManager:
 
 def scan_output_files(workspace_dir: Optional[Path] = None) -> list[str]:
     """
-    扫描生成的输出文件。
-    Scan generated output files.
+    扫描生成的输出文件（递归搜索所有子目录）。
+    Scan generated output files (recursively search all subdirectories).
 
     Args:
         workspace_dir: 工作目录（可选）
@@ -280,7 +280,8 @@ def scan_output_files(workspace_dir: Optional[Path] = None) -> list[str]:
     if workspace_dir:
         workspace_path = Path(workspace_dir)
         for ext in [".csv", ".png", ".pdf", ".json", ".txt"]:
-            output_files.extend([str(f) for f in workspace_path.glob(f"*{ext}")])
+            # ⭐ FIX: Use **/* to recursively search all subdirectories
+            output_files.extend([str(f) for f in workspace_path.glob(f"**/*{ext}")])
     return output_files
 
 

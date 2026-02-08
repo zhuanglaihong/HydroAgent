@@ -165,7 +165,7 @@ def parse_calibration_result(result: Any, config: Dict[str, Any]) -> Dict[str, A
     return parsed
 
 
-def parse_evaluation_result(result: Any) -> Dict[str, Any]:
+def parse_evaluation_result(result: Any, calibration_dir: str = None) -> Dict[str, Any]:
     """
     解析评估结果。
     Parse evaluation result.
@@ -173,16 +173,38 @@ def parse_evaluation_result(result: Any) -> Dict[str, Any]:
     Args:
         result: hydromodel evaluate() 的返回值
                 格式: {basin_id: {"metrics": {...}, "parameters": {...}}, ...}
+        calibration_dir: 可选的calibration目录路径，用于查找basins_metrics.csv
 
     Returns:
         解析后的结果字典
     """
-    parsed = {"metrics": {}, "performance": {}, "output_files": []}
+    parsed = {"metrics": {}, "performance": {}, "output_files": [], "basin_count": 0}
 
     try:
         if isinstance(result, dict):
             # hydromodel的evaluate()返回格式: {basin_id: {"metrics": {...}, "parameters": {...}}}
-            # 提取第一个basin的metrics（通常只有一个basin）
+
+            # 🔧 检测批量处理
+            basin_ids = [k for k in result.keys() if isinstance(result.get(k), dict)]
+            parsed["basin_count"] = len(basin_ids)
+            is_batch = len(basin_ids) > 1
+
+            if is_batch:
+                logger.info(f"[ResultParser] 检测到批量处理: {len(basin_ids)}个流域")
+
+                # 🔧 查找basins_metrics.csv文件
+                if calibration_dir:
+                    from pathlib import Path
+                    calibration_path = Path(calibration_dir)
+                    basins_metrics_file = calibration_path / "basins_metrics.csv"
+
+                    if basins_metrics_file.exists():
+                        parsed["basins_metrics_file"] = str(basins_metrics_file)
+                        logger.info(f"[ResultParser] 找到批量metrics文件: {basins_metrics_file}")
+                    else:
+                        logger.warning(f"[ResultParser] 未找到basins_metrics.csv: {basins_metrics_file}")
+
+            # 提取第一个basin的metrics（兼容性）
             if result:
                 first_basin_id = list(result.keys())[0]
                 basin_result = result[first_basin_id]

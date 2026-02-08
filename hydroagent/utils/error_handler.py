@@ -167,33 +167,130 @@ class ErrorHandler:
         }
 
         error_type = type(exception).__name__
-        error_message = str(exception)
+        error_message = str(exception).lower()
 
-        # Categorize error
-        if error_type in ["KeyError", "AttributeError"]:
+        # ✅ Enhanced categorization: Network, API, Code, Data, Config, etc.
+
+        # 🔧 v6.1 Fix: Message-based classification (highest priority for Experiment C)
+        # These rules check error message content for accurate classification
+        # IMPORTANT: More specific rules must come BEFORE general rules
+
+        # Configuration errors (most specific: "configuration validation failed")
+        if "configuration validation failed" in error_message or "配置验证失败" in error_message:
             analysis["error_category"] = "configuration"
-            analysis["likely_cause"] = "Configuration or data field mismatch"
-            analysis["affected_component"] = "config/data"
+            analysis["likely_cause"] = "Configuration validation failed"
+            analysis["affected_component"] = "configuration"
 
-        elif error_type in ["FileNotFoundError", "IOError"]:
+        # Data file errors (训练期太短, 数据不足) - before general "训练期" rule
+        elif any(keyword in error_message for keyword in ["训练期太短", "测试期太短", "数据不足", "insufficient data", "data length"]):
             analysis["error_category"] = "data"
-            analysis["likely_cause"] = "Missing or inaccessible file/data"
+            analysis["likely_cause"] = "Insufficient or missing data"
             analysis["affected_component"] = "data loading"
 
-        elif error_type in ["ValueError", "TypeError"]:
+        # Intent recognition errors
+        elif "intent recognition failed" in error_message:
+            analysis["error_category"] = "data_validation"  # Treat as validation error (invalid query)
+            analysis["likely_cause"] = "Invalid or malformed query"
+            analysis["affected_component"] = "intent analysis"
+
+        # Data validation errors (流域ID) - specific basin validation
+        elif any(keyword in error_message for keyword in ["流域", "basin"]) and ("验证失败" in error_message or "validation failed" in error_message):
             analysis["error_category"] = "data_validation"
-            analysis["likely_cause"] = "Invalid data type or value"
-            analysis["affected_component"] = "data processing"
+            analysis["likely_cause"] = "Basin ID or data validation failed"
+            analysis["affected_component"] = "data validation"
 
-        elif error_type in ["ImportError", "ModuleNotFoundError"]:
-            analysis["error_category"] = "dependency"
-            analysis["likely_cause"] = "Missing required package"
-            analysis["affected_component"] = "environment"
+        # Configuration errors (general: time periods, warmup) - less specific
+        elif any(keyword in error_message for keyword in ["训练期", "测试期", "warmup", "train period", "test period"]) and "validation" in error_message:
+            analysis["error_category"] = "configuration"
+            analysis["likely_cause"] = "Configuration validation failed"
+            analysis["affected_component"] = "configuration"
 
-        elif "numerical" in error_message.lower() or "nan" in error_message.lower():
+        # Numerical computation errors (参数范围过窄, 数值计算)
+        elif any(keyword in error_message for keyword in ["numerical", "nan", "inf", "参数范围", "parameter range"]):
             analysis["error_category"] = "numerical"
-            analysis["likely_cause"] = "Numerical instability or invalid computation"
+            analysis["likely_cause"] = "Numerical computation error or parameter issue"
             analysis["affected_component"] = "model computation"
+
+        # Runtime errors (算法参数错误, ngs=1等)
+        elif any(keyword in error_message for keyword in ["algorithm", "ngs", "rep", "算法"]):
+            analysis["error_category"] = "runtime"
+            analysis["likely_cause"] = "Algorithm parameter error"
+            analysis["affected_component"] = "calibration"
+
+        # Code generation errors (生成代码失败, sklearn等)
+        elif any(keyword in error_message for keyword in ["code generation", "生成代码", "sklearn", "import"]):
+            analysis["error_category"] = "code"
+            analysis["likely_cause"] = "Code generation or execution failed"
+            analysis["affected_component"] = "code generation"
+
+        # Type-based classification (fallback for unmatched messages)
+        # Only apply if message-based classification didn't match
+        elif analysis["error_category"] == "unknown":
+            # 1. Network and API errors (highest priority)
+            if error_type in ["APITimeoutError", "TimeoutError", "RequestException", "ConnectionError"]:
+                analysis["error_category"] = "network"
+                analysis["likely_cause"] = "Network connection timeout or API request timeout"
+                analysis["affected_component"] = "network/api"
+            elif "timeout" in error_message or "timed out" in error_message:
+                analysis["error_category"] = "network"
+                analysis["likely_cause"] = "Request timeout (network or API)"
+                analysis["affected_component"] = "network/api"
+            elif "connection" in error_message or "connect" in error_message:
+                analysis["error_category"] = "network"
+                analysis["likely_cause"] = "Network connection failed"
+                analysis["affected_component"] = "network"
+
+            # 2. LLM-specific errors
+            elif "LLMTimeoutError" in error_type or "llm" in error_message:
+                analysis["error_category"] = "llm_api"
+                analysis["likely_cause"] = "LLM API request failed or timeout"
+                analysis["affected_component"] = "llm_interface"
+
+            # 3. Code errors (NameError, SyntaxError, etc.)
+            elif error_type in ["NameError", "SyntaxError", "IndentationError"]:
+                analysis["error_category"] = "code"
+                analysis["likely_cause"] = "Code error (undefined variable or syntax error)"
+                analysis["affected_component"] = "code"
+
+            # 4. Configuration errors
+            elif error_type in ["KeyError", "AttributeError"]:
+                analysis["error_category"] = "configuration"
+                analysis["likely_cause"] = "Configuration or data field mismatch"
+                analysis["affected_component"] = "config/data"
+
+            # 5. Data errors
+            elif error_type in ["FileNotFoundError", "IOError"]:
+                analysis["error_category"] = "data"
+                analysis["likely_cause"] = "Missing or inaccessible file/data"
+                analysis["affected_component"] = "data loading"
+            elif "netcdf" in error_message or "hdf" in error_message:
+                analysis["error_category"] = "data"
+                analysis["likely_cause"] = "Data file format error or corrupted file"
+                analysis["affected_component"] = "data loading"
+
+            # 6. Data validation errors
+            elif error_type in ["ValueError", "TypeError"]:
+                analysis["error_category"] = "data_validation"
+                analysis["likely_cause"] = "Invalid data type or value"
+                analysis["affected_component"] = "data processing"
+
+            # 7. Dependency errors
+            elif error_type in ["ImportError", "ModuleNotFoundError"]:
+                analysis["error_category"] = "dependency"
+                analysis["likely_cause"] = "Missing required package"
+                analysis["affected_component"] = "environment"
+
+            # 8. Numerical errors
+            elif "numerical" in error_message or "nan" in error_message:
+                analysis["error_category"] = "numerical"
+                analysis["likely_cause"] = "Numerical instability or invalid computation"
+                analysis["affected_component"] = "model computation"
+
+            # 9. Runtime errors
+            elif error_type in ["RuntimeError", "AssertionError"]:
+                analysis["error_category"] = "runtime"
+                analysis["likely_cause"] = "Runtime error or assertion failed"
+                analysis["affected_component"] = "execution"
 
         return analysis
 
@@ -228,34 +325,109 @@ class ErrorHandler:
                 if key_pattern.lower() in error_message.lower():
                     suggestions.append(f"{mapping['message']}: {mapping['suggestion']}")
 
-        # Category-specific suggestions
-        if analysis["error_category"] == "configuration":
-            suggestions.append(
-                "Review configuration file for typos or incorrect field names"
-            )
-            suggestions.append("Compare with hydromodel's example_config.yaml")
+        # ✅ Enhanced category-specific suggestions with detailed steps
+
+        if analysis["error_category"] == "network":
+            suggestions.append("🌐 Network Error - Possible Solutions:")
+            suggestions.append("  1. Check your internet connection")
+            suggestions.append("  2. If using proxy, verify proxy settings")
+            suggestions.append("  3. Increase timeout value in config (e.g., timeout=120)")
+            suggestions.append("  4. Try again after a few minutes (server may be temporarily down)")
+            suggestions.append("  5. Check firewall settings blocking API requests")
+
+        elif analysis["error_category"] == "llm_api":
+            suggestions.append("🤖 LLM API Error - Possible Solutions:")
+            suggestions.append("  1. Verify API key in configs/definitions_private.py:")
+            suggestions.append("     - Check OPENAI_API_KEY is set correctly")
+            suggestions.append("     - Ensure no extra spaces or quotes")
+            suggestions.append("  2. Check API quota/balance:")
+            suggestions.append("     - Visit your cloud provider dashboard")
+            suggestions.append("     - Verify free tier limits not exceeded")
+            suggestions.append("  3. Try using a different model (e.g., switch to qwen-turbo)")
+            suggestions.append("  4. If using Ollama, ensure service is running: ollama serve")
+
+        elif analysis["error_category"] == "code":
+            suggestions.append("💻 Code Error - Possible Solutions:")
+            suggestions.append("  1. Review the generated Python code in logs")
+            suggestions.append("  2. Check for undefined variables (NameError):")
+            suggestions.append("     - Ensure all variables are defined before use")
+            suggestions.append("  3. Check for syntax errors (SyntaxError):")
+            suggestions.append("     - Verify parentheses, brackets, quotes are balanced")
+            suggestions.append("  4. If custom code generation, simplify the analysis request")
+            suggestions.append("  5. Report issue if error persists (include traceback)")
+
+        elif analysis["error_category"] == "configuration":
+            suggestions.append("⚙️ Configuration Error - Possible Solutions:")
+            suggestions.append("  1. Check configs/config.py for typos:")
+            suggestions.append("     - Verify variable names (e.g., prcp not prec)")
+            suggestions.append("     - Ensure data types match (int, str, list, etc.)")
+            suggestions.append("  2. Check configs/definitions_private.py:")
+            suggestions.append("     - DATASET_DIR path exists and is accessible")
+            suggestions.append("     - PROJECT_DIR points to correct location")
+            suggestions.append("  3. Compare with example_definitions_private.py")
+            suggestions.append("  4. Ensure all required config fields are set")
 
         elif analysis["error_category"] == "data":
-            suggestions.append("Verify data paths in config are correct and accessible")
-            suggestions.append(
-                "Check if required data files exist in specified directory"
-            )
+            suggestions.append("📁 Data File Error - Possible Solutions:")
+            suggestions.append("  1. Check data file integrity:")
+            suggestions.append("     - If NetCDF/HDF error, data file may be corrupted")
+            suggestions.append("     - Delete and re-download: rm ~/.cache/camels_us*")
+            suggestions.append("  2. Verify DATASET_DIR in config points to valid path")
+            suggestions.append("  3. Ensure sufficient disk space for data files")
+            suggestions.append("  4. Check file permissions (read access required)")
+            suggestions.append("  5. If using custom data, verify format matches CAMELS structure")
 
         elif analysis["error_category"] == "data_validation":
-            suggestions.append("Validate input data ranges and formats")
-            suggestions.append("Check for NaN or infinite values in data")
+            suggestions.append("✅ Data Validation Error - Possible Solutions:")
+            suggestions.append("  1. Verify basin ID exists in CAMELS dataset:")
+            suggestions.append("     - Valid IDs are 8-digit USGS gage IDs")
+            suggestions.append("     - Check available basins at: https://ral.ucar.edu/solutions/products/camels")
+            suggestions.append("  2. Check time period validity:")
+            suggestions.append("     - CAMELS data covers 1980-2014")
+            suggestions.append("     - Ensure train_period is before test_period")
+            suggestions.append("  3. Validate parameter ranges:")
+            suggestions.append("     - Iterations/repetitions must be positive integers")
+            suggestions.append("     - NSE threshold must be in [0, 1]")
 
         elif analysis["error_category"] == "dependency":
-            suggestions.append(
-                "Install missing dependencies: pip install -r requirements.txt"
-            )
-            suggestions.append("Verify virtual environment is activated")
+            suggestions.append("📦 Dependency Error - Possible Solutions:")
+            suggestions.append("  1. Install missing package:")
+            suggestions.append("     - hydromodel: pip install git+https://github.com/OuyangWenyu/hydromodel.git")
+            suggestions.append("     - spotpy: pip install spotpy")
+            suggestions.append("     - Other: pip install -r requirements.txt")
+            suggestions.append("  2. Verify virtual environment:")
+            suggestions.append("     - Activate: .venv/Scripts/activate (Windows) or source .venv/bin/activate (Linux/Mac)")
+            suggestions.append("     - Check: which python (should point to .venv)")
+            suggestions.append("  3. Upgrade outdated packages: pip install --upgrade <package>")
 
         elif analysis["error_category"] == "numerical":
-            suggestions.append(
-                "Check parameter ranges - values may be causing numerical instability"
-            )
-            suggestions.append("Increase warmup period to stabilize model")
+            suggestions.append("🔢 Numerical Error - Possible Solutions:")
+            suggestions.append("  1. Adjust parameter ranges in param_range.yaml:")
+            suggestions.append("     - Avoid extreme values (e.g., [0, 1e10])")
+            suggestions.append("     - Use reasonable ranges for your basin")
+            suggestions.append("  2. Reduce iteration count if numerical overflow occurs")
+            suggestions.append("  3. Check input data for NaN or infinite values")
+            suggestions.append("  4. Try a different calibration algorithm (e.g., DE instead of SCE-UA)")
+            suggestions.append("  5. Ensure sufficient warmup period (recommend ≥365 days)")
+
+        elif analysis["error_category"] == "runtime":
+            suggestions.append("⚠️ Runtime Error - Possible Solutions:")
+            suggestions.append("  1. Check error message and traceback for specific issue")
+            suggestions.append("  2. If memory error:")
+            suggestions.append("     - Reduce batch size (fewer basins at once)")
+            suggestions.append("     - Close other applications to free memory")
+            suggestions.append("  3. If algorithm initialization error:")
+            suggestions.append("     - Check algorithm parameters (e.g., ngs ≥ 2 for SCE-UA)")
+            suggestions.append("     - Ensure parameters don't conflict")
+            suggestions.append("  4. If model computation error:")
+            suggestions.append("     - Verify model name is correct (GR4J, XAJ, etc.)")
+            suggestions.append("     - Check if warmup period is too short (use ≥365 days)")
+
+        # Add generic fallback suggestions if no category-specific ones were added
+        if not suggestions:
+            suggestions.append("Review error message and stack trace for details")
+            suggestions.append("Check system logs for additional information")
+            suggestions.append("Ensure all dependencies are properly installed")
 
         # Context-specific suggestions
         if context:

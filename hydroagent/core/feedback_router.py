@@ -1,10 +1,11 @@
 """
 Author: Claude
 Date: 2025-12-03 16:00:00
-LastEditTime: 2025-12-03 16:00:00
-LastEditors: Claude
+LastEditTime: 2026-01-13 20:45:00
+LastEditors: Claude Code (v6.1 Fix)
 Description: Feedback router for routing agent errors and feedback to appropriate handlers
              反馈路由器 - 将Agent的错误和反馈路由到合适的处理器
+    v6.1 Fix (2026-01-13): Unknown source agents return 'continue' instead of 'abort'
 FilePath: /HydroAgent/hydroagent/core/feedback_router.py
 Copyright (c) 2023-2025 HydroAgent. All rights reserved.
 
@@ -36,7 +37,14 @@ class FeedbackRouter:
         """初始化反馈路由器"""
         # 错误模式匹配规则
         self.error_patterns = self._build_error_patterns()
-        logger.info("[FeedbackRouter] Initialized with error classification rules")
+
+        # 🔧 循环检测：记录最近的配置生成失败历史
+        # 格式: [(config_hash, error_message), ...]
+        self.config_failure_history = []
+        self.max_history_size = 5  # 只保留最近5次失败
+        self.loop_detection_threshold = 2  # 连续2次相同配置失败 = 循环
+
+        logger.info("[FeedbackRouter] Initialized with error classification rules and loop detection")
 
     def _build_error_patterns(self) -> Dict[str, list]:
         """
@@ -120,10 +128,14 @@ class FeedbackRouter:
         elif source_agent == "InterpreterAgent":
             return self._route_interpreter_feedback(feedback, orchestrator_context)
         else:
+            # 🔧 v6.1 Fix: Unknown source agents should not abort the task
+            # This handles cases where Orchestrator's internal flow control
+            # accidentally triggers FeedbackRouter (which should not happen)
             logger.warning(f"[FeedbackRouter] Unknown source agent: {source_agent}")
+            logger.info("[FeedbackRouter] Returning 'continue' action to proceed with state machine")
             return {
                 "target_agent": None,
-                "action": "abort",
+                "action": "continue",  # 🔧 Changed from "abort" to "continue"
                 "parameters": {},
                 "retryable": False
             }
@@ -312,7 +324,33 @@ class FeedbackRouter:
         - NSE未达标 + 建议调整参数范围 → TaskPlanner (触发迭代优化)
         - NSE未达标 + 建议增加迭代 → InterpreterAgent (增加rep)
         - NSE未达标 + 达到最大迭代次数 → 结束 (部分成功)
+        - 🆕 复合任务 + 还有下一个子任务 → 继续执行下一个子任务
         """
+        # 🆕 Check for compound task continuation
+        should_continue = context.get("should_continue_compound_task", False)
+        if should_continue:
+            logger.info("[FeedbackRouter] Compound task: continuing to next subtask")
+            return {
+                "target_agent": "TaskPlanner",
+                "action": "plan_tasks",
+                "parameters": {},
+                "retryable": False
+            }
+
+        # Check if all compound tasks are completed
+        compound_completed = context.get("compound_task_completed", False)
+        if compound_completed:
+            compound_results = context.get("compound_task_results", [])
+            logger.info(f"[FeedbackRouter] Compound task completed with {len(compound_results)} subtasks")
+            return {
+                "target_agent": None,
+                "action": "complete_success",
+                "parameters": {
+                    "compound_results": compound_results
+                },
+                "retryable": False
+            }
+
         analysis = feedback.get("analysis", {})
         metrics = analysis.get("metrics", {})
         nse = metrics.get("NSE", 0)
@@ -406,17 +444,21 @@ class FeedbackRouter:
 
         # 只有明确的iterative_optimization任务才检查建议并触发优化
         logger.info("[FeedbackRouter] Task type is 'iterative_optimization', checking recommendations...")
+        has_actionable_recommendation = False
+
         for rec in recommendations:
             if "参数范围" in rec or "parameter range" in rec.lower():
                 # 建议调整参数范围 → 触发迭代优化
-                logger.info("[FeedbackRouter] Triggering iterative optimization")
+                logger.info("[FeedbackRouter] Triggering iterative optimization - parameter range adjustment needed")
+                has_actionable_recommendation = True
                 return {
                     "target_agent": "TaskPlanner",
                     "action": "trigger_iterative_optimization",
                     "parameters": {
                         "current_nse": nse,
                         "best_params": analysis.get("parameters", {}),
-                        "iteration_count": iteration_count + 1
+                        "iteration_count": iteration_count + 1,
+                        "should_continue_iterating": True  # ⭐ 明确标志：应该继续迭代
                     },
                     "retryable": True
                 }
@@ -424,6 +466,7 @@ class FeedbackRouter:
             if "增加迭代" in rec or "increase.*iteration" in rec.lower():
                 # 建议增加迭代次数
                 logger.info("[FeedbackRouter] Increasing algorithm iterations")
+                has_actionable_recommendation = True
                 current_rep = context.get("rep", 500)
                 return {
                     "target_agent": "InterpreterAgent",
@@ -431,21 +474,83 @@ class FeedbackRouter:
                     "parameters": {
                         "current_rep": current_rep,
                         "new_rep": int(current_rep * 1.5),
-                        "iteration_count": iteration_count + 1
+                        "iteration_count": iteration_count + 1,
+                        "should_continue_iterating": True  # ⭐ 明确标志：应该继续迭代
                     },
                     "retryable": True
                 }
 
-        # 无明确建议,默认结束
-        logger.info("[FeedbackRouter] No actionable recommendations, completing")
+        # ⭐ CRITICAL FIX: 无明确建议时，不应该继续迭代
+        # 设置should_continue_iterating=False，让State Machine知道不要继续迭代
+        logger.info("[FeedbackRouter] No actionable recommendations, completing (should NOT continue iterating)")
         return {
             "target_agent": None,
             "action": "complete_partial",
             "parameters": {
-                "final_nse": nse
+                "final_nse": nse,
+                "should_continue_iterating": False  # ⭐ 明确标志：不应该继续迭代
             },
             "retryable": False
         }
+
+    def _compute_config_hash(self, config: Dict[str, Any]) -> str:
+        """
+        计算配置的简单哈希（用于循环检测）
+
+        Args:
+            config: 配置字典
+
+        Returns:
+            配置的哈希字符串
+        """
+        import hashlib
+        import json
+
+        # 提取关键字段用于哈希
+        key_fields = {
+            "model_name": config.get("model_cfgs", {}).get("model_name", ""),
+            "basin_ids": str(config.get("data_cfgs", {}).get("basin_ids", [])),
+            "algorithm": config.get("training_cfgs", {}).get("algorithm_name", "")
+        }
+
+        # 计算哈希
+        config_str = json.dumps(key_fields, sort_keys=True)
+        return hashlib.md5(config_str.encode()).hexdigest()[:8]
+
+    def _detect_config_loop(self, config_hash: str, error_msg: str) -> bool:
+        """
+        检测是否出现配置生成循环
+
+        Args:
+            config_hash: 当前配置的哈希
+            error_msg: 错误消息
+
+        Returns:
+            True if loop detected, False otherwise
+        """
+        # 添加到历史记录
+        self.config_failure_history.append((config_hash, error_msg))
+
+        # 保持历史记录大小
+        if len(self.config_failure_history) > self.max_history_size:
+            self.config_failure_history.pop(0)
+
+        # 检测循环：最近N次失败中，有threshold次是相同配置
+        if len(self.config_failure_history) < self.loop_detection_threshold:
+            return False
+
+        # 统计最近的配置哈希
+        recent_hashes = [h for h, _ in self.config_failure_history[-self.loop_detection_threshold:]]
+        same_config_count = recent_hashes.count(config_hash)
+
+        if same_config_count >= self.loop_detection_threshold:
+            logger.warning(
+                f"[FeedbackRouter] 🔁 Loop detected! Same config failed {same_config_count} times. "
+                f"Hash: {config_hash}"
+            )
+            return True
+
+        return False
 
     def _route_interpreter_feedback(
         self,
@@ -455,8 +560,13 @@ class FeedbackRouter:
         """
         处理InterpreterAgent的反馈
 
-        通常InterpreterAgent不需要反馈路由,
-        但如果配置生成失败,可以回退到TaskPlanner重新规划
+        修复策略 (避免无限循环) v2.0:
+        1. 第一次失败: 记录配置哈希
+        2. 检测循环: 如果相同配置连续失败N次 → 跳过审查直接执行
+        3. 否则: 终止流程
+
+        核心问题: LLM审查器可能误判合理的配置，导致配置被反复拒绝。
+        解决方案: 检测循环后，跳过审查直接执行（fallback机制）。
         """
         if feedback.get("success", False):
             return {
@@ -470,27 +580,52 @@ class FeedbackRouter:
 
         # 配置生成失败
         error_msg = feedback.get("error", "")
+        config = feedback.get("config", {})  # 可能部分生成了配置
         retry_count = context.get("config_retry_count", 0)
 
-        if retry_count < 3:
-            return {
-                "target_agent": "TaskPlanner",
-                "action": "adjust_task_plan",
-                "parameters": {
-                    "error_log": error_msg,
-                    "retry_count": retry_count + 1
-                },
-                "retryable": True
-            }
-        else:
-            return {
-                "target_agent": None,
-                "action": "abort",
-                "parameters": {
-                    "reason": "Config generation failed after 3 retries"
-                },
-                "retryable": False
-            }
+        logger.warning(f"[FeedbackRouter] InterpreterAgent failed (attempt {retry_count + 1}): {error_msg[:200]}")
+
+        # 🔧 新增：循环检测
+        if config:
+            config_hash = self._compute_config_hash(config)
+            is_loop = self._detect_config_loop(config_hash, error_msg)
+
+            if is_loop:
+                logger.warning(
+                    f"[FeedbackRouter] 🚨 Configuration validation loop detected! "
+                    f"Same config rejected multiple times."
+                )
+                logger.warning(
+                    f"[FeedbackRouter] 🔧 Applying fallback: Skip review and execute with generated config"
+                )
+                logger.warning(f"[FeedbackRouter] Config hash: {config_hash}")
+                logger.warning(f"[FeedbackRouter] Error was: {error_msg[:150]}")
+
+                # Fallback: 跳过审查，直接使用生成的配置执行
+                return {
+                    "target_agent": "RunnerAgent",
+                    "action": "skip_review_and_execute",
+                    "parameters": {
+                        "config": config,
+                        "skip_reason": "validation_loop_detected",
+                        "original_error": error_msg[:200]
+                    },
+                    "retryable": False
+                }
+
+        # 🔧 原有逻辑: 直接终止，避免无限循环
+        logger.error(f"[FeedbackRouter] Aborting after config validation failure (anti-loop protection)")
+        return {
+            "target_agent": None,
+            "action": "abort",
+            "parameters": {
+                "reason": f"Configuration validation failed: {error_msg[:300]}",
+                "error_type": "configuration_validation_error",
+                "llm_feedback": error_msg,
+                "suggestion": "Check LLMConfigReviewer prompt or disable strict validation"
+            },
+            "retryable": False
+        }
 
     def _classify_error(self, error_msg: str) -> str:
         """

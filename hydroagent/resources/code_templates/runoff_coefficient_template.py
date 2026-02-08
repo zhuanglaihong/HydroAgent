@@ -1,8 +1,6 @@
-"""
-Template for runoff coefficient calculation
-Placeholders: {{NC_FILE_PATH}}, {{BASIN_ID}}, {{OUTPUT_DIR}}
-"""
 # -*- coding: utf-8 -*-
+# Template for runoff coefficient calculation (v5.1)
+# Auto-generated from template, placeholders replaced
 """
 流域径流系数计算脚本
 用于计算指定流域的时间序列径流系数（每个时间步的径流量/降水量）

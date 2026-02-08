@@ -13,7 +13,7 @@ Copyright (c) 2024-2025 HydroAgent. All rights reserved.
 # ============================================================================
 
 # Default LLM model for API backend
-DEFAULT_MODEL = "qwen-turbo"
+DEFAULT_MODEL = "deepseek-v3.1"
 
 # Default code-specific LLM model (for DeveloperAgent code generation)
 DEFAULT_CODE_MODEL = "qwen3-coder-plus"
@@ -28,7 +28,7 @@ OLLAMA_DEFAULT_CODE_MODEL ="deepseek-coder:6.7b"
 TEMPERATURE = 0.1
 
 # Max tokens for LLM response
-MAX_TOKENS = 2000
+MAX_TOKENS = 20000
 
 # Request timeout (seconds)
 REQUEST_TIMEOUT = 60
@@ -246,14 +246,39 @@ PLOT_DPI = 300
 SAVE_PLOTS = True
 
 # ============================================================================
-# Iterative Optimization Configuration (Experiment 3)
+# Tool System Configuration
 # ============================================================================
 
-# 边界检测阈值（参数收敛到边界的判定标准）
-BOUNDARY_THRESHOLD = 0.05  # 5% of parameter range
+# Enable tool system
+USE_TOOL_SYSTEM = True
 
+# Tool execution timeout (seconds)
+TOOL_EXECUTION_TIMEOUT = 3600
+
+# Enable tool result caching
+TOOL_CACHE_ENABLED = True
+
+# Validation strict mode
+# - False: Interactive mode - ask user if continue when partial validation fails
+# - True: Strict mode - abort on any validation failure
+# 验证严格模式
+# - False: 交互模式 - 部分验证失败时询问用户是否继续
+# - True: 严格模式 - 任何验证失败都终止执行
+VALIDATION_STRICT_MODE = False
+
+# Tool retry on failure
+# 工具失败时是否重试
+TOOL_RETRY_ON_FAILURE = True
+
+# Maximum retries for failed tools
+# 工具失败最大重试次数
+TOOL_MAX_RETRIES = 3
+
+
+# 边界检测阈值（参数收敛到边界的判定标准）
+BOUNDARY_THRESHOLD = 0.1  
 # NSE达标阈值（达到此值时停止迭代优化）
-NSE_THRESHOLD_FOR_ITERATION = 0.65  # 降低此值以触发更多迭代
+NSE_THRESHOLD_FOR_ITERATION = 0.7  # 降低此值以触发更多迭代
 
 # 最大迭代次数
 MAX_ITERATIONS = 5

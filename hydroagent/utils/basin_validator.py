@@ -248,6 +248,128 @@ class BasinValidator:
 
         return len(errors) == 0, errors
 
+    def validate_time_range(
+        self,
+        time_range: List[str],
+        data_source: str = "camels_us"
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Validate time range against dataset availability.
+        验证时间范围是否在数据集范围内。
+
+        Args:
+            time_range: Time range as [start_date, end_date], format: 'YYYY-MM-DD'
+            data_source: Data source name
+
+        Returns:
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
+        """
+        if not isinstance(time_range, list) or len(time_range) != 2:
+            return False, f"时间范围必须是包含两个日期的列表: [start_date, end_date]"
+
+        start_date, end_date = time_range
+
+        # Basic format check
+        import re
+        date_pattern = r'^\d{4}-\d{2}-\d{2}$'
+        if not re.match(date_pattern, start_date) or not re.match(date_pattern, end_date):
+            return False, f"日期格式错误。应为 YYYY-MM-DD 格式，如 '1990-01-01'"
+
+        # Check chronological order
+        if start_date >= end_date:
+            return False, f"开始日期必须早于结束日期: {start_date} >= {end_date}"
+
+        # Check against dataset range if hydrodataset available
+        if data_source.lower() == "camels_us" and self._has_hydrodataset:
+            try:
+                camels = self._camels_us_class(data_path=self._dataset_dir)
+                if hasattr(camels, 'default_t_range'):
+                    default_range = camels.default_t_range
+                    dataset_start, dataset_end = default_range
+
+                    if start_date < dataset_start or end_date > dataset_end:
+                        return False, (
+                            f"时间范围超出数据集范围。\n"
+                            f"  请求范围: {start_date} 至 {end_date}\n"
+                            f"  数据集范围: {dataset_start} 至 {dataset_end}"
+                        )
+
+                logger.debug(f"[BasinValidator] Time range {time_range} validated successfully")
+                return True, None
+
+            except Exception as e:
+                logger.warning(f"[BasinValidator] Could not validate time range: {e}")
+                # If can't check, assume valid
+                return True, None
+
+        # Default: accept if we can't verify
+        return True, None
+
+    def validate_variables(
+        self,
+        var_list: List[str],
+        data_source: str = "camels_us"
+    ) -> tuple[bool, List[str]]:
+        """
+        Validate that required variables are available in dataset.
+        验证所需变量在数据集中是否可用。
+
+        Args:
+            var_list: List of variable names to check
+            data_source: Data source name
+
+        Returns:
+            Tuple[bool, List[str]]: (all_available, missing_variables)
+        """
+        if not var_list:
+            return True, []
+
+        missing_vars = []
+
+        if data_source.lower() == "camels_us" and self._has_hydrodataset:
+            try:
+                camels = self._camels_us_class(data_path=self._dataset_dir)
+
+                # Get available variables
+                available_vars = set()
+
+                # Check dynamic features
+                if hasattr(camels, 'get_available_dynamic_features'):
+                    dynamic_features = camels.get_available_dynamic_features()
+                    if isinstance(dynamic_features, dict):
+                        available_vars.update(dynamic_features.keys())
+                    elif isinstance(dynamic_features, list):
+                        available_vars.update(dynamic_features)
+
+                # Check static features
+                if hasattr(camels, 'get_available_static_features'):
+                    static_features = camels.get_available_static_features()
+                    if isinstance(static_features, list):
+                        available_vars.update(static_features)
+
+                # Check each requested variable
+                for var in var_list:
+                    if var not in available_vars:
+                        missing_vars.append(var)
+
+                if missing_vars:
+                    logger.warning(
+                        f"[BasinValidator] Variables not found: {missing_vars}. "
+                        f"Available: {list(available_vars)[:10]}..."
+                    )
+                else:
+                    logger.debug(f"[BasinValidator] All variables validated: {var_list}")
+
+                return len(missing_vars) == 0, missing_vars
+
+            except Exception as e:
+                logger.warning(f"[BasinValidator] Could not validate variables: {e}")
+                # If can't check, assume valid
+                return True, []
+
+        # Default: accept if we can't verify
+        return True, []
+
 
 # Create global validator instance
 _validator = BasinValidator()
