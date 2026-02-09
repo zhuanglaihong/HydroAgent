@@ -25,6 +25,7 @@ def calibrate_model(
     train_period: list[str] | None = None,
     test_period: list[str] | None = None,
     algorithm_params: dict | None = None,
+    param_range_file: str | None = None,
     output_dir: str | None = None,
     _workspace: Path | None = None,
     _cfg: dict | None = None,
@@ -41,6 +42,7 @@ def calibrate_model(
         train_period: Training period ["YYYY-MM-DD", "YYYY-MM-DD"]
         test_period: Testing period ["YYYY-MM-DD", "YYYY-MM-DD"]
         algorithm_params: Algorithm parameter overrides, e.g. {"rep": 500}
+        param_range_file: Path to custom parameter range YAML file for boundary expansion
         output_dir: Output directory for results
 
     Returns:
@@ -56,6 +58,7 @@ def calibrate_model(
         train_period=train_period,
         test_period=test_period,
         algorithm_params=algorithm_params,
+        param_range_file=param_range_file,
         output_dir=output_dir,
         cfg=_cfg,
     )

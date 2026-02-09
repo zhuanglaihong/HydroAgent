@@ -194,7 +194,15 @@ class HydroClaw:
             arguments["_llm"] = self.llm
 
         try:
-            return fn(**arguments)
+            result = fn(**arguments)
+
+            # If a new tool was created, refresh our tool registry and schemas
+            if name == "create_tool" and isinstance(result, dict) and result.get("success"):
+                self.tools = discover_tools()
+                self.tool_schemas = get_tool_schemas()
+                logger.info(f"Tool registry refreshed: {len(self.tools)} tools")
+
+            return result
         except TypeError as e:
             # Handle argument mismatches gracefully
             logger.warning(f"Tool {name} argument error: {e}")

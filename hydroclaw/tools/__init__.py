@@ -47,6 +47,17 @@ def discover_tools() -> dict[str, Callable]:
     return _TOOLS
 
 
+def reload_tools() -> dict[str, Callable]:
+    """Clear cache and re-discover all tools. Used after creating new tool files."""
+    _TOOLS.clear()
+    # Also clear Python's module cache for tools we might have added
+    import sys
+    to_remove = [k for k in sys.modules if k.startswith("hydroclaw.tools.") and k != "hydroclaw.tools"]
+    for k in to_remove:
+        del sys.modules[k]
+    return discover_tools()
+
+
 def get_tool_schemas() -> list[dict[str, Any]]:
     """Generate OpenAI function calling schemas for all registered tools."""
     tools = discover_tools()
@@ -151,6 +162,7 @@ def _parse_docstring(doc: str) -> tuple[str, dict[str, str]]:
 
 def _python_type_to_json(python_type) -> str:
     """Convert Python type hint to JSON Schema type."""
+    import types
     import typing
     origin = getattr(python_type, "__origin__", None)
 
@@ -160,6 +172,12 @@ def _python_type_to_json(python_type) -> str:
         return "object"
     if origin is typing.Union:
         # Handle Optional[X] = Union[X, None]
+        args = python_type.__args__
+        non_none = [a for a in args if a is not type(None)]
+        if non_none:
+            return _python_type_to_json(non_none[0])
+    # Handle Python 3.10+ X | Y syntax (types.UnionType)
+    if isinstance(python_type, types.UnionType):
         args = python_type.__args__
         non_none = [a for a in args if a is not type(None)]
         if non_none:

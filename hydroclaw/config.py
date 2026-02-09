@@ -96,6 +96,7 @@ def build_hydromodel_config(
     train_period: list[str] | None = None,
     test_period: list[str] | None = None,
     algorithm_params: dict | None = None,
+    param_range_file: str | None = None,
     warmup: int | None = None,
     output_dir: str | None = None,
     cfg: dict | None = None,
@@ -109,6 +110,7 @@ def build_hydromodel_config(
         train_period: Training period [start, end].
         test_period: Testing period [start, end].
         algorithm_params: Algorithm parameter overrides.
+        param_range_file: Path to custom parameter range YAML file.
         warmup: Warmup days.
         output_dir: Output directory for results.
         cfg: Global config dict (from load_config).
@@ -170,6 +172,7 @@ def build_hydromodel_config(
             "experiment_name": "",
             "random_seed": random_seed,
             "save_config": True,
+            **({"param_range_file": param_range_file} if param_range_file else {}),
         },
     }
 

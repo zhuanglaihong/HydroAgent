@@ -51,7 +51,8 @@ HydroClaw 的工具会自动构建正确的 hydromodel 配置，你**不需要**
     "output_dir": "results/xaj_SCE_UA_01013500",
     "experiment_name": "",
     "random_seed": 1234,
-    "save_config": true
+    "save_config": true,
+    "param_range_file": null
   }
 }
 ```
@@ -62,9 +63,11 @@ HydroClaw 的工具会自动构建正确的 hydromodel 配置，你**不需要**
 - `algorithm_name`: 算法名称 "SCE_UA" / "GA" / "scipy"
 - `algorithm_params`: 算法参数（嵌套在 algorithm_params 内，不是顶层）
 - `loss_config.obj_func`: 目标函数 "RMSE"（默认）/ "spotpy_kge" / "spotpy_nashsutcliffe"
+- `param_range_file`: 自定义参数范围 YAML 文件路径（迭代优化时扩展边界用，默认 null）
 
 ## 注意事项
 
 - 如果用户指定了算法参数（如 rep=500），确保传递给 calibrate_model 的 algorithm_params
 - 如果流域验证失败，告知用户并建议有效的流域ID
 - 率定完成后务必评估，提供训练期和测试期的对比
+- 如果需要自定义参数范围（迭代优化场景），使用 `param_range_file` 参数指定 YAML 文件路径
