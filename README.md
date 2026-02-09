@@ -1,750 +1,346 @@
-# HydroAgent: 智能水文建模多智能体系统
+# HydroClaw: LLM 驱动的水文模型率定智能体
 
 <div align="center">
 
-![HydroAgent Logo](https://img.shields.io/badge/HydroAgent-v5.0-blue?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjMDA3OEQ0Ii8+Cjwvc3ZnPgo=)
-[![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python)](https://python.org)
 [![HydroModel](https://img.shields.io/badge/HydroModel-v0.3+-orange.svg?style=for-the-badge)](https://github.com/OuyangWenyu/hydromodel)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-**基于多智能体协作的智能水文建模解决方案**
+**让 LLM 做决策，代码只做执行**
 
-[🚀 快速开始](#-快速开始) • [🏗️ 系统架构](#️-系统架构) • [🧪 实验系统](#-实验系统) • [📖 开发文档](#-开发文档)
+[快速开始](#-快速开始) · [系统架构](#-系统架构) · [使用示例](#-使用示例) · [项目结构](#-项目结构)
 
 </div>
 
+---
 
+## 项目概览
+
+HydroClaw 是一个 LLM 驱动的水文模型率定智能体。与传统多 Agent 系统不同，HydroClaw 采用**单一 Agentic Loop** 架构——LLM 自主决定调用哪个工具、何时结束，代码只负责执行。
+
+由前身 HydroAgent（27,000 行、5 个硬编码 Agent、15 状态状态机）重构而来，HydroClaw 用 **~2,400 行 Python + ~200 行 Markdown** 实现了同等甚至更强的功能，代码量减少 **91%**。
+
+### 核心理念
+
+| 传统 Multi-Agent 系统 | HydroClaw |
+|---|---|
+| 5 个 Agent + 状态机编排 | **1 个 Agentic Loop** |
+| if-else 路由决策 | **LLM 自主推理** |
+| 960 行 Python 做工具选择 | **30 行 Markdown Skill** 引导 |
+| 27,000 行代码 | **~2,600 行** |
+
+### 主要特性
+
+- **自然语言交互**：中英文对话式操作，无需手动编写配置
+- **双模式率定**：传统优化算法（SCE-UA/GA/scipy）+ LLM 智能率定（Zhu et al. 2026）
+- **自动工具发现**：函数签名自动生成 OpenAI Function Calling Schema
+- **Skill 系统**：Markdown 文件引导 LLM 工作流，无需硬编码逻辑
+- **双模式 LLM**：原生 Function Calling + Prompt 降级（兼容所有模型）
+- **会话记忆**：JSONL 会话记录 + MEMORY.md 跨会话知识积累
 
 ---
 
-## 🌟 项目概览
-
-HydroAgent 是一个基于多智能体协作的智能水文建模系统，通过自然语言理解、自动配置生成、模型执行和结果分析，实现从用户意图到水文模拟的端到端自动化。**v5.0 采用状态机编排架构**，集成 GoalTracker、FeedbackRouter 和 PromptPool (FAISS)，提供智能错误恢复、断点续传和语义检索功能。
-
-### 🎯 核心价值
-
-- **🎤 自然语言交互**: 支持中英文对话式任务描述，降低水文建模技术门槛
-- **🧠 智能决策**: 状态机编排 + 智能路由，18 状态自动流转，错误自动恢复
-- **🔄 端到端自动化**: 从意图识别到结果分析全流程自动化，无需手动编写配置
-- **🔧 自适应优化**: 参数边界检测与范围动态调整，NSE 收敛追踪，提高率定成功率
-- **💻 代码生成**: 超出 hydromodel 原生功能时自动生成 Python 脚本（双 LLM 架构）
-- **🔌 多后端支持**: 灵活切换 API 后端和本地模型，兼顾性能与成本
-- **💾 断点续传**: 支持任务中断和恢复，长时间任务无忧
-
-### 📊 技术指标
-
-| 指标 | 规格 | 说明 |
-|------|------|------|
-| **架构版本** | v5.0 状态机 | 18 状态智能编排，自动错误恢复 |
-| **支持模型** | 6+ 水文模型 | GR1Y, GR2M, GR4J, GR5J, GR6J, XAJ |
-| **支持算法** | 3+ 优化算法 | SCE-UA, scipy, GA |
-| **智能体数量** | 5 个专用智能体 | Intent, TaskPlanner, Interpreter, Runner, Developer |
-| **中文理解** | 95%+ 准确率 | 支持"迭代500轮"等自然表达 |
-| **配置生成** | 100% 自动化 | 无需手动编写 hydromodel 配置 |
-| **代码生成** | 双 LLM 架构 | 通用模型分析 + 代码专用模型生成 |
-| **错误恢复率** | 85% (v5.0) | GoalTracker + FeedbackRouter 智能路由 |
-| **历史案例** | 50 条自动记忆 | FAISS 语义检索，动态提示优化 |
-| **断点续传** | ✅ 支持 | Ctrl+C 优雅中断，自动保存进度 |
-
----
-
-## 🚀 快速开始
+## 快速开始
 
 ### 环境要求
 
-```bash
-# 系统要求
-Python >= 3.11
-内存 >= 8GB (推荐 16GB+)
-存储 >= 10GB (CAMELS 数据集)
-```
+- Python >= 3.11
+- [hydromodel](https://github.com/OuyangWenyu/hydromodel) 已安装
+- CAMELS-US 数据集（通过 hydrodataset 自动管理）
 
-### 一键安装
+### 安装
 
-#### 使用 uv（推荐）
 ```bash
-# 克隆仓库
 git clone https://github.com/your-org/HydroAgent.git
 cd HydroAgent
 
-# 安装 uv 包管理器
 pip install uv
-
-# 同步依赖
 uv sync
 
 # 激活虚拟环境
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/macOS
+.venv\Scripts\activate     # Windows
+source .venv/bin/activate   # Linux/macOS
 ```
 
-#### 验证安装
-```bash
-python -c "import hydromodel; print('✅ hydromodel 安装成功!')"
-python -c "from hydroagent.agents.intent_agent import IntentAgent; print('✅ HydroAgent 安装成功!')"
-```
+### 配置
 
-### ⚙️ 配置说明
+复制模板并填入你的 API Key 和路径：
 
-#### 📄 API 后端配置（推荐）
-
-1. 复制配置模板：
 ```bash
 cp configs/example_definitions_private.py configs/definitions_private.py
 ```
 
-2. 编辑 `configs/definitions_private.py`：
-```python
-# API 配置（通义千问）
-OPENAI_API_KEY = "sk-your-qwen-api-key"
-OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+编辑 `configs/definitions_private.py`：
 
-# 本地路径
+```python
 PROJECT_DIR = r"D:\your\path\to\HydroAgent"
 DATASET_DIR = r"D:\your\path\to\camels_data"
 RESULT_DIR = r"D:\your\path\to\results"
+
+OPENAI_API_KEY = "sk-your-api-key"
+OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 ```
 
-**获取 API Key**:
-- 阿里云通义千问: https://dashscope.aliyuncs.com/
-- 支持模型: `qwen-turbo`, `qwen-plus`, `qwen-coder-turbo`（代码生成）
-
-#### 🐋 Ollama 本地模型配置
+### 运行
 
 ```bash
-# 安装 Ollama
-# Windows: https://ollama.ai/download
-# Linux: curl -fsSL https://ollama.ai/install.sh | sh
+# 交互模式
+python -m hydroclaw
 
-# 拉取模型
-ollama pull qwen3:8b              # 通用分析模型
-ollama pull deepseek-coder:6.7b   # 代码生成专用模型
-```
+# 单次查询
+python -m hydroclaw "率定GR4J模型，流域01013500，SCE-UA算法，500轮迭代"
 
-配置 `definitions_private.py`:
-```python
-OLLAMA_BASE_URL = "http://localhost:11434"
-```
+# 详细日志
+python -m hydroclaw -v
 
-### 30秒体验
-
-```bash
-# 方式1: 交互模式（推荐）
-python run.py --backend api
-
-# 方式2: 单次查询模式
-python run.py "率定GR4J模型，流域01013500，使用SCE-UA算法，迭代500轮"
-
-# 方式3: 使用 Ollama 本地模型
-python run.py --backend ollama "率定GR4J模型，流域01013500"
-
-# 方式4: 恢复中断的会话
-python run.py --resume
-
-# 查看版本和帮助
-python run.py --version
-python run.py --help
-```
-
-**交互模式示例**:
-```
-🌊 HydroAgent v5.0 - 智能水文模型助手
-   基于状态机的多智能体编排系统
-======================================================================
-
-💬 HydroAgent> 率定GR4J模型，流域01013500，使用SCE-UA算法，迭代500轮
-
-⏳ 正在处理您的请求...
-
-🎯 Orchestrator [RECOGNIZING_INTENT]
-   ✅ 任务类型: CALIBRATION
-   ✅ 模型: gr4j, 流域: 01013500, 算法: SCE_UA (rep=500)
-
-🎯 Orchestrator [PLANNING_TASKS]
-   ✅ 拆解为 1 个子任务
-   ✅ PromptPool 检索到 3 条相关历史案例
-
-🎯 Orchestrator [GENERATING_CONFIG]
-   ✅ 生成 hydromodel 配置字典
-   ✅ 训练期: 1985-10-01 ~ 1995-09-30
-
-🎯 Orchestrator [EXECUTING_CALIBRATION]
-   SCE-UA Progress: 100%|███████████| 500/500 [02:15<00:00]
-   ✅ NSE_train = 0.72 (GoalTracker: goal_achieved)
-
-🎯 Orchestrator [ANALYZING_RESULTS]
-   质量评估: 良好 (Good)
-   最优参数: x1=0.77, x2=0.0002, x3=0.30, x4=0.70
-
-✅ 任务完成！ 📁 结果目录: experiment_results/session_xxx
-
-💬 HydroAgent> status         # 查看系统状态（v5.0 新增）
-💬 HydroAgent> history        # 查看历史会话
-💬 HydroAgent> examples       # 查看更多示例
-💬 HydroAgent> help           # 详细帮助
-💬 HydroAgent> exit           # 退出
-```
-
-**输出文件** (位于 `results/session_xxx/`):
-```
-📄 calibration_results.json       # 率定结果和最优参数
-📄 basins_metrics.csv              # 性能指标 (NSE, RMSE, etc.)
-📄 01013500_GR4J_simulated.nc      # NetCDF 格式模拟结果
-📊 analysis_report.txt             # 专家分析报告
+# 指定工作目录
+python -m hydroclaw -w results/my_experiment
 ```
 
 ---
 
-## 🏗️ 系统架构
+## 系统架构
 
-### 🔄 v5.0 状态机架构
+### Agentic Loop
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                  Orchestrator (状态机编排器)                    │
-│   ┌──────────────────────────────────────────────────────┐    │
-│   │  StateMachine (18 状态智能流转)                       │    │
-│   │  ├─ IDLE → RECOGNIZING_INTENT → PLANNING_TASKS      │    │
-│   │  ├─ → GENERATING_CONFIG → EXECUTING_CALIBRATION     │    │
-│   │  └─ → ANALYZING_RESULTS → COMPLETED                 │    │
-│   └──────────────────────────────────────────────────────┘    │
-│                                                                │
-│   核心组件:                                                    │
-│   • GoalTracker - NSE 收敛追踪，4 种终止条件                   │
-│   • FeedbackRouter - 智能错误路由，6 种错误类型处理             │
-│   • PromptPool (FAISS) - 语义检索历史案例                      │
-│   • CheckpointManager - 断点续传支持                          │
-└────────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-    ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-    │ 战略决策层   │  │ 战术规划层   │  │ 配置生成层   │
-    └─────────────┘  └─────────────┘  └─────────────┘
-         │                  │                  │
-         ▼                  ▼                  ▼
-  IntentAgent      TaskPlanner      InterpreterAgent
-  意图识别         任务拆解           配置生成
-  (LLM)           (LLM + Pool)        (LLM)
-    "做什么"         "怎么做"          "具体参数"
-         │                  │                  │
-         └──────────────────┼──────────────────┘
-                            ▼
-              ┌─────────────────────────┐
-              │      执行与分析层         │
-              └─────────────────────────┘
-                     │            │
-                     ▼            ▼
-              RunnerAgent   DeveloperAgent
-              模型执行       结果分析+代码生成
-              (Deterministic) (Dual-LLM)
-                     │            │
-                     └──────┬─────┘
-                            ▼
-                  📊 分析报告 + 结果文件
+User Query
+    │
+    ▼
+┌──────────────────────────────────────────────┐
+│              Agentic Loop (核心)              │
+│                                              │
+│   [System Prompt + Skill + Memory + Tools]   │
+│       ↓                                      │
+│   LLM 推理 → 决定调用哪个 Tool               │
+│       ↓                                      │
+│   执行 Tool → 结果返回 LLM                   │
+│       ↓                                      │
+│   LLM 继续推理 → 再调用 or 生成最终回答       │
+│       ↓                                      │
+│   循环直到 LLM 输出纯文本（完成）             │
+└──────────────────────────────────────────────┘
+    │
+    ├── validate_basin     流域数据验证
+    ├── calibrate_model    传统算法率定
+    ├── evaluate_model     模型评估
+    ├── simulate           模型模拟
+    ├── visualize          可视化
+    ├── llm_calibrate      LLM 智能率定 ★
+    ├── generate_code      代码生成
+    └── run_code           代码执行
+         │
+    ┌────▼────┐
+    │hydromodel│  (执行后端)
+    └─────────┘
 ```
 
-**v5.0 核心改进**:
-- 🔄 状态机编排替代线性流程，18 个精细状态
-- 🎯 GoalTracker 自动判断任务终止（NSE 达标、无改善、性能下降）
-- 🔀 FeedbackRouter 智能路由错误恢复策略（6 种错误类型）
-- 🔍 FAISS 语义检索历史成功案例，动态优化提示
-- 💾 Checkpoint 支持优雅中断和断点续传
+**没有状态机、没有 if-else 路由、没有 Agent 间传递。** LLM 看到工具描述和 Skill 指引后，自然地走完整个流程。
 
-### 🧠 智能体职责分工
+### 双模式率定
 
-<table>
-<tr>
-<td width="50%">
+**模式 1：传统算法率定**
 
-#### 1️⃣ IntentAgent (意图智能体)
-**角色**: 战略决策者
+LLM 调用 `calibrate_model` → hydromodel 执行 SCE-UA/GA/scipy → 返回最优参数和指标
 
-**输入**:
+**模式 2：LLM 智能率定**（参考 Zhu et al. 2026, GRL）
+
+LLM 作为"虚拟水文学家"，理解参数物理意义，闭环迭代建议参数：
+
 ```
-"率定GR4J模型，流域01013500，迭代500轮"
+┌→ LLM 推荐参数 → run_simulation → 计算 NSE/RMSE ─┐
+└────────── 反馈指标给 LLM，继续调整 ←─────────────┘
+               重复直到收敛
 ```
 
-**输出**:
-```json
-{
-  "task_type": "standard_calibration",
-  "model_name": "gr4j",
-  "basin_id": "01013500",
-  "algorithm": "SCE_UA",
-  "extra_params": {"rep": 500},
-  "confidence": 0.95
-}
+优势：收敛更快（~200 次 vs SCE-UA ~1200 次），参数更具物理可解释性。
+
+### Skill 系统
+
+Skill 是给 LLM 看的自然语言工作流指引，替代传统的 if-else 编排代码：
+
+| Skill 文件 | 触发关键词 | 用途 |
+|---|---|---|
+| `calibration.md` | 率定、calibrate | 标准率定流程 |
+| `llm_calibration.md` | AI率定、智能率定 | LLM 闭环率定 |
+| `iterative.md` | 迭代、边界 | 迭代优化 + 边界检测 |
+| `comparison.md` | 对比、比较 | 多模型/多算法对比 |
+| `batch.md` | 批量、多流域 | 批量处理 + 稳定性分析 |
+| `analysis.md` | 分析、FDC、代码 | 自定义分析 + 代码生成 |
+
+### 双模式 LLM 客户端
+
+```
+支持 Function Calling 的模型 (Qwen/GPT/DeepSeek)
+  → 原生 Function Calling：结构化工具调用
+
+不支持的模型 (Ollama 等)
+  → Prompt 降级：工具描述注入 System Prompt，LLM 输出 JSON
 ```
 
-**特点**:
-- ✅ 中文关键词识别 ("迭代500轮" → `rep=500`)
-- ✅ 算法参数 Schema 注入
-- ✅ 支持模糊查询补全
+自动检测模型能力，无需手动配置。
 
 ---
 
-#### 2️⃣ TaskPlanner (任务规划智能体)
-**角色**: 战术规划者
+## 使用示例
 
-**功能**:
-- ✅ 多任务拆解（如：率定 → 边界检查 → 重新率定）
-- ✅ 依赖关系管理
-- ✅ Prompt Pool 历史案例检索
+### 标准率定
 
-**示例**:
 ```
-实验3: "如果参数收敛到边界，调整范围重新率定"
-  ↓
-Task 1: Phase1 率定
-Task 2: 边界检查（依赖 Task 1）
-Task 3: Phase2 重新率定（依赖 Task 2, 条件执行）
-```
+You> 率定GR4J模型，流域12025000，SCE-UA算法，500轮迭代
 
-**Prompt Pool 工作机制**:
-```python
-# 1. 检索相似案例
-similar_cases = prompt_pool.get_similar_cases(
-    intent={"model": "gr4j", "algorithm": "SCE_UA"},
-    limit=2
-)
+  >> Calling: validate_basin({"basin_ids": ["12025000"]})
+  << validate_basin: valid=["12025000"]
+  >> Calling: calibrate_model({"basin_ids": ["12025000"], "model_name": "gr4j", ...})
+  << calibrate_model: {"NSE": 0.748, "RMSE": 1.23, ...}
+  >> Calling: evaluate_model({"calibration_dir": "results/gr4j_SCE_UA_12025000"})
+  << evaluate_model: {"NSE": 0.712, ...}
+  >> Calling: visualize({"calibration_dir": "results/gr4j_SCE_UA_12025000"})
+  << visualize: 2 plots generated
 
-# 2. 增强提示词
-enhanced_prompt = base_prompt + """
-### 📚 历史成功案例
-案例1: gr4j + SCE_UA (rep=500) → NSE=0.75
-案例2: gr4j + DE (max_gen=100) → NSE=0.68
-"""
+  ── 最终报告 ──
+  流域 12025000 的 GR4J 模型率定结果：
+  - 训练期 NSE = 0.748（良好）
+  - 测试期 NSE = 0.712（良好）
+  - 最优参数：x1=350.2, x2=0.23, x3=90.5, x4=1.7
+  ...
 ```
 
-</td>
-<td width="50%">
+### 多模型对比
 
-#### 3️⃣ InterpreterAgent (配置智能体)
-**角色**: 配置生成专家
-
-**输入**: TaskPlanner 的子任务 + 提示词
-
-**输出**: 完整的 hydromodel 配置字典
-```python
-{
-  "data_cfgs": {
-    "basin_ids": ["01013500"],
-    "train_period": ["1985-10-01", "1995-09-30"],
-    "test_period": ["2005-10-01", "2014-09-30"]
-  },
-  "model_cfgs": {"model_name": "gr4j"},
-  "training_cfgs": {
-    "algorithm": "SCE_UA",
-    "algorithm_params": {"rep": 500, "ngs": 200}
-  }
-}
+```
+You> 用GR4J和XAJ分别率定流域01013500，对比性能
 ```
 
-**特点**:
-- ✅ 使用 `configs/config.py` 默认值
-- ✅ 算法复杂度自适应（模型参数数量）
-- ✅ 支持自定义数据路径
+LLM 读取 `comparison.md` Skill 后自动执行：验证 → GR4J 率定 → GR4J 评估 → XAJ 率定 → XAJ 评估 → 可视化 → 生成对比报告。
+
+### LLM 智能率定
+
+```
+You> 用AI智能率定GR4J模型，流域01013500
+```
+
+LLM 作为虚拟水文专家，每轮分析 NSE/RMSE，智能调整参数直到收敛。
+
+### 自定义分析
+
+```
+You> 率定完成后，帮我计算流域的径流系数，并画FDC曲线
+```
+
+LLM 调用 `generate_code` 生成 Python 分析脚本，再用 `run_code` 执行。
 
 ---
 
-#### 4️⃣ RunnerAgent (执行智能体)
-**角色**: 模型执行器
-
-**模式**:
-1. **Calibrate**: 参数率定
-2. **Evaluate**: 性能评估
-3. **Simulate**: 模拟预测
-4. **Code Generation**: 代码生成（v4.0 新增）
-
-**执行流程**:
-```python
-# 1. 率定
-runner.calibrate(config) → best_params
-
-# 2. 自动评估
-runner.evaluate(config, best_params) → metrics
-
-# 3. 结构化结果
-{
-  "best_params": {...},
-  "metrics": {"NSE": 0.65, "RMSE": 1.45},
-  "output_files": ["*.nc", "*.csv", "*.json"]
-}
-```
-
-**输出过滤**:
-- 终端只显示进度条
-- 完整日志保存到 `logs/`
-
----
-
-#### 5️⃣ DeveloperAgent (分析智能体)
-**角色**: 结果分析专家 + 代码生成器
-
-**双 LLM 架构**（v4.0）:
-```
-通用 LLM (qwen-turbo / qwen3:8b)
-  → 结果分析、质量评估、建议生成
-
-代码专用 LLM (qwen-coder-turbo / deepseek-coder:6.7b)
-  → Python 脚本生成（FDC、径流系数等）
-```
-
-**分析报告示例**:
-```
-📊 质量评估: 良好 (Good)
-   NSE=0.68 (阈值: 0.65)
-   RMSE=1.45
-
-🔧 最优参数: 4 个
-   x1=0.77, x2=0.0002, x3=0.30, x4=0.70
-
-💡 改进建议:
-  1. 模型性能合理，接近良好水平
-  2. 可考虑延长训练期或增加迭代轮数
-  3. 建议在更多流域验证参数迁移性
-```
-
-**代码生成能力**:
-- 径流系数计算
-- 流量历时曲线 (FDC)
-- 水量平衡分析
-- 季节性分析
-
-</td>
-</tr>
-</table>
-
-### 🛠️ 核心技术栈
-
-<table>
-<tr>
-<td width="33%">
-
-**🧠 AI 框架**
-- Claude 3.5 Sonnet (API)
-- Qwen-Turbo / Qwen-Plus
-- Qwen-Coder-Turbo (代码生成)
-- Ollama (本地部署)
-
-</td>
-<td width="33%">
-
-**💧 水文建模**
-- hydromodel (核心模型库)
-- hydrodataset (CAMELS 数据)
-- hydroutils (工具函数)
-- spotpy (优化算法)
-
-</td>
-<td width="33%">
-
-**🗄️ 数据与存储**
-- NetCDF4 / xarray
-- GeoPandas / Shapely
-- JSON / YAML
-- Checkpoint Manager
-
-</td>
-</tr>
-</table>
-
-### ⚡ 核心特性
-
-#### 1. Prompt Pool (提示词池)
-
-**位置**: `hydroagent/core/prompt_pool.py`
-**使用者**: TaskPlanner
-
-**功能**:
-```python
-# 自动记忆成功案例
-prompt_pool.add_history(
-    task_type="calibration",
-    intent={"model": "gr4j", "algorithm": "SCE_UA"},
-    config={...},
-    result={"NSE": 0.75},
-    success=True
-)
-
-# 检索相似案例（简单规则匹配）
-similar = prompt_pool.get_similar_cases(
-    intent={"model": "gr4j", "algorithm": "SCE_UA"},
-    limit=3
-)
-# 匹配规则: 模型名(+1.0) + 算法(+0.8) + 任务类型(+0.7) + 流域(+0.5)
-
-# 生成增强提示词
-enhanced = prompt_pool.generate_context_prompt(
-    base_prompt="请生成配置...",
-    intent=current_intent,
-    error_log=previous_error  # 避免重复错误
-)
-```
-
-**优势**:
-- ✅ 零向量计算，无需嵌入模型
-- ✅ 自动保存最近 50 条案例
-- ✅ 失败案例也记录，用于错误避免
-
----
-
-#### 2. Checkpoint/Resume (中断恢复)
-
-**位置**: `hydroagent/core/checkpoint_manager.py`
-**集成**: Orchestrator
-
-**使用场景**:
-```bash
-# 启动长任务
-python scripts/run_with_checkpoint.py \
-  --query "批量率定20个流域" --backend api
-
-# 中断 (Ctrl+C)
-^C 检测到中断，保存 checkpoint...
-
-# 恢复
-python scripts/run_with_checkpoint.py \
-  --resume results/session_xxx --backend api
-
-# 输出
-✅ 跳过已完成任务: task_1, task_2
-🚀 从 task_3 继续执行...
-```
-
-**Checkpoint 内容**:
-```json
-{
-  "intent": {...},
-  "task_plan": {
-    "subtasks": [
-      {"task_id": "task_1", "status": "completed"},
-      {"task_id": "task_2", "status": "completed"},
-      {"task_id": "task_3", "status": "pending"}
-    ]
-  },
-  "results": {...}
-}
-```
-
----
-
-#### 3. 参数范围动态调整 (实验3)
-
-**位置**: `hydroagent/utils/param_range_adjuster.py`
-
-**算法**:
-```python
-# 1. 检测边界参数
-boundary_params = check_boundary_convergence(
-    best_params={"x1": 0.99, "x2": 0.002},
-    param_ranges={"x1": [0.0, 1.0], "x2": [0.0, 0.01]},
-    threshold=0.1  # 距离边界 < 10%
-)
-# → x1 收敛到上界 (0.99 vs 1.0)
-
-# 2. 扩展范围
-new_ranges = adjust_ranges(
-    old_ranges={"x1": [0.0, 1.0]},
-    best_params={"x1": 0.99},
-    strategy="extend"  # 扩展 60%
-)
-# → x1: [0.0, 1.6]
-
-# 3. 或缩小范围（围绕最优值）
-new_ranges = adjust_ranges(
-    old_ranges={"x1": [0.0, 1.6]},
-    best_params={"x1": 0.95},
-    strategy="shrink",
-    scale=0.15  # 缩小到 15%
-)
-# → x1: [0.807, 1.093]
-```
-
----
-
-#### 4. 双 LLM 代码生成 (实验4)
-
-**架构**:
-```
-用户查询: "率定完成后，计算径流系数并画FDC曲线"
-    ↓
-IntentAgent 识别: task_type = "extended_analysis"
-    ↓
-DeveloperAgent:
-  - 分析任务: 通用 LLM (qwen-turbo)
-  - 生成代码: 代码专用 LLM (qwen-coder-turbo)
-    ↓
-生成 2 个 Python 脚本:
-  - generated_code/runoff_coefficient_analysis.py
-  - generated_code/plot_fdc.py
-```
-
-**代码质量**:
-- ✅ Type hints
-- ✅ 详细注释
-- ✅ 错误处理
-- ✅ 中文字体配置（matplotlib）
-
----
-
-## 🧪 实验系统
-
-HydroAgent 提供了 8 个核心实验，验证系统各项功能：
-
-### 实验1：基础功能验证
-
-| 实验ID | 脚本文件 | 查询示例 | 验证目标 |
-|-------|---------|---------|---------|
-| **1A** | `exp_1a_standard.py` | "率定流域 01013500，使用 GR4J 模型..." | 标准流程，完整信息 |
-| **1B** | `exp_1b_info_completion.py` | "帮我率定流域 01013500" | 缺省信息智能补全 |
-| **1C** | `exp_1c_error_handling.py` | "率定流域 99999999" (错误ID) | 错误处理鲁棒性 |
-
-### 实验2：稳定性与批量处理
-
-| 实验ID | 脚本文件 | 查询示例 | 验证目标 |
-|-------|---------|---------|---------|
-| **2A** | `exp_2a_repeated_calibration.py` | "重复执行20次率定..." | 单流域稳定性（20次） |
-| **2B** | `exp_2b_multi_basin.py` | "批量率定10个流域..." | 多流域性能对比 |
-| **2C** | `exp_2c_multi_algorithm.py` | "分别使用 SCE-UA、PSO、GA..." | 多算法对比 |
-
-### 实验3-4：高级功能
-
-| 实验ID | 脚本文件 | 验证目标 |
-|-------|---------|---------|
-| **3** | `exp_3_iterative_optimization.py` | 参数自适应优化 |
-| **4** | `exp_4_extended_analysis.py` | 代码生成与扩展分析 |
-
-
----
-
-## 📖 开发文档
-
-### 📂 项目结构
+## 项目结构
 
 ```
 HydroAgent/
-├── hydroagent/                 # 核心包
-│   ├── core/                  # 基础设施
-│   │   ├── base_agent.py      # BaseAgent 抽象类
-│   │   ├── llm_interface.py   # LLM API 封装
-│   │   ├── prompt_pool.py     # 提示词池
-│   │   └── checkpoint_manager.py  # Checkpoint 系统
-│   ├── agents/                # 5 个智能体
-│   │   ├── intent_agent.py
-│   │   ├── task_planner.py
-│   │   ├── interpreter_agent.py
-│   │   ├── runner_agent.py
-│   │   ├── developer_agent.py
-│   │   └── orchestrator.py    # 编排器
-│   ├── utils/                 # 工具模块
-│   │   ├── prompt_manager.py  # 动态提示词管理
-│   │   ├── code_generator.py  # 代码生成工具
-│   │   ├── param_range_adjuster.py  # 参数范围调整
-│   │   └── ...
-│   └── resources/             # 静态资源
-│       ├── algorithm_params_schema.txt
-│       ├── config_agent_prompt.txt
-│       └── ...
-├── configs/                   # 配置文件
-│   ├── definitions.py         # 公共配置
-│   ├── definitions_private.py # 私有配置（不入库）
+├── hydroclaw/                    # 核心包 (~2,400 行)
+│   ├── __init__.py               # 包入口
+│   ├── agent.py                  # Agentic Loop 核心
+│   ├── llm.py                    # LLM 客户端 (Function Calling + Prompt 降级)
+│   ├── config.py                 # 配置加载 + hydromodel 配置构建
+│   ├── memory.py                 # 会话记忆 (JSONL + MEMORY.md)
+│   ├── cli.py                    # CLI 入口
+│   ├── __main__.py               # python -m hydroclaw
+│   ├── tools/                    # 8 个工具函数
+│   │   ├── __init__.py           # 自动发现 + Schema 生成
+│   │   ├── validate.py           # 流域数据验证
+│   │   ├── calibrate.py          # 传统算法率定
+│   │   ├── evaluate.py           # 模型评估
+│   │   ├── simulate.py           # 模型模拟
+│   │   ├── visualize.py          # 可视化
+│   │   ├── llm_calibrate.py      # LLM 闭环率定 ★
+│   │   ├── generate_code.py      # 代码生成
+│   │   └── run_code.py           # 代码执行
+│   ├── skills/                   # Markdown 工作流指引 (~200 行)
+│   │   ├── system.md             # 系统人设
+│   │   ├── calibration.md        # 标准率定
+│   │   ├── llm_calibration.md    # LLM 智能率定
+│   │   ├── iterative.md          # 迭代优化
+│   │   ├── comparison.md         # 多模型对比
+│   │   ├── batch.md              # 批量处理
+│   │   └── analysis.md           # 自定义分析
+│   └── utils/                    # 工具函数
+│       ├── basin_validator.py    # 流域 ID 验证
+│       └── result_parser.py      # 结果解析
+├── configs/                      # 配置文件
+│   ├── definitions_private.py    # 私有配置 (API Key、路径)
+│   ├── definitions.py            # 默认配置
 │   ├── example_definitions_private.py  # 配置模板
-│   └── config.py              # 全局参数
-├── scripts/                   # 入口脚本
-│   ├── run_developer_agent_pipeline.py  # 主入口
-│   └── run_with_checkpoint.py  # Checkpoint 模式
-├── experiment/                # 实验脚本
-│   ├── base_experiment.py     # 实验基类
-│   ├── exp_1_standard_calibration.py
-│   ├── exp_3_iterative_optimization.py
-│   └── ...
-├── test/                      # 测试
-└── docs/                      # 文档
-    ├── ARCHITECTURE_FINAL.md  # 最终架构设计
-    ├── CHECKPOINT_SYSTEM.md   # Checkpoint 文档
-    └── v4.0_improvements_summary.md
-```
-
-### 🔧 开发规范
-
-#### 文件头标准（必需）
-```python
-"""
-Author: [Your Name]
-Date: [Creation Date YYYY-MM-DD HH:MM:SS]
-LastEditTime: [Last Edit YYYY-MM-DD HH:MM:SS]
-LastEditors: [Editor Name]
-Description: [Brief description of file purpose]
-FilePath: /HydroAgent/path/to/file.py
-Copyright (c) 2023-2025 HydroAgent. All rights reserved.
-"""
-```
-
-#### 日志标准
-```python
-import logging
-from pathlib import Path
-from datetime import datetime
-
-logs_dir = Path(__file__).parent.parent / "logs"
-logs_dir.mkdir(exist_ok=True)
-
-log_file = logs_dir / f"test_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(log_file, encoding='utf-8')
-    ]
-)
-```
-
-### 🎓 核心概念
-
-#### 配置加载优先级
-```
-1. configs/definitions_private.py  (用户私有配置)
-2. configs/definitions.py          (项目默认配置)
-3. configs/config.py               (全局参数)
-4. 环境变量
-5. 硬编码默认值
-```
-
-#### 动态提示词公式
-```
-Final Prompt = Static Template
-             + Schema Constraints
-             + Dynamic Context
-             + Iterative Feedback
-             + Historical Cases (Prompt Pool)
+│   └── config.py                 # 全局参数参考
+├── sessions/                     # 会话记录 (JSONL)
+├── logs/                         # 运行日志
+├── results/                      # 率定结果
+├── MEMORY.md                     # Agent 跨会话知识 (自动维护)
+└── README.md
 ```
 
 ---
 
-## 📚 参考资源
+## 支持范围
 
-### 🌐 相关项目
-- **[hydromodel](https://github.com/OuyangWenyu/hydromodel)** - 核心水文模型库
-- **[hydrodataset](https://github.com/OuyangWenyu/hydrodataset)** - CAMELS 数据管理
+### 水文模型
 
-### 📖 技术文档
-- **CLAUDE.md** - Claude Code 使用指南（项目级提示词）
-- **docs/ARCHITECTURE_FINAL.md** - 完整系统架构设计
-- **experiment/README.md** - 实验系统详细说明
+GR4J · GR5J · GR6J · XAJ（通过 hydromodel 扩展更多）
 
-### 🔗 在线资源
-- **通义千问 API**: https://dashscope.aliyuncs.com/
-- **Ollama 官网**: https://ollama.ai/
-- **CAMELS 数据集**: https://ral.ucar.edu/solutions/products/camels
+### 率定算法
+
+| 算法 | 类型 | 关键参数 |
+|---|---|---|
+| SCE-UA | 全局优化 | rep（迭代数）, ngs（复合体数） |
+| GA | 遗传算法 | pop_size, n_generations |
+| scipy | 梯度优化 | method (SLSQP, L-BFGS-B) |
+| LLM-as-Calibrator | AI 率定 | max_iterations, nse_target |
+
+### 性能指标
+
+NSE · RMSE · KGE · PBIAS · R²
+
+### 评估标准
+
+| NSE 范围 | 评级 |
+|---|---|
+| >= 0.75 | 优秀 (Excellent) |
+| >= 0.65 | 良好 (Good) |
+| >= 0.50 | 一般 (Fair) |
+| < 0.50 | 较差 (Poor) |
+
+---
+
+## 技术栈
+
+| 类别 | 组件 |
+|---|---|
+| **LLM** | DeepSeek / Qwen / GPT（OpenAI 兼容接口） |
+| **水文建模** | hydromodel, hydrodataset, spotpy |
+| **数据处理** | xarray, NetCDF4, pandas |
+| **可视化** | matplotlib |
+| **数据集** | CAMELS-US（671 个流域，35+ 数据集支持） |
+
+---
+
+## 学术参考
+
+HydroClaw 的 LLM 智能率定模式基于以下研究：
+
+> Zhu, S. et al. (2026). Large Language Models as Virtual Hydrologists: Closed-Loop Parameter Calibration. *Geophysical Research Letters*. DOI: 10.1029/2025GL120043
+
+该研究证明 LLM（DeepSeek-R1）作为"虚拟水文学家"可在 200 次迭代内达到近最优收敛，优于 SCE-UA（>1200 次），且参数更具物理可解释性。
+
+---
+
+## 相关项目
+
+- [hydromodel](https://github.com/OuyangWenyu/hydromodel) — 核心水文模型库
+- [hydrodataset](https://github.com/OuyangWenyu/hydrodataset) — CAMELS 数据管理
+- [CAMELS](https://ral.ucar.edu/solutions/products/camels) — 流域数据集
 
 ---
 
 <div align="center">
 
-**🌊 HydroAgent - 让水文建模更智能、更自动、更高效 🌊**
-
+**HydroClaw — 用最少的代码，释放 LLM 在水文建模中的全部潜力**
 
 </div>
