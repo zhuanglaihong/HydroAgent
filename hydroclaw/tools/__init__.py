@@ -2,6 +2,7 @@
 Author: HydroClaw Team
 Date: 2026-02-08
 Description: Auto-discovery of tool functions and schema generation.
+             Scans both tools/*.py (core tools) and skills/*/*.py (skill tools).
 """
 
 import importlib
@@ -18,41 +19,61 @@ _TOOLS: dict[str, Callable] = {}
 
 
 def discover_tools() -> dict[str, Callable]:
-    """Scan all modules in tools/ and register public functions as tools.
+    """Scan tool modules in tools/ and skills/*/ and register public functions.
 
     Functions with names starting with '_' are skipped.
-    Each public function becomes a tool with its function name.
+    Scans two locations:
+      1. tools/*.py  — core shared tools (validate, simulate, create_skill, etc.)
+      2. skills/*/*.py — skill-specific tools (calibrate_model, evaluate_model, etc.)
     """
     if _TOOLS:
         return _TOOLS
 
     package_dir = Path(__file__).parent
 
-    for module_info in pkgutil.iter_modules([str(package_dir)]):
-        if module_info.name.startswith("_"):
-            continue
-        try:
-            module = importlib.import_module(f"hydroclaw.tools.{module_info.name}")
-            for name, obj in inspect.getmembers(module, inspect.isfunction):
-                if name.startswith("_"):
-                    continue
-                # Only register functions defined in the module (not imports)
-                if obj.__module__ == module.__name__:
-                    _TOOLS[name] = obj
-                    logger.debug(f"Registered tool: {name}")
-        except Exception as e:
-            logger.warning(f"Failed to load tool module {module_info.name}: {e}")
+    # 1. Scan tools/*.py
+    _scan_dir(package_dir, "hydroclaw.tools")
+
+    # 2. Scan skills/*/*.py
+    skills_dir = package_dir.parent / "skills"
+    if skills_dir.exists():
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if skill_dir.is_dir() and not skill_dir.name.startswith("_"):
+                _scan_dir(skill_dir, f"hydroclaw.skills.{skill_dir.name}")
 
     logger.info(f"Discovered {len(_TOOLS)} tools: {list(_TOOLS.keys())}")
     return _TOOLS
 
 
+def _scan_dir(dir_path: Path, module_prefix: str):
+    """Scan a directory for tool modules and register their public functions."""
+    for module_info in pkgutil.iter_modules([str(dir_path)]):
+        if module_info.name.startswith("_"):
+            continue
+        module_name = f"{module_prefix}.{module_info.name}"
+        try:
+            module = importlib.import_module(module_name)
+            for name, obj in inspect.getmembers(module, inspect.isfunction):
+                if name.startswith("_"):
+                    continue
+                # Only register functions defined in this module (not imports)
+                if obj.__module__ == module.__name__:
+                    _TOOLS[name] = obj
+                    logger.debug(f"Registered tool: {name} (from {module_name})")
+        except Exception as e:
+            logger.warning(f"Failed to load tool module {module_name}: {e}")
+
+
 def reload_tools() -> dict[str, Callable]:
-    """Clear cache and re-discover all tools. Used after creating new tool files."""
+    """Clear cache and re-discover all tools. Used after creating new skill/tool files."""
     _TOOLS.clear()
-    # Also clear Python's module cache for tools we might have added
+    # Clear Python's module cache for tools and skills
     import sys
-    to_remove = [k for k in sys.modules if k.startswith("hydroclaw.tools.") and k != "hydroclaw.tools"]
+    to_remove = [
+        k for k in sys.modules
+        if k.startswith("hydroclaw.tools.") or k.startswith("hydroclaw.skills.")
+        if k not in ("hydroclaw.tools", "hydroclaw.skills")
+    ]
     for k in to_remove:
         del sys.modules[k]
     return discover_tools()
@@ -148,7 +169,6 @@ def _parse_docstring(doc: str) -> tuple[str, dict[str, str]]:
             in_args = False
             continue
         if in_args:
-            # Parse "param_name: description" or "param_name (type): description"
             import re
             match = re.match(r"(\w+)(?:\s*\([^)]*\))?\s*:\s*(.*)", stripped)
             if match:
@@ -171,7 +191,6 @@ def _python_type_to_json(python_type) -> str:
     if origin is dict or origin is typing.Dict:
         return "object"
     if origin is typing.Union:
-        # Handle Optional[X] = Union[X, None]
         args = python_type.__args__
         non_none = [a for a in args if a is not type(None)]
         if non_none:

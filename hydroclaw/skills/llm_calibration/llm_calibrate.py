@@ -19,16 +19,31 @@ logger = logging.getLogger(__name__)
 DEFAULT_PARAM_RANGES = {
     "gr4j": {
         "x1": [1.0, 2000.0],    # Production store capacity (mm)
-        "x2": [-10.0, 10.0],     # Groundwater exchange coefficient (mm/d)
-        "x3": [1.0, 500.0],      # Routing store capacity (mm)
-        "x4": [0.5, 10.0],       # Unit hydrograph time base (d)
+        "x2": [-10.0, 10.0],    # Groundwater exchange coefficient (mm/d)
+        "x3": [1.0, 500.0],     # Routing store capacity (mm)
+        "x4": [0.5, 10.0],      # Unit hydrograph time base (d)
+    },
+    "gr5j": {
+        "x1": [1.0, 2000.0],    # Production store capacity (mm)
+        "x2": [-10.0, 10.0],    # Groundwater exchange coefficient (mm/d)
+        "x3": [1.0, 500.0],     # Routing store capacity (mm)
+        "x4": [0.5, 10.0],      # Unit hydrograph time base (d)
+        "x5": [0.0, 1.0],       # Interception store capacity (mm)
+    },
+    "gr6j": {
+        "x1": [1.0, 2000.0],    # Production store capacity (mm)
+        "x2": [-10.0, 10.0],    # Groundwater exchange coefficient (mm/d)
+        "x3": [1.0, 500.0],     # Routing store capacity (mm)
+        "x4": [0.5, 10.0],      # Unit hydrograph time base (d)
+        "x5": [0.0, 1.0],       # Interception store capacity (mm)
+        "x6": [0.0, 20.0],      # Exponential store depletion coefficient
     },
     "xaj": {
-        "binfilt": [0.01, 0.99],  # B exponent
+        "binfilt": [0.01, 0.99],  # B exponent for spatial distribution of soil moisture
         "Dsmax": [0.1, 30.0],     # Maximum subsurface flow rate (mm/d)
-        "Ds": [0.001, 1.0],       # Fraction of Dsmax
-        "Ws": [0.1, 1.0],         # Fraction of maximum soil moisture
-        "soil_d2": [0.1, 3.0],    # Soil layer depth (m)
+        "Ds": [0.001, 1.0],       # Fraction of Dsmax for non-linear baseflow
+        "Ws": [0.1, 1.0],         # Fraction of maximum soil moisture for non-linear baseflow
+        "soil_d2": [0.1, 3.0],    # Lower zone soil layer depth (m)
     },
 }
 
@@ -84,12 +99,12 @@ def llm_calibrate(
 
     Args:
         basin_ids: CAMELS basin ID list
-        model_name: Hydrological model name ("gr4j", "xaj")
+        model_name: Hydrological model name ("gr4j", "xaj", "gr5j", "gr6j")
         max_rounds: Maximum number of LLM-guided rounds (each runs a full SCE-UA)
         nse_target: Target NSE value for early stopping
         param_ranges: Initial parameter ranges dict, uses defaults if not given
         algorithm: Calibration algorithm, default "SCE_UA"
-        algorithm_params: Algorithm parameter overrides, e.g. {"rep": 500}
+        algorithm_params: Algorithm parameter overrides as a dict, e.g. {"rep": 500, "ngs": 200}. Must be a dict, NOT a string.
         train_period: Training period ["YYYY-MM-DD", "YYYY-MM-DD"]
         test_period: Testing period ["YYYY-MM-DD", "YYYY-MM-DD"]
 
@@ -103,7 +118,7 @@ def llm_calibrate(
     if not current_ranges:
         return {"error": f"No default parameter ranges for model {model_name}", "success": False}
 
-    from hydroclaw.tools.calibrate import calibrate_model
+    from hydroclaw.skills.calibration.calibrate import calibrate_model
 
     history = []
     best_nse = -999.0

@@ -5,10 +5,8 @@ Description: Model calibration tool - calls hydromodel for parameter optimizatio
 """
 
 import logging
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from io import StringIO
 from pathlib import Path
 
 # Force non-GUI matplotlib backend
@@ -36,12 +34,12 @@ def calibrate_model(
     Results are saved to the output directory.
 
     Args:
-        basin_ids: CAMELS basin ID list, e.g. ["01013500"]
+        basin_ids: CAMELS basin ID list, e.g. ["12025000"]
         model_name: Model name ("gr4j", "xaj", "gr5j", "gr6j")
         algorithm: Optimization algorithm ("SCE_UA", "GA", "scipy")
         train_period: Training period ["YYYY-MM-DD", "YYYY-MM-DD"]
         test_period: Testing period ["YYYY-MM-DD", "YYYY-MM-DD"]
-        algorithm_params: Algorithm parameter overrides, e.g. {"rep": 500}
+        algorithm_params: Algorithm parameter overrides as a dict, e.g. {"rep": 500, "ngs": 200}. Must be a dict, NOT a string.
         param_range_file: Path to custom parameter range YAML file for boundary expansion
         output_dir: Output directory for results
 

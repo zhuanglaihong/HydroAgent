@@ -216,4 +216,6 @@ test_results/
 refactor_script.py
 split_agent.py
 REFACTOR_PROGRESS.md
-
+sessions/
+gr4j*/
+CLAUDE*

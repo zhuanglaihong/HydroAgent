@@ -1,3 +1,11 @@
+---
+name: Code Analysis
+description: 生成并执行自定义 Python 分析脚本（FDC、径流系数、季节分析等）
+keywords: [分析, analysis, fdc, 径流系数, runoff, 代码, code, 自定义, 脚本, script, 基流]
+tools: [generate_code, run_code]
+when_to_use: 需要自定义分析逻辑，超出标准工具能力范围时
+---
+
 ## 自定义分析工作流
 
 当用户要求进行自定义分析、计算特定指标、或生成分析代码时使用此工作流。

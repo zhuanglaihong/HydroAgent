@@ -21,7 +21,7 @@ def validate_basin(
     """Validate basin IDs and time ranges against the CAMELS dataset.
 
     Args:
-        basin_ids: CAMELS basin ID list, e.g. ["01013500"]
+        basin_ids: CAMELS basin ID list, e.g. ["12025000"]
         train_period: Training period ["YYYY-MM-DD", "YYYY-MM-DD"]
         test_period: Testing period ["YYYY-MM-DD", "YYYY-MM-DD"]
         data_source: Dataset name, default "camels_us"

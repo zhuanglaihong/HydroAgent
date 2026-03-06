@@ -67,7 +67,7 @@ DATASET_DIR = r"D:\your\path\to\camels_data"
 python -m hydroclaw
 
 # 单次查询
-python -m hydroclaw "率定GR4J模型，流域01013500"
+python -m hydroclaw "率定GR4J模型，流域12025000"
 
 # 指定工作目录 + 详细日志
 python -m hydroclaw -w results/exp1 -v
@@ -167,7 +167,7 @@ You> 率定GR4J模型，流域12025000，SCE-UA算法
 ### 迭代优化（LLM 智能率定）
 
 ```
-You> 智能率定GR4J模型，流域01013500，目标NSE 0.75
+You> 智能率定GR4J模型，流域12025000，目标NSE 0.75
 ```
 
 LLM 自动执行多轮 SCE-UA，每轮分析结果并调整参数范围，直到达标。
@@ -175,13 +175,13 @@ LLM 自动执行多轮 SCE-UA，每轮分析结果并调整参数范围，直到
 ### 多模型对比
 
 ```
-You> 用GR4J和XAJ分别率定流域01013500，对比性能
+You> 用GR4J和XAJ分别率定流域12025000，对比性能
 ```
 
 ### 自定义分析 + 工具创建
 
 ```
-You> 帮我做流域01013500的参数敏感性分析
+You> 帮我做流域12025000的参数敏感性分析
 ```
 
 如果没有现成工具，LLM 会自动创建并使用。

@@ -81,13 +81,13 @@ python -m hydroclaw
 HydroClaw - Hydrological Model Calibration Agent
 Type your query (Chinese or English). Type 'quit' to exit.
 
-You> 率定GR4J模型，流域01013500
+You> 率定GR4J模型，流域12025000
 ```
 
 ### 单次查询
 
 ```bash
-python -m hydroclaw "率定GR4J模型，流域01013500，SCE-UA算法"
+python -m hydroclaw "率定GR4J模型，流域12025000，SCE-UA算法"
 ```
 
 ### 命令行参数
@@ -105,7 +105,7 @@ python -m hydroclaw "率定GR4J模型，流域01013500，SCE-UA算法"
 运行一个简单的流域验证来确认一切正常：
 
 ```bash
-python -m hydroclaw "验证流域01013500是否存在"
+python -m hydroclaw "验证流域12025000是否存在"
 ```
 
 如果输出显示流域有效，说明数据集和 API 配置都正常。

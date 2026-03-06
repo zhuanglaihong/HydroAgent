@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 BASINS = [
     "06043500",  # Gallatin River, MT - mountainous, snowmelt-driven
     "08167500",  # Guadalupe River, TX - semi-arid, flashy
-    "01013500",  # Fish River, ME - baseline comparison
+    "12025000",  # Fish River, ME - baseline comparison
 ]
 
 MODEL = "gr4j"  # GR4J has interpretable boundary effects (4 params)

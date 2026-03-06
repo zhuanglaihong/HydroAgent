@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Representative CAMELS basins (different climate zones, areas)
 BASINS = [
-    "01013500",  # Fish River, ME (humid, cold, 1450 km²)
+    "12025000",  # Fish River, ME (humid, cold, 1450 km²)
     "03439000",  # French Broad River, NC (humid, warm, 2448 km²)
     "06043500",  # Gallatin River, MT (semi-arid, mountainous, 2168 km²)
     "08167500",  # Guadalupe River, TX (semi-arid, 3406 km²)

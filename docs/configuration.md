@@ -123,13 +123,13 @@ python -m hydroclaw
 
 ```python
 # HydroClaw 调用
-calibrate_model(basin_ids=["01013500"], model_name="gr4j", algorithm="SCE_UA")
+calibrate_model(basin_ids=["12025000"], model_name="gr4j", algorithm="SCE_UA")
 
 # 内部生成的 hydromodel 配置
 {
     "data_cfgs": {
         "data_source_type": "camels_us",
-        "basin_ids": ["01013500"],
+        "basin_ids": ["12025000"],
         "train_period": ["2000-01-01", "2009-12-31"],
         "test_period": ["2010-01-01", "2014-12-31"],
         "warmup_length": 365,
@@ -139,7 +139,7 @@ calibrate_model(basin_ids=["01013500"], model_name="gr4j", algorithm="SCE_UA")
     "training_cfgs": {
         "algorithm_name": "SCE_UA",
         "algorithm_params": {"rep": 500, "ngs": 200, ...},
-        "output_dir": "results/gr4j_SCE_UA_01013500",
+        "output_dir": "results/gr4j_SCE_UA_12025000",
         "random_seed": 1234
     }
 }

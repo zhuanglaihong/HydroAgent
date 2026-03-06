@@ -201,14 +201,14 @@ for s in schemas:
 
 ```python
 from hydroclaw.tools.validate import validate_basin
-result = validate_basin(basin_ids=["01013500"])
+result = validate_basin(basin_ids=["12025000"])
 print(result)
 ```
 
 ### 完整流程测试
 
 ```bash
-python -m hydroclaw "验证流域01013500" -v
+python -m hydroclaw "验证流域12025000" -v
 ```
 
 ## 调试

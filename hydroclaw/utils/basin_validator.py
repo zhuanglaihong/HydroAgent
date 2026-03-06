@@ -69,7 +69,7 @@ def validate_basin_id(
         return False, f"Basin ID must be string, got {type(basin_id).__name__}"
 
     if not re.match(r"^\d{8}$", basin_id):
-        return False, f"Basin ID format error: {basin_id}. Must be 8 digits (e.g., 01013500)"
+        return False, f"Basin ID format error: {basin_id}. Must be 8 digits (e.g., 12025000)"
 
     if data_source.lower() == "camels_us" and _has_hydrodataset:
         available = _get_basin_ids()

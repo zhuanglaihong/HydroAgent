@@ -24,7 +24,7 @@ SCENARIOS = [
     {
         "id": "S01",
         "category": "standard_calibration",
-        "query": "请帮我率定GR4J模型，流域01013500",
+        "query": "请帮我率定GR4J模型，流域12025000",
         "expected_tools": ["validate_basin", "calibrate_model", "evaluate_model", "visualize"],
         "description": "Standard calibration with model and basin specified",
     },
@@ -38,7 +38,7 @@ SCENARIOS = [
     {
         "id": "S03",
         "category": "multi_model_comparison",
-        "query": "对比GR4J和XAJ在流域01013500上的率定性能",
+        "query": "对比GR4J和XAJ在流域12025000上的率定性能",
         "expected_tools": ["validate_basin", "calibrate_model", "evaluate_model",
                            "calibrate_model", "evaluate_model"],
         "description": "Multi-model comparison on single basin",
@@ -46,7 +46,7 @@ SCENARIOS = [
     {
         "id": "S04",
         "category": "batch_multi_basin",
-        "query": "批量率定流域01013500和03439000，使用GR4J模型",
+        "query": "批量率定流域12025000和03439000，使用GR4J模型",
         "expected_tools": ["validate_basin", "calibrate_model", "evaluate_model",
                            "calibrate_model", "evaluate_model"],
         "description": "Batch calibration across multiple basins",
@@ -61,14 +61,14 @@ SCENARIOS = [
     {
         "id": "S06",
         "category": "analysis_code_gen",
-        "query": "帮我计算流域01013500的径流系数，并画FDC曲线",
+        "query": "帮我计算流域12025000的径流系数，并画FDC曲线",
         "expected_tools": ["generate_code", "run_code"],
         "description": "Custom analysis with code generation",
     },
     {
         "id": "S07",
         "category": "incomplete_info",
-        "query": "帮我率定流域01013500",
+        "query": "帮我率定流域12025000",
         "expected_tools": ["validate_basin", "calibrate_model", "evaluate_model"],
         "description": "Missing model name - system should use default (xaj)",
     },
@@ -82,7 +82,7 @@ SCENARIOS = [
     {
         "id": "S09",
         "category": "english_query",
-        "query": "Calibrate GR4J model for basin 01013500 using SCE-UA algorithm",
+        "query": "Calibrate GR4J model for basin 12025000 using SCE-UA algorithm",
         "expected_tools": ["validate_basin", "calibrate_model", "evaluate_model", "visualize"],
         "description": "English language query",
     },
@@ -96,7 +96,7 @@ SCENARIOS = [
     {
         "id": "S11",
         "category": "stability_test",
-        "query": "用不同随机种子重复率定GR4J模型3次，流域01013500",
+        "query": "用不同随机种子重复率定GR4J模型3次，流域12025000",
         "expected_tools": ["validate_basin", "calibrate_model", "calibrate_model", "calibrate_model"],
         "description": "Repeated calibration for stability analysis",
     },

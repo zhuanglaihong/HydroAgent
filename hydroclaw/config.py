@@ -43,17 +43,29 @@ DEFAULTS = {
 
 
 def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
-    """Load configuration from JSON file, falling back to defaults."""
+    """Load configuration from JSON file, falling back to defaults.
+
+    Search order (highest priority last, so later overwrites earlier):
+      1. Built-in DEFAULTS
+      2. HydroAgent legacy configs/definitions*.py
+      3. ~/.hydroclaw/config.json  (user-level, written by setup wizard)
+      4. config_path argument       (explicit override, e.g. --config)
+    """
     cfg = _deep_copy(DEFAULTS)
 
-    # Try loading from file
+    # Try loading from HydroAgent's existing config (lowest external priority)
+    _load_from_hydroagent(cfg)
+
+    # Load user-level config written by the setup wizard (saved in project root)
+    user_cfg_path = Path(__file__).parent.parent / "hydroclaw_config.json"
+    if user_cfg_path.exists():
+        with open(user_cfg_path, "r", encoding="utf-8") as f:
+            _deep_merge(cfg, json.load(f))
+
+    # Explicit config file has highest priority
     if config_path and Path(config_path).exists():
         with open(config_path, "r", encoding="utf-8") as f:
-            user_cfg = json.load(f)
-        _deep_merge(cfg, user_cfg)
-
-    # Try loading from HydroAgent's existing config
-    _load_from_hydroagent(cfg)
+            _deep_merge(cfg, json.load(f))
 
     # Override API key from environment
     api_key_env = cfg["llm"].get("api_key_env", "LLM_API_KEY")
@@ -76,8 +88,9 @@ def _load_from_hydroagent(cfg: dict):
             cfg["paths"]["dataset_dir"] = getattr(definitions_private, "DATASET_DIR", None)
         if not cfg["paths"]["project_dir"]:
             cfg["paths"]["project_dir"] = getattr(definitions_private, "PROJECT_DIR", None)
-        if not cfg["paths"]["results_dir"] or cfg["paths"]["results_dir"] == "results":
-            cfg["paths"]["results_dir"] = getattr(definitions_private, "RESULT_DIR", "results")
+        result_dir = getattr(definitions_private, "RESULT_DIR", None)
+        if result_dir:  # only override if non-empty
+            cfg["paths"]["results_dir"] = result_dir
     except ImportError:
         try:
             from configs import definitions
@@ -85,6 +98,9 @@ def _load_from_hydroagent(cfg: dict):
                 cfg["llm"]["api_key"] = getattr(definitions, "OPENAI_API_KEY", None)
             if not cfg["paths"]["dataset_dir"]:
                 cfg["paths"]["dataset_dir"] = getattr(definitions, "DATASET_DIR", None)
+            result_dir = getattr(definitions, "RESULT_DIR", None)
+            if result_dir:
+                cfg["paths"]["results_dir"] = result_dir
         except ImportError:
             pass
 
@@ -131,14 +147,22 @@ def build_hydromodel_config(
     # Build algorithm params
     algo_params = dict(algo_defaults.get(algorithm, {}))
     if algorithm_params:
-        algo_params.update(algorithm_params)
+        # LLM 有时会把 dict 序列化成 JSON 字符串传过来，尝试解析
+        if isinstance(algorithm_params, str):
+            import json as _json
+            try:
+                algorithm_params = _json.loads(algorithm_params)
+            except (ValueError, TypeError):
+                algorithm_params = None
+        if isinstance(algorithm_params, dict):
+            algo_params.update(algorithm_params)
 
     # Extract random_seed separately (it's a training_cfg, not algorithm_param)
     random_seed = algo_params.pop("random_seed", 1234)
 
     # Determine output directory
     if not output_dir:
-        results_dir = cfg.get("paths", {}).get("results_dir", "results")
+        results_dir = cfg.get("paths", {}).get("results_dir") or "results"
         output_dir = str(Path(results_dir) / f"{model_name}_{algorithm}_{basin_ids[0]}")
 
     # Get dataset directory
