@@ -283,6 +283,19 @@ class LLMClient:
         # Default: try it
         return True
 
+    def test_connection(self) -> tuple[bool, str]:
+        """Send a minimal request to verify API key and connectivity."""
+        try:
+            self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=5,
+                timeout=10,
+            )
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
     def _track_tokens(self, response):
         """Track token usage from API response."""
         if hasattr(response, "usage") and response.usage:
