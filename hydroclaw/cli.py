@@ -79,29 +79,148 @@ def _print_banner(ui, agent):
 
 
 def _interactive_loop(ui, agent):
-    """Interactive REPL loop."""
-    from rich.prompt import Prompt
-
+    """Interactive REPL loop with slash commands and safe exit."""
     while True:
         try:
             query = ui.console.input("[bold cyan]You>[/bold cyan] ").strip()
         except (EOFError, KeyboardInterrupt):
-            ui.console.print("\n[dim]Bye![/dim]")
+            _safe_exit(ui, agent)
             break
 
         if not query:
             continue
-        if query.lower() in ("quit", "exit", "q", "bye"):
-            ui.console.print("[dim]Bye![/dim]")
-            break
 
+        # ── Slash commands ─────────────────────────────────────────
+        if query.startswith("/"):
+            cmd = query.lower().split()[0]
+
+            if cmd in ("/quit", "/exit", "/q"):
+                if _safe_exit(ui, agent):
+                    break
+                continue
+
+            if cmd in ("/tasks", "/status"):
+                ui.show_task_list(agent.workspace)
+                continue
+
+            if cmd == "/pause":
+                agent.request_pause()
+                ui.console.print(
+                    "[yellow]已请求暂停。[/yellow] "
+                    "[dim]Agent 将在当前任务完成后暂停，任务状态已自动保存。[/dim]"
+                )
+                continue
+
+            if cmd == "/resume":
+                _resume_tasks(ui, agent)
+                continue
+
+            if cmd in ("/help", "/?"):
+                _print_help(ui)
+                continue
+
+            ui.console.print(f"[dim]未知命令 {cmd}，输入 /help 查看可用命令。[/dim]")
+            continue
+
+        # ── Exit keywords ──────────────────────────────────────────
+        if query.lower() in ("quit", "exit", "q", "bye"):
+            if _safe_exit(ui, agent):
+                break
+            continue
+
+        # ── Normal query ───────────────────────────────────────────
         try:
             agent.run(query)
         except KeyboardInterrupt:
-            ui.console.print("\n[yellow][Interrupted][/yellow]")
+            ui.console.print(
+                "\n[yellow]已中断。[/yellow] [dim]任务状态已保存，输入 /resume 可继续。[/dim]"
+            )
         except Exception as e:
             ui.on_error(str(e))
             logging.getLogger(__name__).error(f"Unhandled error: {e}", exc_info=True)
+
+
+def _safe_exit(ui, agent) -> bool:
+    """Check for pending tasks and confirm before exit. Returns True if should exit."""
+    import json
+    from pathlib import Path
+
+    state_file = Path(agent.workspace) / "task_state.json"
+    if state_file.exists():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            pending = sum(1 for t in data.get("tasks", []) if t["status"] == "pending")
+            if pending > 0:
+                ui.console.print(
+                    f"\n[yellow]注意：[/yellow] 还有 [bold]{pending}[/bold] 个任务未完成。"
+                    f"任务状态已保存，下次运行输入 /resume 可继续。"
+                )
+                answer = ui.console.input(
+                    "[dim]确认退出？(y/N)>[/dim] "
+                ).strip().lower()
+                if answer not in ("y", "yes"):
+                    return False
+        except Exception:
+            pass
+
+    ui.console.print("[dim]Bye![/dim]")
+    return True
+
+
+def _resume_tasks(ui, agent):
+    """Resume pending tasks from task_state.json via a new agent run."""
+    import json
+    from pathlib import Path
+
+    state_file = Path(agent.workspace) / "task_state.json"
+    if not state_file.exists():
+        ui.console.print("[dim]没有找到可恢复的任务。[/dim]")
+        return
+
+    try:
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+    except Exception:
+        ui.console.print("[red]task_state.json 读取失败。[/red]")
+        return
+
+    pending = [t for t in data.get("tasks", []) if t["status"] == "pending"]
+    goal    = data.get("goal", "之前的批量任务")
+    done    = sum(1 for t in data.get("tasks", []) if t["status"] == "done")
+    total   = len(data.get("tasks", []))
+
+    if not pending:
+        ui.console.print("[green]所有任务已完成，无需恢复。[/green]")
+        return
+
+    ui.console.print(
+        f"[cyan]恢复任务：[/cyan] {len(pending)} 个待执行 / {done}/{total} 已完成"
+    )
+    resume_query = f"继续执行之前的批量任务（{goal}），跳过已完成的部分，继续剩余 {len(pending)} 个任务。"
+    try:
+        agent.run(resume_query)
+    except KeyboardInterrupt:
+        ui.console.print("\n[yellow]已中断。[/yellow] [dim]进度已保存。[/dim]")
+
+
+def _print_help(ui):
+    """Print available slash commands."""
+    from rich.table import Table
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column("cmd",  style="bold cyan", width=16)
+    table.add_column("desc")
+    cmds = [
+        ("/tasks",  "显示当前任务列表和进度"),
+        ("/pause",  "请求在当前任务完成后暂停（任务状态自动保存）"),
+        ("/resume", "恢复上次未完成的批量任务"),
+        ("/help",   "显示此帮助"),
+        ("/quit",   "安全退出（有未完成任务时提示确认）"),
+    ]
+    for cmd, desc in cmds:
+        table.add_row(cmd, desc)
+    ui.console.print()
+    ui.console.print(table)
+    ui.console.print("[dim]  普通文本直接发送给 AI。Ctrl+C 中断当前运行中的任务。[/dim]")
+    ui.console.print()
 
 
 def _setup_logging(dev: bool, log_file: str | None, console=None):

@@ -43,6 +43,7 @@ class HydroClaw:
         self.max_turns = self.cfg.get("max_turns", 30)
         self.workspace = workspace or Path(".")
         self.ui = ui or ConsoleUI(mode="user")
+        self._pause_requested = False   # set by request_pause(); checked between turns
 
         skills_dir = Path(__file__).parent / "skills"
         self.skill_registry = SkillRegistry(skills_dir)
@@ -69,6 +70,14 @@ class HydroClaw:
 
         for turn in range(self.max_turns):
             logger.debug(f"Turn {turn + 1}/{self.max_turns}")
+
+            # Check pause flag (set by request_pause() between turns)
+            if self._pause_requested:
+                self._pause_requested = False
+                msg = "已暂停。任务状态已保存，输入 /resume 继续批量任务。"
+                self.memory.save_session(query, msg)
+                self.ui.on_answer(msg, turn)
+                return msg
 
             messages = self._maybe_compress_history(messages)
 
@@ -214,6 +223,10 @@ class HydroClaw:
             return skill_path.read_text(encoding="utf-8")
         return _DEFAULT_SYSTEM_PROMPT
 
+    def request_pause(self):
+        """Request the agent to pause after the current turn completes."""
+        self._pause_requested = True
+
     # ── Context compression (P0) ─────────────────────────────────────
 
     def _estimate_tokens(self, messages: list[dict]) -> int:
@@ -320,6 +333,10 @@ class HydroClaw:
                     self.memory.save_basin_profile(
                         basin_id, model_name, best_params, metrics, algorithm
                     )
+
+            # Show task progress after any task-state-mutating tool
+            if name in ("create_task_list", "update_task", "add_task") and isinstance(result, dict) and result.get("success"):
+                self.ui.on_task_progress(self.workspace)
 
             # If a new skill was created, refresh all registries
             if name == "create_skill" and isinstance(result, dict) and result.get("success"):

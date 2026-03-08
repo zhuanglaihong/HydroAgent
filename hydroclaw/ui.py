@@ -25,17 +25,21 @@ from rich import box
 
 # ── Human-readable labels for each tool ─────────────────────────────
 _TOOL_LABELS: dict[str, str] = {
-    "validate_basin":   "验证流域数据",
-    "calibrate_model":  "执行模型率定",
-    "evaluate_model":   "评估模型性能",
-    "visualize":        "生成可视化图形",
-    "llm_calibrate":    "LLM 智能率定",
-    "batch_calibrate":  "批量率定流域",
-    "compare_models":   "多模型对比",
-    "generate_code":    "生成分析代码",
-    "run_code":         "执行分析脚本",
-    "run_simulation":   "运行模型模拟",
-    "create_skill":     "创建新技能",
+    "validate_basin":    "验证流域数据",
+    "calibrate_model":   "执行模型率定",
+    "evaluate_model":    "评估模型性能",
+    "visualize":         "生成可视化图形",
+    "llm_calibrate":     "LLM 智能率定",
+    "batch_calibrate":   "批量率定流域",
+    "compare_models":    "多模型对比",
+    "generate_code":     "生成分析代码",
+    "run_code":          "执行分析脚本",
+    "run_simulation":    "运行模型模拟",
+    "create_skill":      "创建新技能",
+    "create_task_list":  "创建任务计划",
+    "get_pending_tasks": "获取待执行任务",
+    "update_task":       "更新任务状态",
+    "add_task":          "追加新任务",
 }
 
 # 这些工具运行时间长，需要周期性心跳提示
@@ -173,7 +177,11 @@ class ConsoleUI:
             ))
 
         self.console.print(Rule(style="dim"))
-        self.console.print("[dim]输入你的问题（中文或英文）。输入 quit 退出，Ctrl+C 中断当前任务。[/dim]")
+        self.console.print(
+            "[dim]输入你的问题（中文或英文）。"
+            "/tasks 查看任务进度  /pause 暂停  /resume 继续  /help 帮助  "
+            "quit 退出  Ctrl+C 中断当前任务[/dim]"
+        )
         self.console.print()
 
     # ── Query ─────────────────────────────────────────────────────────
@@ -346,6 +354,110 @@ class ConsoleUI:
         self.console.print(
             "\n[yellow]已达到最大步骤数限制，请检查已有结果。[/yellow]\n"
         )
+
+    # ── Task progress ────────────────────────────────────────────────
+
+    def on_task_progress(self, workspace):
+        """Print a compact task progress bar after task state changes."""
+        import json
+        from pathlib import Path
+        state_file = Path(workspace) / "task_state.json"
+        if not state_file.exists():
+            return
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+        except Exception:
+            return
+
+        tasks = data.get("tasks", [])
+        if not tasks:
+            return
+
+        total   = len(tasks)
+        done    = sum(1 for t in tasks if t["status"] == "done")
+        failed  = sum(1 for t in tasks if t["status"] == "failed")
+        pending = sum(1 for t in tasks if t["status"] == "pending")
+
+        # Build compact bar: [+++..---...   ]
+        bar_w = 20
+        done_w    = round(done    / total * bar_w)
+        failed_w  = round(failed  / total * bar_w)
+        pending_w = bar_w - done_w - failed_w
+
+        bar = (
+            f"[green]{'+'*done_w}[/green]"
+            f"[red]{'-'*failed_w}[/red]"
+            f"[dim]{'.'*pending_w}[/dim]"
+        )
+        pct = done / total * 100
+        status_str = f"[green]{done}[/green] 完成"
+        if failed:
+            status_str += f" / [red]{failed}[/red] 失败"
+        if pending:
+            status_str += f" / [dim]{pending}[/dim] 待执行"
+
+        self.console.print(
+            f"  [dim]任务进度[/dim] [{bar}] {pct:.0f}%  {status_str}  "
+            f"[dim]共 {total} 个[/dim]"
+        )
+
+    def show_task_list(self, workspace):
+        """Print full task list table (used by /tasks command)."""
+        import json
+        from pathlib import Path
+        from rich.table import Table
+
+        state_file = Path(workspace) / "task_state.json"
+        if not state_file.exists():
+            self.console.print("[dim]当前没有活跃的任务列表。[/dim]")
+            return
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+        except Exception:
+            self.console.print("[red]task_state.json 读取失败。[/red]")
+            return
+
+        tasks = data.get("tasks", [])
+        goal  = data.get("goal", "")
+        total = len(tasks)
+        done  = sum(1 for t in tasks if t["status"] == "done")
+
+        self.console.print()
+        self.console.print(f"  [bold cyan]任务列表[/bold cyan]  [dim]{done}/{total} 完成[/dim]")
+        if goal:
+            self.console.print(f"  [dim]目标：{goal}[/dim]")
+        self.console.print()
+
+        table = Table(box=None, show_header=True, padding=(0, 2))
+        table.add_column("",       width=3,  style="dim")
+        table.add_column("ID",     width=10, style="dim")
+        table.add_column("描述",   min_width=30)
+        table.add_column("状态",   width=8)
+        table.add_column("NSE",    width=7, justify="right")
+
+        icons = {"done": "[green]+[/green]", "failed": "[red]x[/red]",
+                 "running": "[cyan]~[/cyan]", "pending": " "}
+        colors = {"done": "green", "failed": "red", "running": "cyan", "pending": "dim"}
+
+        for t in tasks:
+            st  = t["status"]
+            nse = ""
+            if st == "done" and t.get("result"):
+                v = t["result"].get("NSE") or t["result"].get("nse")
+                if isinstance(v, (int, float)):
+                    nse = f"{v:.3f}"
+            desc = t.get("description", t["id"])
+            if len(desc) > 50:
+                desc = desc[:48] + ".."
+            table.add_row(
+                icons.get(st, "?"),
+                t["id"],
+                f"[{colors.get(st,'default')}]{desc}[/{colors.get(st,'default')}]",
+                st,
+                nse,
+            )
+        self.console.print(table)
+        self.console.print()
 
     # ── Dev-only ─────────────────────────────────────────────────────
 
