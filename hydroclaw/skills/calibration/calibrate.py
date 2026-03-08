@@ -5,8 +5,6 @@ Description: Model calibration tool - calls hydromodel for parameter optimizatio
 """
 
 import logging
-import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 # Force non-GUI matplotlib backend
@@ -66,52 +64,45 @@ def calibrate_model(
     except ImportError as e:
         return {"error": f"hydromodel not available: {e}", "success": False}
 
+    # Inject negated loss functions so minimization-based optimizers (SCE-UA/GA)
+    # can correctly maximize NSE/KGE (which are "higher is better" metrics).
+    _inject_negated_losses()
+
     logger.info(
         f"Starting calibration: {model_name}/{algorithm} for basins {basin_ids}"
     )
 
-    # Run calibration with timeout and retry
-    timeout_seconds = 7200
-    max_retries = 3
-    result = None
-
-    for attempt in range(max_retries + 1):
-        try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(hm_calibrate, config)
-                start = time.time()
-                while True:
-                    try:
-                        result = future.result(timeout=0.5)
-                        break
-                    except FutureTimeoutError:
-                        if time.time() - start > timeout_seconds:
-                            future.cancel()
-                            return {"error": f"Calibration timed out after {timeout_seconds}s", "success": False}
-                    except KeyboardInterrupt:
-                        logger.warning("Calibration interrupted by user")
-                        future.cancel()
-                        raise
-            break  # Success
-
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            error_msg = str(e)
-            is_retryable = "NetCDF: HDF error" in error_msg or "KeyError" in error_msg
-            if is_retryable and attempt < max_retries:
-                logger.warning(f"Retryable error (attempt {attempt+1}): {e}")
-                _clear_caches()
-                time.sleep(0.5 * (2 ** attempt))
-                continue
+    try:
+        result = hm_calibrate(config)
+    except KeyboardInterrupt:
+        logger.warning("Calibration interrupted by user")
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        is_retryable = "NetCDF: HDF error" in error_msg or "KeyError" in error_msg
+        if is_retryable:
+            _clear_caches()
+            try:
+                result = hm_calibrate(config)
+            except Exception as e2:
+                return {"error": f"Calibration failed: {e2}", "success": False}
+        else:
             return {"error": f"Calibration failed: {e}", "success": False}
 
     # Parse results
     parsed = parse_calibration_result(result, config)
 
+    # Evaluate on training period and save to <calibration_dir>/train_metrics/
+    train_metrics = {}
+    cal_dir = parsed.get("calibration_dir")
+    if cal_dir:
+        actual_train_period = config["data_cfgs"]["train_period"]
+        train_metrics = _evaluate_train(cal_dir, actual_train_period)
+
     return {
         "best_params": parsed.get("best_params", {}),
         "metrics": parsed.get("metrics", {}),
+        "train_metrics": train_metrics,
         "calibration_dir": parsed.get("calibration_dir", ""),
         "output_files": parsed.get("output_files", []),
         "model_name": model_name,
@@ -119,6 +110,85 @@ def calibrate_model(
         "basin_ids": basin_ids,
         "success": True,
     }
+
+
+def _evaluate_train(calibration_dir: str, train_period: list) -> dict:
+    """Evaluate on training period and save metrics to <calibration_dir>/train_metrics/.
+
+    Returns metrics dict, or empty dict on failure.
+    """
+    import csv
+    try:
+        from hydromodel.trainers.unified_evaluate import evaluate
+        from hydromodel.configs.config_manager import load_config_from_calibration
+
+        config = load_config_from_calibration(calibration_dir)
+        train_dir = Path(calibration_dir) / "train_metrics"
+        train_dir.mkdir(exist_ok=True)
+
+        result = evaluate(
+            config,
+            param_dir=calibration_dir,
+            eval_period=train_period,
+            eval_output_dir=str(train_dir),
+        )
+
+        # Primary: read from train_dir/basins_metrics.csv
+        metrics_file = train_dir / "basins_metrics.csv"
+        if metrics_file.exists():
+            with open(metrics_file, newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    return {
+                        k: float(v)
+                        for k, v in row.items()
+                        if k and k.strip() and v and v.strip()
+                    }
+
+        # Fallback: parse directly from result dict
+        import numpy as np
+        if isinstance(result, dict):
+            basin_ids = [k for k in result if isinstance(result.get(k), dict)]
+            if basin_ids:
+                first = result[basin_ids[0]]
+                if isinstance(first, dict) and "metrics" in first:
+                    flat = {}
+                    for k, v in first["metrics"].items():
+                        if isinstance(v, (list, np.ndarray)):
+                            flat[k] = float(v[0]) if len(v) > 0 else None
+                        else:
+                            flat[k] = v
+                    # Also save to json for traceability
+                    import json
+                    (train_dir / "metrics.json").write_text(
+                        json.dumps(flat, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+                    return flat
+
+    except Exception as e:
+        logger.warning(f"Train period evaluation failed: {e}")
+    return {}
+
+
+def _inject_negated_losses():
+    """Add neg_nashsutcliffe / neg_kge / neg_lognashsutcliffe to hydromodel's LOSS_DICT.
+
+    SCE-UA and GA both *minimize* the objective. For metrics where higher is
+    better (NSE, KGE, LogNSE) we must negate the function so that minimizing
+    the negated value equals maximizing the original metric.
+    """
+    try:
+        import spotpy.objectivefunctions as _sof
+        from hydromodel.models.model_dict import LOSS_DICT
+
+        if "neg_nashsutcliffe" not in LOSS_DICT:
+            LOSS_DICT["neg_nashsutcliffe"] = lambda obs, sim: -_sof.nashsutcliffe(obs, sim)
+        if "neg_kge" not in LOSS_DICT:
+            LOSS_DICT["neg_kge"] = lambda obs, sim: -_sof.kge(obs, sim)
+        if "neg_lognashsutcliffe" not in LOSS_DICT:
+            LOSS_DICT["neg_lognashsutcliffe"] = lambda obs, sim: -_sof.lognashsutcliffe(obs, sim)
+    except Exception:
+        pass
 
 
 def _clear_caches():

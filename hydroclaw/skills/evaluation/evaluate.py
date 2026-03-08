@@ -39,18 +39,22 @@ def evaluate_model(
         config = load_config_from_calibration(calibration_dir)
         eval_period = test_period or config["data_cfgs"]["test_period"]
 
+        test_dir = Path(calibration_dir) / "test_metrics"
+        test_dir.mkdir(exist_ok=True)
+
         result = evaluate(
             config,
             param_dir=calibration_dir,
             eval_period=eval_period,
-            eval_output_dir=None,
+            eval_output_dir=str(test_dir),
         )
 
-        parsed = parse_evaluation_result(result, calibration_dir=calibration_dir)
+        parsed = parse_evaluation_result(result, calibration_dir=str(test_dir))
 
         return {
             "metrics": parsed.get("metrics", {}),
             "calibration_dir": calibration_dir,
+            "test_metrics_dir": str(test_dir),
             "output_files": parsed.get("output_files", []),
             "test_period": eval_period,
             "success": True,

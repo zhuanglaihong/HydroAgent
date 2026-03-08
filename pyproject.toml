@@ -1,47 +1,48 @@
 [project]
-name = "hydroagent"
-version = "0.2.0"
-description = "Intelligent Hydrological Model Calibration System with RAG"
+name = "hydroclaw"
+version = "0.3.0"
+description = "LLM-driven Hydrological Model Calibration Agent"
 authors = [
     {name = "zhuanglaihong", email = "zhuanglaihong@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "langchain==0.3.26",
-    "langchain-community>=0.0.20",
-    "langchain_core == 0.3.70",
-    "langchain-ollama",
-    "streamlit==1.47.0",
+    # LLM 客户端
     "openai>=1.97.1",
-    "langchain-openai>=0.3.28",
-    "ipykernel",
-    "numba",
-    "scikit-learn",
-    "deap",
-    "spotpy",
-    "pytest",
-    "bmipy",
-    "pyyaml",
-    "requests",
-    "muskingumcunge",
+    "httpx",
+
+    # 终端 UI
+    "rich>=13.0.0",
+
+    # 水文建模后端
+    "hydromodel>=0.3.2",
     "hydroutils>=0.1.0",
     "hydrodataset>=0.2.3",
     "hydrodatasource>=0.2.0",
-    "hydromodel >= 0.3.2",
-    "httpx",
-    "modelcontextprotocol>=0.1.0",
-    "chromadb>=0.4.0",
-    "langchain-text-splitters>=0.0.1",
-    "pypdf>=3.0.0",
-    "python-docx>=0.8.11",
-    "langchain-huggingface>=0.1.0",
-    "faiss-cpu>=1.7.4",
-    "sentence-transformers>=2.2.2",
+
+    # 水文建模依赖（hydromodel 内部使用）
+    "numpy",
+    "matplotlib",
+    "xarray",
+    "pyyaml",
+    "scikit-learn",
+    "deap",
+    "spotpy",
+    "numba",
+    "bmipy",
+    "muskingumcunge",
+    "requests",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ipykernel",
 ]
 
 [project.scripts]
-hydroagent = "scripts.run_agent:main"
+hydroclaw = "hydroclaw.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
@@ -49,8 +50,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["hydroagent*", "configs*"]
-exclude = ["test*", "scripts*", "docs*", "builder*", "executor*", "hydrorag*", "utils*"]
+include = ["hydroclaw*", "configs*"]
+exclude = ["test*", "scripts*", "docs*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
@@ -58,10 +59,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
-# UV-specific configuration
 [tool.uv]
-# Override dependencies from aqua-fetch to resolve pandas version conflict
-# aqua-fetch requires pandas<=2.1.4, but hydromodel requires pandas>=2.3.1
+# aqua-fetch 要求 pandas<=2.1.4，但 hydromodel 要求 pandas>=2.3.1，强制覆盖
 override-dependencies = [
-    "pandas>=2.3.1",  # Override aqua-fetch's pandas<=2.1.4 constraint
+    "pandas>=2.3.1",
 ]

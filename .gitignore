@@ -200,6 +200,7 @@ __pycache__/
 *.pyc
 definitions_private.py
 configs/definitions_private.py
+configs/private.py
 /workflows/generated/
 logs/
 test/results/

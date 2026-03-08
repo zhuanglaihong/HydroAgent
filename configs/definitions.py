@@ -1,35 +1,37 @@
 """
-Project-wide configuration definitions for HydroClaw.
+配置兼容桥接 - configs/definitions.py
+=======================================
+此文件提供向后兼容，对外暴露 PROJECT_DIR、RESULT_DIR、DATASET_DIR、
+OPENAI_API_KEY、OPENAI_BASE_URL 等常量。
 
-This file provides default values. For actual use, create definitions_private.py
-with your own paths and API keys (see example_definitions_private.py).
+私密配置请填写 configs/private.py（推荐）或 configs/definitions_private.py（旧版）。
 """
 
 import os
 
-try:
-    import configs.definitions_private as definitions_private
+_defs = None
+for _mod in ("configs.private", "configs.definitions_private"):
+    try:
+        import importlib
+        _defs = importlib.import_module(_mod)
+        break
+    except ImportError:
+        continue
 
-    # Core Directories
-    PROJECT_DIR = definitions_private.PROJECT_DIR
-    RESULT_DIR = definitions_private.RESULT_DIR
-    DATASET_DIR = definitions_private.DATASET_DIR
-
-    # LLM API Configuration
-    OPENAI_API_KEY = definitions_private.OPENAI_API_KEY
+if _defs is not None:
+    PROJECT_DIR    = getattr(_defs, "PROJECT_DIR", os.getcwd())
+    RESULT_DIR     = getattr(_defs, "RESULT_DIR", "results")
+    DATASET_DIR    = getattr(_defs, "DATASET_DIR", "data")
+    OPENAI_API_KEY = getattr(_defs, "OPENAI_API_KEY", "your-api-key-here")
     OPENAI_BASE_URL = getattr(
-        definitions_private,
+        _defs,
         "OPENAI_BASE_URL",
         "https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
-
-except ImportError:
-    # Default Configuration (Fallback)
-    PROJECT_DIR = os.getcwd()
-    RESULT_DIR = "results"
-    DATASET_DIR = "data"
-
+else:
+    PROJECT_DIR    = os.getcwd()
+    RESULT_DIR     = "results"
+    DATASET_DIR    = "data"
     OPENAI_API_KEY = "your-api-key-here"
-    print("Warning: Using default API key. Set your key in configs/definitions_private.py")
-
     OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    print("Warning: configs/private.py not found. Please fill in your API key and paths.")

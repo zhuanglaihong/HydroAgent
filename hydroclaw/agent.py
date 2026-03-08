@@ -7,6 +7,7 @@ Description: Agentic Loop core - the heart of HydroClaw.
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -151,6 +152,10 @@ class HydroClaw:
         available_skills = self.skill_registry.available_skills_prompt()
         memory = self.memory.load_knowledge()
 
+        # Load basin profiles for any 8-digit basin IDs mentioned in the query
+        basin_ids_in_query = re.findall(r'\b\d{8}\b', query)
+        basin_profiles = self.memory.format_basin_profiles_for_context(basin_ids_in_query)
+
         system_content = system
         if available_skills:
             system_content += "\n\n" + available_skills
@@ -158,6 +163,8 @@ class HydroClaw:
             system_content += "\n\n## Domain Knowledge\n" + domain_knowledge
         for skill_content in skill_contents:
             system_content += "\n\n" + skill_content
+        if basin_profiles:
+            system_content += "\n\n" + basin_profiles
         if memory:
             system_content += "\n\n## Memory (from previous sessions)\n" + memory
 
@@ -223,6 +230,26 @@ class HydroClaw:
         try:
             result = fn(**arguments)
 
+            # Auto-save basin profile after successful calibration
+            if (
+                name in ("calibrate_model", "llm_calibrate")
+                and isinstance(result, dict)
+                and result.get("success")
+            ):
+                basin_ids = arguments.get("basin_ids", [])
+                model_name = arguments.get("model_name", "")
+                algorithm = arguments.get("algorithm", "SCE_UA")
+                best_params = result.get("best_params", {})
+                if name == "calibrate_model":
+                    metrics = result.get("metrics", {})
+                else:
+                    nse = result.get("best_nse")
+                    metrics = {"NSE": nse} if nse is not None else {}
+                for basin_id in basin_ids:
+                    self.memory.save_basin_profile(
+                        basin_id, model_name, best_params, metrics, algorithm
+                    )
+
             # If a new skill was created, refresh all registries
             if name == "create_skill" and isinstance(result, dict) and result.get("success"):
                 self.tools = discover_tools()
@@ -253,12 +280,12 @@ _DEFAULT_SYSTEM_PROMPT = """You are HydroClaw, an expert hydrological model cali
 You help users calibrate, evaluate, and analyze hydrological models using the CAMELS dataset.
 You can understand both Chinese and English queries.
 
-When the user asks you to calibrate a model:
-1. Validate the basin data
-2. Run calibration
-3. Evaluate on test period
-4. Generate visualizations
-5. Provide analysis in Chinese
+Choose tools flexibly based on the user's intent. Do NOT apply a fixed workflow to every task:
+- Calibration tasks: validate_basin → calibrate_model → evaluate_model → visualize
+- Evaluation only: evaluate_model
+- Custom analysis: generate_code → run_code
+- New capability needed: create_skill
 
-Always provide clear, professional analysis of the results.
+Only call validate_basin when the task involves basin data. Skip it for pure analysis or skill creation.
+Always provide professional analysis in the user's language.
 """

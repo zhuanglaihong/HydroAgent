@@ -9,8 +9,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+import yaml
 
-# Default configuration values
+
+# ── 内部完整默认值 ────────────────────────────────────────────────────────
+# 这里是项目内部兜底配置，保证在 configs/config.py 未设置任何参数时也能正常运行。
+# 用户自定义参数请在 configs/config.py 中修改，该文件的值会覆盖这里的默认值。
 DEFAULTS = {
     "llm": {
         "model": "deepseek-v3.1",
@@ -22,24 +26,118 @@ DEFAULTS = {
         "supports_function_calling": None,  # None = auto-detect
     },
     "defaults": {
-        "model": "xaj",
-        "algorithm": "SCE_UA",
+        # 数据集
+        "data_source": "camels_us",              # 数据集类型: camels_us / camels_gb / camels_br / camels_aus 等
+        # 模型与算法
+        "model": "xaj",                          # 默认水文模型: gr4j / gr5j / gr6j / xaj
+        "algorithm": "SCE_UA",                   # 默认优化算法: SCE_UA / GA / scipy
+        "obj_func": "NSE",                       # 目标函数: NSE / KGE / RMSE
+        # 时间配置
         "train_period": ["2000-01-01", "2009-12-31"],
-        "test_period": ["2010-01-01", "2014-12-31"],
-        "warmup": 365,
+        "test_period":  ["2010-01-01", "2014-12-31"],
+        "warmup": 365,                           # 预热天数（从训练期开始前）
     },
     "algorithms": {
-        "SCE_UA": {"rep": 500, "ngs": 200, "kstop": 500, "peps": 0.1, "pcento": 0.1, "random_seed": 1234},
-        "GA": {"pop_size": 40, "n_generations": 25, "cx_prob": 0.7, "mut_prob": 0.2, "random_seed": 1234},
-        "scipy": {"method": "SLSQP", "max_iterations": 500, "ftol": 1e-6, "gtol": 1e-5},
+        "SCE_UA": {
+            "rep": 500,          # 最大评估次数（用户建议 1000+）
+            "ngs": 200,          # 复形数量
+            "kstop": 500,        # 停止标准：连续无改进的迭代次数
+            "peps": 0.1,         # 参数空间收敛阈值
+            "pcento": 0.1,       # 目标函数收敛阈值（百分比）
+            "random_seed": 1234,
+        },
+        "GA": {
+            "pop_size": 40,
+            "n_generations": 25,
+            "cx_prob": 0.7,      # 交叉概率
+            "mut_prob": 0.2,     # 变异概率
+            "random_seed": 1234,
+        },
+        "scipy": {
+            "method": "SLSQP",   # 可选: L-BFGS-B / SLSQP / Nelder-Mead
+            "max_iterations": 500,
+            "ftol": 1e-6,
+            "gtol": 1e-5,
+        },
     },
     "paths": {
-        "dataset_dir": None,
+        "dataset_dir": None,     # CAMELS 数据集根目录，必须在 configs/definitions_private.py 中设置
         "results_dir": "results",
         "project_dir": None,
     },
-    "max_turns": 30,
+    "max_turns": 30,             # Agentic Loop 最大轮次
 }
+
+
+def _ensure_hydro_setting(dataset_dir: str | None, cache_dir: str | None = None):
+    """Sync ~/hydro_setting.yml with paths from configs/private.py.
+
+    Priority:
+      1. configs/private.py DATASET_DIR is set -> always write it to hydro_setting.yml
+      2. DATASET_DIR not set -> fall back to whatever is already in hydro_setting.yml
+    Always prints the effective paths for debugging.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    setting_file = Path.home() / "hydro_setting.yml"
+
+    # Read existing setting (preserve non-path keys)
+    existing = {}
+    if setting_file.exists():
+        try:
+            with open(setting_file, "r", encoding="utf-8") as f:
+                existing = yaml.safe_load(f) or {}
+        except Exception:
+            existing = {}
+
+    current_local = existing.get("local_data_path", {})
+
+    if dataset_dir:
+        # private.py has DATASET_DIR — use it to fill/update hydro_setting.yml.
+        # AquaFetch automatically appends the class name (e.g. "CAMELS_US") to
+        # whatever path is passed, so DATASET_DIR should be the PARENT directory
+        # (e.g. D:\data) and AquaFetch will look in D:\data\CAMELS_US\.
+        dataset_path = Path(dataset_dir)
+        root_path = dataset_path.parent
+        cache_path = Path(cache_dir) if cache_dir else dataset_path / "cache"
+
+        # Build updated local_data_path, preserving any extra keys already present.
+        updated_local = dict(current_local)  # keep existing fields (e.g. basins-origin)
+        updated_local["root"] = str(root_path)
+        updated_local["datasets-origin"] = str(dataset_path)
+        # datasets-interim is required by hydromodel; default to same as datasets-origin
+        if "datasets-interim" not in updated_local:
+            updated_local["datasets-interim"] = str(dataset_path)
+        updated_local["cache"] = str(cache_path)
+
+        if updated_local != current_local:
+            existing["local_data_path"] = updated_local
+            try:
+                with open(setting_file, "w", encoding="utf-8") as f:
+                    yaml.dump(existing, f, allow_unicode=True, default_flow_style=False)
+            except Exception as e:
+                logger.warning("[hydro_setting] Failed to write ~/hydro_setting.yml: %s", e)
+
+        effective = updated_local
+        source = "configs/private.py"
+    else:
+        # private.py has no DATASET_DIR — fall back to existing hydro_setting.yml
+        required_keys = {"root", "datasets-origin", "datasets-interim", "cache"}
+        if required_keys.issubset(current_local.keys()):
+            effective = current_local
+            source = "~/hydro_setting.yml (fallback)"
+        else:
+            print("[hydro_setting] WARNING: DATASET_DIR not set and ~/hydro_setting.yml is incomplete.")
+            return
+
+    print(
+        f"[hydro_setting] Paths ({source}):\n"
+        f"  root:              {effective.get('root')}\n"
+        f"  datasets-origin:   {effective.get('datasets-origin')}\n"
+        f"  datasets-interim:  {effective.get('datasets-interim')}\n"
+        f"  cache:             {effective.get('cache')}"
+    )
 
 
 def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
@@ -78,31 +176,86 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
 
 def _load_from_hydroagent(cfg: dict):
     """Try to load settings from existing HydroAgent configs."""
-    try:
-        from configs import definitions_private
-        if not cfg["llm"].get("api_key"):
-            cfg["llm"]["api_key"] = getattr(definitions_private, "OPENAI_API_KEY", None)
-        if not cfg["llm"].get("base_url") or cfg["llm"]["base_url"] == DEFAULTS["llm"]["base_url"]:
-            cfg["llm"]["base_url"] = getattr(definitions_private, "OPENAI_BASE_URL", cfg["llm"]["base_url"])
-        if not cfg["paths"]["dataset_dir"]:
-            cfg["paths"]["dataset_dir"] = getattr(definitions_private, "DATASET_DIR", None)
-        if not cfg["paths"]["project_dir"]:
-            cfg["paths"]["project_dir"] = getattr(definitions_private, "PROJECT_DIR", None)
-        result_dir = getattr(definitions_private, "RESULT_DIR", None)
-        if result_dir:  # only override if non-empty
-            cfg["paths"]["results_dir"] = result_dir
-    except ImportError:
+    # Load credentials and paths: try private -> definitions_private -> definitions
+    _defs = None
+    for _mod_name in ("configs.private", "configs.definitions_private", "configs.definitions"):
         try:
-            from configs import definitions
-            if not cfg["llm"].get("api_key"):
-                cfg["llm"]["api_key"] = getattr(definitions, "OPENAI_API_KEY", None)
-            if not cfg["paths"]["dataset_dir"]:
-                cfg["paths"]["dataset_dir"] = getattr(definitions, "DATASET_DIR", None)
-            result_dir = getattr(definitions, "RESULT_DIR", None)
-            if result_dir:
-                cfg["paths"]["results_dir"] = result_dir
+            import importlib
+            _defs = importlib.import_module(_mod_name)
+            break
         except ImportError:
-            pass
+            continue
+
+    if _defs is not None:
+        if not cfg["llm"].get("api_key"):
+            cfg["llm"]["api_key"] = getattr(_defs, "OPENAI_API_KEY", None)
+        base_url = getattr(_defs, "OPENAI_BASE_URL", None)
+        if base_url and (not cfg["llm"].get("base_url") or cfg["llm"]["base_url"] == DEFAULTS["llm"]["base_url"]):
+            cfg["llm"]["base_url"] = base_url
+        if not cfg["paths"]["dataset_dir"]:
+            cfg["paths"]["dataset_dir"] = getattr(_defs, "DATASET_DIR", None)
+        if not cfg["paths"]["project_dir"]:
+            cfg["paths"]["project_dir"] = getattr(_defs, "PROJECT_DIR", None)
+        result_dir = getattr(_defs, "RESULT_DIR", None)
+        if result_dir:
+            cfg["paths"]["results_dir"] = result_dir
+        cache_dir = getattr(_defs, "CACHE_DIR", None) or None
+        cfg["paths"]["cache_dir"] = cache_dir or None
+
+        # Auto-sync paths to ~/hydro_setting.yml so hydrodataset works out of the box
+        _ensure_hydro_setting(cfg["paths"]["dataset_dir"], cache_dir)
+
+    # Load algorithm params: try model_config -> config (backward compat)
+    _hcfg = None
+    for _mod_name in ("configs.model_config", "configs.config"):
+        try:
+            import importlib
+            _hcfg = importlib.import_module(_mod_name)
+            break
+        except ImportError:
+            continue
+
+    if _hcfg is not None:
+        for algo_key, attr in [
+            ("SCE_UA", "DEFAULT_SCE_UA_PARAMS"),
+            ("GA",     "DEFAULT_GA_PARAMS"),
+            ("scipy",  "DEFAULT_scipy_PARAMS"),
+        ]:
+            params = getattr(_hcfg, attr, None)
+            if isinstance(params, dict):
+                cfg["algorithms"][algo_key] = params
+        for attr, keys in [
+            ("DEFAULT_TRAIN_PERIOD", ("defaults", "train_period")),
+            ("DEFAULT_TEST_PERIOD",  ("defaults", "test_period")),
+            ("DEFAULT_WARMUP_DAYS",  ("defaults", "warmup")),
+        ]:
+            val = getattr(_hcfg, attr, None)
+            if val is not None:
+                cfg[keys[0]][keys[1]] = val
+        obj_func = getattr(_hcfg, "DEFAULT_OBJ_FUNC", None)
+        if obj_func:
+            cfg["defaults"]["obj_func"] = obj_func
+        data_source = getattr(_hcfg, "DEFAULT_DATA_SOURCE", None)
+        if data_source:
+            cfg["defaults"]["data_source"] = data_source
+
+
+# Mapping from user-friendly objective function names to hydromodel's LOSS_DICT keys.
+#
+# hydromodel SCE-UA and GA both **minimize** the objective function (idxmin / FitnessMin).
+# - RMSE:  lower is better → minimize directly ✓
+# - NSE/KGE/LogNSE: higher is better → must negate so minimizing -f = maximizing f
+#
+# The "neg_*" keys are injected into LOSS_DICT at runtime by _inject_negated_losses()
+# (called from calibrate_model before hm_calibrate).
+_OBJ_FUNC_MAP = {
+    "NSE":    "neg_nashsutcliffe",
+    "KGE":    "neg_kge",
+    "LOGNSE": "neg_lognashsutcliffe",
+    "RMSE":   "RMSE",
+    "MSE":    "spotpy_mse",
+    "MAE":    "spotpy_mae",
+}
 
 
 def build_hydromodel_config(
@@ -170,7 +323,7 @@ def build_hydromodel_config(
 
     config = {
         "data_cfgs": {
-            "data_source_type": "camels_us",
+            "data_source_type": defaults.get("data_source", "camels_us"),
             "data_source_path": dataset_dir,
             "basin_ids": basin_ids,
             "train_period": train_period,
@@ -190,7 +343,10 @@ def build_hydromodel_config(
             "algorithm_params": algo_params,
             "loss_config": {
                 "type": "time_series",
-                "obj_func": "RMSE",
+                "obj_func": _OBJ_FUNC_MAP.get(
+                    defaults.get("obj_func", "NSE").upper(),
+                    defaults.get("obj_func", "NSE"),
+                ),
             },
             "output_dir": output_dir,
             "experiment_name": "",

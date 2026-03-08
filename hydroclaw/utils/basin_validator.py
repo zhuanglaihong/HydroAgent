@@ -13,7 +13,6 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _dataset_dir = None
-_camels_class = None
 _has_hydrodataset = False
 
 # Initialize on import
@@ -24,24 +23,63 @@ except ImportError:
     pass
 
 try:
-    from hydrodataset import CamelsUs
-    _camels_class = CamelsUs
+    import hydrodataset  # noqa: F401
     _has_hydrodataset = True
 except ImportError:
     pass
 
+# data_source -> (module, class) mapping，与 hydrodataset examples/read_dataset.py 保持一致
+_DATASET_CLASS_MAP = {
+    "camels_us":    ("hydrodataset.camels_us",          "CamelsUs"),
+    "camels_gb":    ("hydrodataset.camels_gb",          "CamelsGb"),
+    "camels_br":    ("hydrodataset.camels_br",          "CamelsBr"),
+    "camels_aus":   ("hydrodataset.camels_aus",         "CamelsAus"),
+    "camels_cl":    ("hydrodataset.camels_cl",          "CamelsCl"),
+    "camels_col":   ("hydrodataset.camels_col",         "CamelsCol"),
+    "camels_de":    ("hydrodataset.camels_de",          "CamelsDe"),
+    "camels_dk":    ("hydrodataset.camels_dk",          "CamelsDk"),
+    "camels_fi":    ("hydrodataset.camels_fi",          "CamelsFi"),
+    "camels_fr":    ("hydrodataset.camels_fr",          "CamelsFr"),
+    "camels_ch":    ("hydrodataset.camels_ch",          "CamelsCh"),
+    "camels_se":    ("hydrodataset.camels_se",          "CamelsSe"),
+    "camels_ind":   ("hydrodataset.camels_ind",         "CamelsInd"),
+    "camels_lux":   ("hydrodataset.camels_lux",         "CamelsLux"),
+    "camels_nz":    ("hydrodataset.camels_nz",          "CamelsNz"),
+    "camels_es":    ("hydrodataset.camels_es",          "CamelsEs"),
+    "camelsh_kr":   ("hydrodataset.camelsh_kr",         "CamelshKr"),
+    "camelsh":      ("hydrodataset.camelsh",            "Camelsh"),
+    "caravan":      ("hydrodataset.caravan",            "Caravan"),
+    "caravan_dk":   ("hydrodataset.caravan_dk",         "CaravanDK"),
+    "grdc_caravan": ("hydrodataset.grdc_caravan",       "GrdcCaravan"),
+    "lamah_ce":     ("hydrodataset.lamah_ce",           "LamahCe"),
+    "lamah_ice":    ("hydrodataset.lamah_ice",          "LamahIce"),
+    "hysets":       ("hydrodataset.hysets",             "Hysets"),
+    "estreams":     ("hydrodataset.estreams",           "Estreams"),
+    "hype":         ("hydrodataset.hype",               "Hype"),
+    "mopex":        ("hydrodataset.mopex",              "Mopex"),
+}
 
-@lru_cache(maxsize=1)
-def _get_basin_ids() -> set[str] | None:
-    """Get all available CAMELS-US basin IDs."""
-    if not _has_hydrodataset or not _camels_class or not _dataset_dir:
+
+@lru_cache(maxsize=8)
+def _get_basin_ids(data_source: str = "camels_us") -> set[str] | None:
+    """Get all basin IDs for the given data source."""
+    if not _has_hydrodataset or not _dataset_dir:
         return None
+    entry = _DATASET_CLASS_MAP.get(data_source.lower())
+    if entry is None:
+        return None
+    mod_name, cls_name = entry
     try:
-        camels = _camels_class(data_path=_dataset_dir)
-        if hasattr(camels, "read_object_ids"):
-            return {str(bid) for bid in camels.read_object_ids()}
+        import importlib
+        mod = importlib.import_module(mod_name)
+        cls = getattr(mod, cls_name, None)
+        if cls is None:
+            return None
+        ds = cls(data_path=_dataset_dir)
+        if hasattr(ds, "read_object_ids"):
+            return {str(bid) for bid in ds.read_object_ids()}
     except Exception as e:
-        logger.warning(f"Failed to load basin IDs: {e}")
+        logger.warning(f"Failed to load basin IDs for {data_source}: {e}")
     return None
 
 
@@ -68,17 +106,24 @@ def validate_basin_id(
     if not isinstance(basin_id, str):
         return False, f"Basin ID must be string, got {type(basin_id).__name__}"
 
-    if not re.match(r"^\d{8}$", basin_id):
-        return False, f"Basin ID format error: {basin_id}. Must be 8 digits (e.g., 12025000)"
+    if not basin_id.strip():
+        return False, "Basin ID cannot be empty"
 
-    if data_source.lower() == "camels_us" and _has_hydrodataset:
-        available = _get_basin_ids()
-        if available and basin_id not in available:
-            similar = sorted([b for b in available if b[:4] == basin_id[:4]])[:5]
-            msg = f"Basin '{basin_id}' not in CAMELS-US ({len(available)} basins)."
-            if similar:
-                msg += f" Similar: {', '.join(similar)}"
-            return False, msg
+    # Try to validate against actual dataset basin list
+    if _has_hydrodataset:
+        available = _get_basin_ids(data_source.lower())
+        if available:
+            if basin_id not in available:
+                similar = sorted([b for b in available if b[:4] == basin_id[:4]])[:5]
+                msg = f"Basin '{basin_id}' not found in {data_source} ({len(available)} basins)."
+                if similar:
+                    msg += f" Similar: {', '.join(similar)}"
+                return False, msg
+            return True, None
+
+    # Fallback: format-only check (CAMELS-US uses 8-digit IDs)
+    if data_source.lower() == "camels_us" and not re.match(r"^\d{8}$", basin_id):
+        return False, f"Basin ID format error: '{basin_id}'. CAMELS-US expects 8 digits (e.g., 12025000)"
 
     return True, None
 

@@ -24,7 +24,9 @@ class Memory:
         self.base_dir = Path(base_dir)
         self.memory_file = self.base_dir / "MEMORY.md"
         self.sessions_dir = self.base_dir / "sessions"
+        self.basin_profiles_dir = self.base_dir / "basin_profiles"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
+        self.basin_profiles_dir.mkdir(parents=True, exist_ok=True)
 
         self._session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self._session_file = self.sessions_dir / f"{self._session_id}.jsonl"
@@ -96,6 +98,94 @@ class Memory:
 
         logger.info(f"Loaded session {session_id}: {len(entries)} entries")
         return entries
+
+    def save_basin_profile(
+        self,
+        basin_id: str,
+        model_name: str,
+        best_params: dict,
+        metrics: dict,
+        algorithm: str = "SCE_UA",
+    ):
+        """Save a calibration result as a structured basin profile.
+
+        Appends to the basin's history file; each basin can accumulate
+        multiple records across sessions (different models / algorithms).
+        """
+        profile_file = self.basin_profiles_dir / f"{basin_id}.json"
+
+        if profile_file.exists():
+            try:
+                with open(profile_file, "r", encoding="utf-8") as f:
+                    profile = json.load(f)
+            except Exception:
+                profile = {"basin_id": basin_id, "records": []}
+        else:
+            profile = {"basin_id": basin_id, "records": []}
+
+        record = {
+            "model": model_name,
+            "algorithm": algorithm,
+            "train_nse": metrics.get("NSE"),
+            "train_kge": metrics.get("KGE"),
+            "train_rmse": metrics.get("RMSE"),
+            "best_params": best_params,
+            "calibrated_at": datetime.now().isoformat(),
+        }
+        profile["records"].append(record)
+
+        with open(profile_file, "w", encoding="utf-8") as f:
+            json.dump(profile, f, indent=2, ensure_ascii=False, default=str)
+
+        logger.info(
+            f"Basin profile saved: {basin_id}/{model_name} "
+            f"NSE={metrics.get('NSE')}"
+        )
+
+    def load_basin_profile(self, basin_id: str) -> dict | None:
+        """Load all historical calibrations for a basin."""
+        profile_file = self.basin_profiles_dir / f"{basin_id}.json"
+        if not profile_file.exists():
+            return None
+        try:
+            with open(profile_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load basin profile {basin_id}: {e}")
+            return None
+
+    def format_basin_profiles_for_context(self, basin_ids: list[str]) -> str:
+        """Format historical basin calibrations as markdown for LLM context.
+
+        Returns empty string if no profiles exist for any of the given basins.
+        """
+        lines = []
+        for basin_id in basin_ids:
+            profile = self.load_basin_profile(basin_id)
+            if not profile or not profile.get("records"):
+                continue
+
+            lines.append(f"### Basin {basin_id}")
+            # Show at most last 3 records to keep context short
+            for rec in profile["records"][-3:]:
+                nse = rec.get("train_nse")
+                nse_str = f"{nse:.3f}" if isinstance(nse, float) else "N/A"
+                params = rec.get("best_params", {})
+                params_str = ", ".join(
+                    f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}"
+                    for k, v in params.items()
+                )
+                lines.append(
+                    f"- {rec['model'].upper()} ({rec['algorithm']}, "
+                    f"{rec['calibrated_at'][:10]}): train NSE={nse_str}"
+                )
+                if params_str:
+                    lines.append(f"  Best params: {params_str}")
+            lines.append("")
+
+        if not lines:
+            return ""
+        return "## Previous Basin Calibrations\n\n" + "\n".join(lines)
 
     def get_recent_sessions(self, limit: int = 5) -> list[dict]:
         """Get recent session summaries."""

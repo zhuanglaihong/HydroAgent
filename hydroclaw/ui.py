@@ -302,7 +302,7 @@ class ConsoleUI:
                 mins, secs = divmod(int(elapsed), 60)
                 t_str = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
                 try:
-                    out.write(f"  ◷  {label} 运行中 {t_str}...\n")
+                    out.write(f"  >>  {label} 运行中 {t_str}...\n")
                     out.flush()
                 except Exception:
                     pass
