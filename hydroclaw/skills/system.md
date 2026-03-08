@@ -32,12 +32,31 @@
 |---------|------------|
 | 标准率定 | `validate_basin` → `calibrate_model` → `evaluate_model` → `visualize` |
 | LLM 智能率定 | `validate_basin` → `llm_calibrate` → `evaluate_model` → `visualize` |
-| 批量率定 | `validate_basin` → `batch_calibrate` |
-| 模型对比 | `validate_basin` → `compare_models` |
 | 仅评估已有结果 | `evaluate_model` |
 | 仅可视化 | `visualize` |
 | 自定义分析 | `generate_code` → `run_code` |
 | 创建新技能 | `create_skill` |
+| **批量/多流域/多模型任务** | 见下方"批量任务工作流" |
+
+## 批量任务工作流
+
+当用户要求跨多个流域或模型完成一批工作时（如"比较5个流域的GR4J和XAJ"），
+使用以下三个工具自主规划和追踪进度，**无需用户介入**，直到所有任务完成再汇报：
+
+```
+1. create_task_list(goal, tasks)   <- 制定完整工作计划（保存到磁盘，可断点恢复）
+2. 循环直到 complete == True:
+     get_pending_tasks()            <- 取下一个任务 + 进度摘要
+     ... 执行该任务（calibrate / evaluate 等）...
+     update_task(id, "done", nse=..., kge=...)  <- 记录结果
+3. 所有任务完成后，基于 results 生成综合分析报告
+```
+
+**关键规则：**
+- 每个子任务对应一次 `calibrate_model` 或 `evaluate_model` 调用
+- 若某子任务失败（error），调用 `update_task(id, "failed", notes="原因")`，继续下一个，**不要中止整个批次**
+- 运行中途若 NSE 普遍偏低，可动态追加 llm_calibrate 重试任务
+- 全部完成后汇总：按流域/模型列表展示 NSE/KGE，指出最优组合，给出改进建议
 
 **通用规则（适用所有任务）**
 

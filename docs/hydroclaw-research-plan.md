@@ -1,6 +1,6 @@
 # HydroClaw 研究调研与规划文档
 
-> 状态：主动开发中 | 日期：2026-03-06
+> 状态：主动开发中 | 日期：2026-03-08
 
 ---
 
@@ -90,7 +90,10 @@ HydroClaw 的层次：
 4. **LLM 智能参数范围调整**
    LLM 作为虚拟水文专家，在 SCE-UA 优化器外层构建决策循环：检测参数边界效应 → 扩展搜索空间 → 触发重新优化。与 Zhu et al. 2026（LLM 替代优化器）形成互补：LLM 调控搜索空间，专业算法执行搜索。
 
-5. **三层知识体系**
+5. **Agent 自驱动任务规划（Self-Driven Task Planning）**
+   区别于传统多 Agent 系统（外部 Orchestrator 分发任务给子 Agent）和脚本批量执行（硬编码执行顺序），HydroClaw 将任务规划能力内化为三个普通工具：`create_task_list` / `get_pending_tasks` / `update_task`。Agent 在同一个 Agentic Loop 中自主制定计划、逐步执行、根据中间结果调整策略，直至目标完成——整个过程无需人工干预，也无需外部协调者。任务状态持久化到磁盘，支持中断恢复。这与旧版 HydroAgent（Orchestrator + 5个子Agent状态机）形成鲜明对比：同等能力，架构从 N 个组件压缩为 1 个 Loop + 3 个工具。
+
+6. **三层知识体系**
    - **Skill 说明书**（how to do）：工作流步骤、工具调用顺序
    - **领域知识库**（what to know）：参数物理含义、率定经验、诊断规则
    - **跨会话记忆**（what happened）：流域档案、历史最优参数
@@ -263,38 +266,67 @@ hydroclaw/
 
 - ✅ Agentic Loop 核心（`agent.py`，ReAct 模式）
 - ✅ LLM 客户端（Function Calling + Prompt fallback）
-- ✅ 记忆系统（会话日志 + 跨会话 MEMORY.md）
+- ✅ 记忆系统（会话日志 + 跨会话 basin_profiles）
 - ✅ 基础工具（calibrate/evaluate/simulate/validate/visualize）
 - ✅ LLM 智能率定（`llm_calibrate.py`，参数范围迭代调整）
 - ✅ 动态工具生成（`create_tool.py`）
-- ✅ 领域知识库骨架（`knowledge/`）
-- ✅ Phase 1 修复（gr5j/gr6j 参数范围，skill 描述一致性）
+- ✅ 领域知识库（`knowledge/`，含 datasets.md / model_parameters.md / calibration_guide.md）
+- ✅ Skill 包系统重构（每个 Skill = skill.md + tool.py 自包含目录）
+- ✅ v2.1 核心 Bug 修复（见下）
+
+**v2.1 修复记录（2026-03-08）**
+- 修复 NSE/KGE 率定方向反转：SCE-UA/GA 均为最小化器，spotpy_nashsutcliffe 直接传入
+  会找最差参数；改为运行时注入 neg_nashsutcliffe/neg_kge，最小化 -NSE = 最大化 NSE
+- 修复 AquaFetch 路径层级：DATASET_DIR 需填父目录，否则自动触发重新下载
+- 修复 Ctrl+C 无法中断 SCE-UA：移除 ThreadPoolExecutor，改为主线程执行
+- 修复 hydromodel 需要 datasets-interim 字段：_ensure_hydro_setting 自动补全
+- 配置体系重构：configs/model_config.py + configs/private.py，~/hydro_setting.yml 自动生成
 
 ### 待实现
 
-**Phase 3：Skill 包系统重构**（架构核心，论文 Section 3.3）
-- [ ] 将现有 `skills/*.md` 归入 `knowledge/`（它们本质是知识，非 Skill）
-- [ ] 重构目录：每个 Skill = `skills/<name>/skill.md` + `skills/<name>/<tool>.py`
-- [ ] 更新 `tools/__init__.py`：同时扫描 `tools/` 和 `skills/*/` 发现工具
-- [ ] 更新 `agent.py`：按查询匹配并注入对应 Skill 的 `skill.md`
-- [ ] 将 `create_tool` 升级为 `create_skill`（同时生成 .py + skill.md）
+**P0：上下文自动摘要**（前置条件，其余所有长任务都依赖此功能）
+- [ ] `agent.py` 每轮前检测历史 token 数，超过阈值（如 80% context window）时
+      调一次 LLM 将历史压缩为摘要，用摘要替换历史继续运行
+- [ ] 保证 20+ 轮次的批量任务不会因上下文溢出崩溃
 
-**Phase 4：记忆升级**（论文 Section 3.4）
-- [ ] `memory.py` 增加 `save_basin_profile()` / `load_basin_profile()`
-- [ ] 率定结束后自动写入流域档案（model × basin → NSE, best_params）
-- [ ] agent 初始化时按流域 ID 加载历史先验
+**P1：任务状态持久化**（批量实验可靠性）
+- [ ] 引入 `task_state.json`，记录每个子任务状态（pending/running/done/failed）和结果
+- [ ] 中断后从 pending 任务恢复，已完成任务不重跑
+- [ ] 结构示例：`{"goal": "...", "tasks": [{"id": "12025000_gr4j", "status": "done", "nse": 0.72}]}`
 
-**Phase 5：实验脚本**（论文 Section 4）
-- [ ] `experiment/exp1_standard_calibration.py`
-- [ ] `experiment/exp2_nl_understanding.py`
-- [ ] `experiment/exp3_llm_calibration_vs_sce.py`
-- [ ] `experiment/exp4_create_skill.py`
-- [ ] `experiment/exp5_memory.py`
+**P2：Agent 自驱动任务规划**（已完成架构设计，实现"一句话启动等待结果"）
+- [x] `task_state.py`：任务状态 JSON 持久化层（pending/running/done/failed，支持断点恢复）
+- [x] `tools/task_tools.py`：三个工具函数注册进 Agentic Loop：
+      - `create_task_list(goal, tasks)`：Agent 自行制定工作计划
+      - `get_pending_tasks()`：取下一个待执行任务 + 进度摘要
+      - `update_task(task_id, status, nse, kge, notes)`：标记完成/失败
+- [ ] 在 `skills/system.md` 中补充批量任务工作流指引，让 Agent 知道何时主动创建任务列表
+- 关键设计：规划与执行在同一 Agentic Loop 中，无外部协调者，与旧 HydroAgent
+  Orchestrator 架构形成鲜明对比（同等能力，N 个组件 → 1 个 Loop + 3 个工具）
 
-**Phase 6：论文写作**（与 Phase 5 并行）
+**P3：LLM 推理驱动的自适应策略**（已完成，论文差异化贡献）
+- [x] `add_task(description)` 工具：Agent 在执行过程中动态追加新任务
+- 关键设计：自适应逻辑不依赖硬编码规则（NSE < 阈值 → 重试），
+  而是依赖 LLM 的领域推理能力：
+    观察结果模式 → 结合 calibration_guide.md 知识解释原因
+    → 生成新假设（如"GR4J 线性汇流不适合干旱流域"）
+    → 调用 add_task() 追加验证任务 → 执行 → 汇报推理链
+- 论文价值：与规则驱动自适应的对比——相同工具、相同结构，
+  但适应策略来自 LLM 领域推理而非 if-else 逻辑，
+  体现"LLM 即策略"的核心论点
+
+**Phase 5：实验脚本**（论文 Section 4，scripts/ 已有骨架）
+- [ ] exp1_standard_calibration.py — 5流域×2模型基线，验证正确性
+- [ ] exp2_llm_calibration.py — A/B/C 三路对比（vs Zhu et al. 2026）
+- [ ] exp3_scenario_robustness.py — 12场景×2知识条件鲁棒性测试
+- [ ] exp4_create_skill.py — 动态 Skill 生成元能力验证
+- [ ] exp5_memory.py — 跨会话记忆三阶段测试
+- [ ] exp6_knowledge_ablation.py — K0-K3 四条件知识消融
+
+**Phase 6：论文写作**（与实验并行）
 - [ ] Related Work 初稿
-- [ ] System Design 章节（随开发同步）
-- [ ] 实验结果整理
+- [ ] System Design 章节（随开发同步更新）
+- [ ] 实验结果整理与可视化（plot_paper_figures.py）
 
 ---
 

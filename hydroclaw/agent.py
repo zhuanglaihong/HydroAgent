@@ -70,6 +70,8 @@ class HydroClaw:
         for turn in range(self.max_turns):
             logger.debug(f"Turn {turn + 1}/{self.max_turns}")
 
+            messages = self._maybe_compress_history(messages)
+
             with self.ui.thinking(turn + 1):
                 response = self.llm.chat(messages, tools=self.tool_schemas)
 
@@ -211,6 +213,75 @@ class HydroClaw:
         if skill_path.exists():
             return skill_path.read_text(encoding="utf-8")
         return _DEFAULT_SYSTEM_PROMPT
+
+    # ── Context compression (P0) ─────────────────────────────────────
+
+    def _estimate_tokens(self, messages: list[dict]) -> int:
+        """Rough token estimate: ~3 chars per token."""
+        total = sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
+        return total // 3
+
+    def _maybe_compress_history(self, messages: list[dict]) -> list[dict]:
+        """Compress conversation history when approaching context limit.
+
+        Keeps: system message, original user query, last 4 messages.
+        Summarizes everything in between into a single assistant message.
+        Triggered when estimated tokens exceed context_compress_threshold
+        (default 60,000 tokens, ~180k chars).
+        """
+        threshold = self.cfg.get("context_compress_threshold", 60_000)
+        if self._estimate_tokens(messages) < threshold:
+            return messages
+
+        # Need at least system + user + some history to compress
+        # Structure: [system(0), user_query(1), ...history..., tail(-4):]
+        keep_tail = 4
+        if len(messages) <= 2 + keep_tail:
+            return messages
+
+        system_msg    = messages[0]
+        user_query    = messages[1]
+        middle        = messages[2: -keep_tail]
+        tail          = messages[-keep_tail:]
+
+        if not middle:
+            return messages
+
+        logger.info(
+            "Context approaching limit (%d est. tokens), compressing %d messages...",
+            self._estimate_tokens(messages), len(middle),
+        )
+
+        middle_text = json.dumps(middle, ensure_ascii=False)
+        summary_response = self.llm.chat([
+            {
+                "role": "system",
+                "content": (
+                    "You are a concise summarizer. "
+                    "Summarize the following conversation history in a few bullet points. "
+                    "Focus on: which tools were called, what results were obtained, "
+                    "what decisions were made. Keep it under 300 words."
+                ),
+            },
+            {"role": "user", "content": middle_text},
+        ])
+
+        summary_msg = {
+            "role": "assistant",
+            "content": "[Earlier conversation summary]\n" + summary_response.text,
+        }
+
+        compressed = [system_msg, user_query, summary_msg] + tail
+        logger.info(
+            "History compressed: %d -> %d est. tokens",
+            self._estimate_tokens(messages),
+            self._estimate_tokens(compressed),
+        )
+        self.ui.dev_log(
+            f"Context compressed: ~{self._estimate_tokens(messages):,} tokens "
+            f"-> ~{self._estimate_tokens(compressed):,} tokens"
+        )
+        return compressed
 
     def _execute_tool(self, name: str, arguments: dict) -> Any:
         """Execute a tool function by name."""

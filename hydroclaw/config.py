@@ -66,6 +66,7 @@ DEFAULTS = {
         "project_dir": None,
     },
     "max_turns": 30,             # Agentic Loop 最大轮次
+    "context_compress_threshold": 60_000,  # 上下文压缩触发阈值（估算 token 数）
 }
 
 
@@ -131,13 +132,13 @@ def _ensure_hydro_setting(dataset_dir: str | None, cache_dir: str | None = None)
             print("[hydro_setting] WARNING: DATASET_DIR not set and ~/hydro_setting.yml is incomplete.")
             return
 
-    print(
-        f"[hydro_setting] Paths ({source}):\n"
-        f"  root:              {effective.get('root')}\n"
-        f"  datasets-origin:   {effective.get('datasets-origin')}\n"
-        f"  datasets-interim:  {effective.get('datasets-interim')}\n"
-        f"  cache:             {effective.get('cache')}"
-    )
+    # print(
+    #     f"[hydro_setting] Paths ({source}):\n"
+    #     f"  root:              {effective.get('root')}\n"
+    #     f"  datasets-origin:   {effective.get('datasets-origin')}\n"
+    #     f"  datasets-interim:  {effective.get('datasets-interim')}\n"
+    #     f"  cache:             {effective.get('cache')}"
+    # )
 
 
 def load_config(config_path: str | Path | None = None) -> dict[str, Any]:

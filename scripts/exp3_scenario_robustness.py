@@ -48,14 +48,14 @@ SCENARIOS = [
     {
         "id": "S03", "category": "model_comparison",
         "query": "对比GR4J和XAJ在流域12025000上的率定性能",
-        "expected_tools": ["validate_basin", "calibrate_model", "evaluate_model"],
-        "description": "多模型对比",
+        "expected_tools": ["create_task_list", "calibrate_model", "update_task"],
+        "description": "多模型对比（Agent 应自驱动规划任务列表）",
     },
     {
         "id": "S04", "category": "batch_multi_basin",
         "query": "批量率定流域12025000和03439000，使用GR4J模型",
-        "expected_tools": ["validate_basin", "calibrate_model"],
-        "description": "多流域批量率定",
+        "expected_tools": ["create_task_list", "get_pending_tasks", "calibrate_model", "update_task"],
+        "description": "多流域批量率定（Agent 应自主创建任务列表并逐步执行）",
     },
     # LLM 智能率定
     {
