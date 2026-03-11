@@ -10,7 +10,6 @@ Description: Terminal UI for HydroClaw.
 import contextlib
 import io
 import json
-import threading
 import time
 from contextlib import contextmanager
 
@@ -40,13 +39,12 @@ _TOOL_LABELS: dict[str, str] = {
     "get_pending_tasks": "获取待执行任务",
     "update_task":       "更新任务状态",
     "add_task":          "追加新任务",
+    "read_file":         "读取文件",
+    "inspect_dir":       "查看目录",
+    "ask_user":          "向用户提问",
+    "record_error_solution": "记录错误解决方案",
 }
 
-# 这些工具运行时间长，需要周期性心跳提示
-_LONG_RUNNING_TOOLS = {
-    "calibrate_model", "llm_calibrate", "batch_calibrate",
-    "compare_models", "run_code", "run_simulation",
-}
 
 
 def _tool_context(name: str, args: dict) -> str:
@@ -97,6 +95,17 @@ def _tool_context(name: str, args: dict) -> str:
 
     if name == "create_skill":
         return args.get("skill_name", "")
+
+    if name == "read_file":
+        p = args.get("path", "")
+        # show only last two path components to keep it concise
+        parts = p.replace("\\", "/").split("/")
+        return "/".join(parts[-2:]) if len(parts) >= 2 else p
+
+    if name == "inspect_dir":
+        p = args.get("path", "")
+        parts = p.replace("\\", "/").split("/")
+        return "/".join(parts[-2:]) if len(parts) >= 2 else p
 
     return ""
 
@@ -151,6 +160,8 @@ class ConsoleUI:
         self._t0: float = 0.0
         self._step: int = 0
         self._turn: int = 0
+        self._current_tool_name: str = ""
+        self._current_tool_args: dict = {}
 
     # ── Banner ────────────────────────────────────────────────────────
 
@@ -230,14 +241,14 @@ class ConsoleUI:
         """工具开始执行前调用。"""
         self._step += 1
         self._t0 = time.time()
-        label = _TOOL_LABELS.get(name, name)
-        ctx   = _tool_context(name, args)
 
         if self.mode == "user":
-            # 静态行：不用 spinner，避免与 hydromodel tqdm/print 冲突
-            ctx_part = f"  [dim]{ctx}[/dim]" if ctx else ""
-            self.console.print(f"  [cyan]▶[/cyan]  [bold]{label}[/bold]{ctx_part}")
+            # user 模式：spinner 在 suppress_tool_output 里显示，这里只存储信息
+            self._current_tool_name = name
+            self._current_tool_args = args
         else:
+            label  = _TOOL_LABELS.get(name, name)
+            ctx    = _tool_context(name, args)
             args_str = json.dumps(args, ensure_ascii=False, indent=2)
             self.console.print(
                 f"\n[yellow][CALL][/yellow] [bold]{name}[/bold]"
@@ -277,56 +288,55 @@ class ConsoleUI:
                 f"[dim]{result_str}[/dim]\n"
             )
 
+    def ask_user(self, question: str, context: str | None = None) -> str:
+        """Display a question panel and read one line of user input.
+
+        Works correctly even when called from inside suppress_tool_output
+        (which redirects sys.stdout), because rich Console holds a reference
+        to the original stdout and sys.__stdin__ is never redirected.
+        """
+        import sys
+        self.console.print()
+        body = f"[bold]{question}[/bold]"
+        if context:
+            body = f"[dim]{context}[/dim]\n\n" + body
+        self.console.print(Panel(
+            body,
+            title="[yellow]需要确认[/yellow]",
+            border_style="yellow",
+            padding=(0, 1),
+        ))
+        self.console.print("[yellow]  > [/yellow]", end="")
+        try:
+            answer = sys.__stdin__.readline().strip()
+        except (AttributeError, EOFError):
+            answer = ""
+        self.console.print()
+        return answer
+
     @contextmanager
     def suppress_tool_output(self, name: str):
-        """用户模式：屏蔽工具执行期间的所有第三方 stdout/stderr 输出。
+        """用户模式：屏蔽工具执行期间的第三方输出，并显示旋转 spinner。
 
-        - 将 sys.stdout / sys.stderr 重定向到 StringIO，拦截 hydromodel 的
-          print() 和 tqdm 进度条（tqdm 在初始化时绑定 sys.stderr）。
-        - rich 的 Console 在创建时已绑定原始 stdout，不受影响，仍可正常渲染。
-        - 对于长耗时工具，后台线程每 30s 打印一次计时心跳。
+        - 用 console.status() 显示旋转 spinner（与 LLM thinking 体验一致）
+        - 将 sys.stdout/stderr 重定向到 StringIO，拦截 hydromodel tqdm/print
+        - rich Console 在初始化时绑定原始 stdout，不受重定向影响
+        - ask_user 工具必须直接访问终端 I/O，永远不压制
         开发者模式：直接放行所有输出，hydromodel 进度条完整可见。
         """
-        if self.mode != "user":
+        if self.mode != "user" or name == "ask_user":
             yield
             return
 
-        null_io    = io.StringIO()
-        stop_event = threading.Event()
-        label      = _TOOL_LABELS.get(name, name)
-        start_time = time.time()
-        is_long    = name in _LONG_RUNNING_TOOLS
+        null_io = io.StringIO()
+        label   = _TOOL_LABELS.get(name, name)
+        args    = getattr(self, "_current_tool_args", {}) or {}
+        ctx     = _tool_context(name, args)
+        status_text = f"[cyan]{label}[/cyan]" + (f"  [dim]{ctx}[/dim]" if ctx else "")
 
-        def _heartbeat():
-            """每 30s 打印一次计时行，避免用户以为程序卡死。
-
-            使用 sys.__stdout__（Python 原始 stdout，不受 redirect_stdout 影响）
-            直接写入，绕过 rich Console 可能在运行时读 sys.stdout 的问题。
-            """
-            import sys as _sys
-            out = _sys.__stdout__
-            while not stop_event.wait(30):
-                elapsed = time.time() - start_time
-                mins, secs = divmod(int(elapsed), 60)
-                t_str = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
-                try:
-                    out.write(f"  >>  {label} 运行中 {t_str}...\n")
-                    out.flush()
-                except Exception:
-                    pass
-
-        # 重定向 stdout/stderr 到 null，拦截所有第三方 print/tqdm
         with contextlib.redirect_stdout(null_io), contextlib.redirect_stderr(null_io):
-            timer = None
-            if is_long:
-                timer = threading.Thread(target=_heartbeat, daemon=True)
-                timer.start()
-            try:
+            with self.console.status(status_text, spinner="dots", spinner_style="cyan"):
                 yield
-            finally:
-                stop_event.set()
-                if timer:
-                    timer.join(timeout=2)
 
     # ── Final answer ─────────────────────────────────────────────────
 

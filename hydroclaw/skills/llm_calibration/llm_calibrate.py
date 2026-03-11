@@ -15,6 +15,12 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# Default algorithm params — ensures adaptive scaling always has a baseline
+_DEFAULT_ALGO_PARAMS = {
+    "SCE_UA": {"rep": 750, "ngs": 200, "kstop": 10},
+    "GA": {"pop_size": 50, "n_generations": 50},
+}
+
 # Default parameter ranges for supported models
 DEFAULT_PARAM_RANGES = {
     "gr4j": {
@@ -48,34 +54,51 @@ DEFAULT_PARAM_RANGES = {
 }
 
 RANGE_ADVISOR_PROMPT = """You are a senior hydrological model calibration expert.
-Your role is to analyze SCE-UA calibration results and decide whether to adjust parameter ranges for a re-calibration round.
+Your role is to analyze SCE-UA calibration results and recommend adjustments for the next round.
+You may adjust BOTH parameter ranges AND optimization algorithm parameters.
 
 ## Model: {model_name}
 
 ## Current Parameter Ranges:
 {param_ranges_text}
 
+## Current SCE-UA Algorithm Parameters:
+{algo_params_text}
+
 ## Your Task:
-1. Analyze the calibration results (best parameters, NSE, RMSE, etc.)
-2. Check for boundary effects: if a parameter's best value is within 5% of its range boundary, the search space may be too restrictive.
-3. Decide whether to adjust parameter ranges:
-   - If a parameter hits the upper boundary → expand the upper bound (e.g., x1.5 or x2)
-   - If a parameter hits the lower boundary → expand the lower bound
-   - If NSE is already good (>= target) → no adjustment needed
-   - Keep ranges physically reasonable (no negative capacities, etc.)
+1. Check for boundary effects: if a parameter value is within 5% of its range boundary, expand that boundary.
+2. If NSE is poor but NO boundary hits, the optimizer budget may be insufficient — recommend increasing rep/ngs.
+3. If NSE >= target, stop (no adjustment needed).
+
+## Algorithm Parameter Guidance:
+- rep (total evaluations): Default 750. If NSE < 0.4 and no boundary hits → try 1500-2000.
+- ngs (complexes): Rule of thumb = 2 × n_params. GR4J→8 min; use 100-300 for quality. If NSE very low → try increasing by 50-100.
+- kstop: Leave as default (10) unless results oscillate.
 
 ## Response Format:
-If adjustment is needed, respond with a JSON block of NEW parameter ranges:
-```json
-{{"x1": [new_min, new_max], "x2": [new_min, new_max], ...}}
-```
-Then explain your reasoning.
+Include ONLY fields that need changing. Examples:
 
-If NO adjustment is needed (results are satisfactory), respond with:
+Parameter range change only:
+```json
+{{"x1": [200, 1500], "x4": [0.5, 15.0]}}
+```
+
+Algorithm params change only (ranges are fine):
+```json
+{{"no_change": true, "algorithm_params": {{"rep": 1500, "ngs": 300}}}}
+```
+
+Both ranges and algorithm params:
+```json
+{{"x1": [200, 1500], "algorithm_params": {{"rep": 1500, "ngs": 300}}}}
+```
+
+No adjustment needed at all:
 ```json
 {{"no_change": true}}
 ```
-Then explain why the current results are acceptable."""
+
+Always explain your reasoning after the JSON block."""
 
 
 def llm_calibrate(
@@ -119,33 +142,78 @@ def llm_calibrate(
         return {"error": f"No default parameter ranges for model {model_name}", "success": False}
 
     from hydroclaw.skills.calibration.calibrate import calibrate_model
+    from hydroclaw.skills.evaluation.evaluate import evaluate_model
 
     history = []
     best_nse = -999.0
     best_params = None
     best_result = None
 
+    # Resolve base algorithm params once so we can adapt per round.
+    # If not explicitly provided, fall back to config defaults so the adaptive
+    # scaling has a concrete baseline to work from (e.g. rep=750 -> 562 -> 450 -> 375).
+    if isinstance(algorithm_params, dict) and algorithm_params:
+        _base_algo_params = dict(algorithm_params)
+    else:
+        if algorithm_params is not None and not isinstance(algorithm_params, dict):
+            logger.warning(
+                f"algorithm_params must be a dict, got {type(algorithm_params).__name__}: "
+                f"{algorithm_params!r}. Falling back to config defaults."
+            )
+        _base_algo_params = dict(
+            (_cfg or {}).get("algorithms", {}).get(algorithm, {})
+        )
+    # Ensure baseline always has values so adaptive scaling has something to work with
+    if not _base_algo_params:
+        _base_algo_params = dict(_DEFAULT_ALGO_PARAMS.get(algorithm, {}))
+
     for round_idx in range(max_rounds):
         logger.info(f"=== LLM Calibration Round {round_idx + 1}/{max_rounds} ===")
 
-        # Write current ranges to YAML for this round
+        # Write current ranges to YAML (hydromodel format) for this round
         param_range_file = None
         if round_idx > 0:
-            # Only use custom range file from round 2 onwards
             range_dir = _workspace or Path(".")
             param_range_file = str(range_dir / f"_llm_param_ranges_round{round_idx}.yaml")
+            param_names = list(current_ranges.keys())
+            range_yaml = {
+                model_name: {
+                    "param_name": param_names,
+                    "param_range": {k: v for k, v in current_ranges.items()},
+                }
+            }
             with open(param_range_file, "w") as f:
-                yaml.dump({model_name: current_ranges}, f, default_flow_style=False)
+                yaml.dump(range_yaml, f, default_flow_style=False, allow_unicode=True)
             logger.info(f"Custom param ranges written to {param_range_file}")
 
-        # Run SCE-UA calibration
+        # Adaptive budget: round 1 uses full budget; later rounds scale down.
+        # Later rounds have narrower ranges so fewer evaluations are needed to
+        # find the optimum — this saves compute without sacrificing quality.
+        round_algo_params = _adaptive_algo_params(
+            _base_algo_params, algorithm, round_idx, max_rounds
+        )
+
+        # Vary random seed per round so SCE-UA explores different starting points.
+        # hydromodel SCE-UA defaults to random_seed=1234 every run — without this fix,
+        # same seed + same ranges = identical result every round, making multi-round
+        # calibration useless.
+        if algorithm == "SCE_UA" and "random_seed" not in round_algo_params:
+            round_algo_params = dict(round_algo_params)
+            round_algo_params["random_seed"] = 1234 + round_idx * 137
+        if round_algo_params != _base_algo_params:
+            logger.info(
+                f"Round {round_idx + 1}: adaptive budget "
+                f"{_base_algo_params} -> {round_algo_params}"
+            )
+
+        # Run calibration
         result = calibrate_model(
             basin_ids=basin_ids,
             model_name=model_name,
             algorithm=algorithm,
             train_period=train_period,
             test_period=test_period,
-            algorithm_params=algorithm_params,
+            algorithm_params=round_algo_params if round_algo_params else None,
             param_range_file=param_range_file,
             output_dir=str(((_workspace or Path("results")) / f"llm_round_{round_idx}")),
             _workspace=_workspace,
@@ -154,18 +222,38 @@ def llm_calibrate(
 
         if not result.get("success"):
             logger.warning(f"Round {round_idx + 1} calibration failed: {result.get('error')}")
-            history.append({"round": round_idx + 1, "error": result.get("error")})
+            history.append({
+                "round": round_idx + 1,
+                "error": result.get("error"),
+                "diagnosis": result.get("diagnosis", {}),
+            })
             continue
 
-        nse = result.get("metrics", {}).get("NSE", -999)
         round_params = result.get("best_params", {})
+        cal_dir = result.get("calibration_dir", "")
+
+        # Evaluate on training period to get NSE — calibrate_model only returns params
+        train_eval = evaluate_model(
+            calibration_dir=cal_dir,
+            eval_period=result.get("train_period"),
+            _cfg=_cfg,
+        )
+        train_metrics = train_eval.get("metrics", {}) if train_eval.get("success") else {}
+        nse = train_metrics.get("NSE", -999.0)
+        if not isinstance(nse, float):
+            nse = -999.0
+
+        # Detect which parameters are near their boundaries (<5% of range span)
+        boundary_hits = _detect_boundary_hits(round_params, current_ranges)
 
         round_record = {
             "round": round_idx + 1,
             "param_ranges": dict(current_ranges),
             "best_params": round_params,
-            "metrics": result.get("metrics", {}),
+            "train_metrics": train_metrics,
             "nse": nse,
+            "boundary_hits": boundary_hits,
+            "calibration_dir": cal_dir,
         }
         history.append(round_record)
 
@@ -174,7 +262,10 @@ def llm_calibrate(
             best_params = dict(round_params)
             best_result = result
 
-        logger.info(f"Round {round_idx + 1}: NSE={nse:.4f} (best={best_nse:.4f})")
+        logger.info(
+            f"Round {round_idx + 1}: train NSE={nse:.4f} (best={best_nse:.4f}), "
+            f"boundary_hits={[h['param'] for h in boundary_hits]}"
+        )
 
         # Early stopping if target reached
         if best_nse >= nse_target:
@@ -185,44 +276,117 @@ def llm_calibrate(
         if round_idx >= max_rounds - 1:
             break
 
-        # Ask LLM to analyze results and suggest range adjustments
-        new_ranges = _ask_llm_for_range_adjustment(
+        # Ask LLM to analyze results and suggest adjustments (ranges + algo params)
+        adj = _ask_llm_for_adjustments(
             _llm, model_name, current_ranges, round_params,
-            result.get("metrics", {}), nse_target, round_idx + 1,
+            train_metrics, nse_target, round_idx + 1,
+            current_algo_params=round_algo_params,
         )
 
-        if new_ranges is None:
+        if adj is None:
             logger.info("LLM suggests no further adjustment needed")
             break
 
-        current_ranges = new_ranges
-        logger.info(f"LLM adjusted ranges: {current_ranges}")
+        new_ranges = adj.get("ranges")
+        new_algo_params = adj.get("algo_params")
 
+        if new_ranges:
+            current_ranges = new_ranges
+            logger.info(f"LLM adjusted ranges: {current_ranges}")
+        if new_algo_params:
+            _base_algo_params.update(new_algo_params)
+            logger.info(f"LLM adjusted algorithm params: {new_algo_params}")
+
+    final_boundary_hits = _detect_boundary_hits(
+        best_params or {}, current_ranges
+    )
     return {
         "best_params": best_params or {},
-        "best_nse": best_nse,
+        "best_nse": best_nse if best_nse > -998.0 else None,
         "rounds": len(history),
+        "nse_history": [h.get("nse") for h in history],  # compact, preserved in summary
         "history": history,
+        "final_boundary_hits": final_boundary_hits,
         "model_name": model_name,
         "basin_ids": basin_ids,
         "calibration_dir": best_result.get("calibration_dir", "") if best_result else "",
-        "success": best_nse > -999,
+        "success": best_nse > -998.0,
+        "observation_hint": (
+            f"Each round's boundary_hits shows which params hit their range limits. "
+            f"final_boundary_hits={final_boundary_hits}. "
+            "If any param still hits boundary after all rounds, consider expanding ranges further."
+        ),
     }
 
 
-def _ask_llm_for_range_adjustment(
-    llm, model_name, current_ranges, best_params, metrics, nse_target, round_num
-) -> dict | None:
-    """Ask LLM to analyze results and suggest new parameter ranges.
+def _adaptive_algo_params(base: dict, algorithm: str, round_idx: int, max_rounds: int) -> dict:
+    """Scale down SCE-UA/GA budget for later rounds.
 
-    Returns new ranges dict, or None if no adjustment needed.
+    Round 1 runs at full budget (wide global search).
+    Subsequent rounds run at reduced budget because the parameter range
+    has been narrowed by the LLM advisor, requiring fewer evaluations
+    to find the optimum within the tighter space.
+
+    Scale schedule: round 1=100%, round 2=75%, round 3=60%, round 4+=50%.
+    """
+    if round_idx == 0 or algorithm not in ("SCE_UA", "GA"):
+        return base
+
+    scales = [1.0, 0.75, 0.60, 0.50]
+    scale = scales[min(round_idx, len(scales) - 1)]
+
+    result = dict(base)
+    if algorithm == "SCE_UA":
+        for key in ("rep", "ngs", "kstop"):
+            if key in result:
+                result[key] = max(50, int(result[key] * scale))
+    elif algorithm == "GA":
+        for key in ("pop_size", "n_generations"):
+            if key in result:
+                result[key] = max(10, int(result[key] * scale))
+    return result
+
+
+def _detect_boundary_hits(params: dict, ranges: dict, threshold_pct: float = 5.0) -> list:
+    """Return list of params that are within threshold_pct% of their range boundary."""
+    hits = []
+    for name, value in params.items():
+        if name not in ranges:
+            continue
+        lo, hi = ranges[name]
+        span = hi - lo
+        if span <= 0:
+            continue
+        lo_pct = (value - lo) / span * 100
+        hi_pct = (hi - value) / span * 100
+        if lo_pct < threshold_pct:
+            hits.append({"param": name, "boundary": "lower",
+                         "value": value, "bound": lo, "pct_from_bound": round(lo_pct, 1)})
+        elif hi_pct < threshold_pct:
+            hits.append({"param": name, "boundary": "upper",
+                         "value": value, "bound": hi, "pct_from_bound": round(hi_pct, 1)})
+    return hits
+
+
+def _ask_llm_for_adjustments(
+    llm, model_name, current_ranges, best_params, metrics, nse_target, round_num,
+    current_algo_params: dict | None = None,
+) -> dict | None:
+    """Ask LLM to analyze results and suggest adjustments to parameter ranges and/or algorithm params.
+
+    Returns {"ranges": dict|None, "algo_params": dict|None}, or None if no change needed.
     """
     ranges_text = "\n".join(
         f"  - {name}: [{r[0]}, {r[1]}]" for name, r in current_ranges.items()
     )
+    algo_text = "\n".join(
+        f"  - {k}: {v}" for k, v in (current_algo_params or {}).items()
+    ) or "  (using defaults)"
+
     system_prompt = RANGE_ADVISOR_PROMPT.format(
         model_name=model_name,
         param_ranges_text=ranges_text,
+        algo_params_text=algo_text,
     )
 
     # Build boundary analysis for context
@@ -244,15 +408,25 @@ def _ask_llm_for_range_adjustment(
                     f"at {lo_pct:.1f}% from lower){status}"
                 )
 
+    nse_val = metrics.get("NSE", "N/A")
+    no_boundary = not any("HITS" in line for line in boundary_info)
+    extra_hint = ""
+    if no_boundary and isinstance(nse_val, float) and nse_val < nse_target:
+        extra_hint = (
+            "\nNo boundary hits detected but NSE is still below target. "
+            "Consider recommending larger rep or ngs to improve optimizer coverage."
+        )
+
     user_msg = (
         f"Round {round_num} SCE-UA calibration results:\n"
-        f"  NSE = {metrics.get('NSE', 'N/A')}\n"
+        f"  NSE = {nse_val}\n"
         f"  RMSE = {metrics.get('RMSE', 'N/A')}\n"
         f"  KGE = {metrics.get('KGE', 'N/A')}\n"
         f"  Target NSE = {nse_target}\n\n"
         f"Best parameters and boundary analysis:\n"
-        + "\n".join(boundary_info) + "\n\n"
-        f"Should we adjust parameter ranges for the next calibration round?"
+        + "\n".join(boundary_info)
+        + extra_hint + "\n\n"
+        "What adjustments do you recommend for the next calibration round?"
     )
 
     messages = [
@@ -261,56 +435,98 @@ def _ask_llm_for_range_adjustment(
     ]
 
     response = llm.chat(messages)
-    return _parse_ranges(response.text, current_ranges)
+    return _parse_adjustments(response.text, current_ranges)
 
 
-def _parse_ranges(text: str, current_ranges: dict) -> dict | None:
-    """Parse parameter range adjustments from LLM response.
+def _parse_adjustments(text: str, current_ranges: dict) -> dict | None:
+    """Parse parameter range and/or algorithm param adjustments from LLM response.
 
-    Returns new ranges dict, or None if LLM says no change needed.
+    Returns {"ranges": new_ranges|None, "algo_params": dict|None},
+    or None if no adjustment at all.
     """
     import re
 
-    # Try to find JSON block
-    json_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
-    matches = re.findall(json_pattern, text, re.DOTALL)
-
-    for match in matches:
+    def _extract_data(raw_text):
+        # Try code-fenced JSON blocks first
+        json_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
+        matches = re.findall(json_pattern, raw_text, re.DOTALL)
+        for match in matches:
+            try:
+                return json.loads(match.strip())
+            except (json.JSONDecodeError, ValueError, TypeError):
+                continue
+        # Try parsing the whole text (for test/direct JSON input)
         try:
-            data = json.loads(match.strip())
-            if isinstance(data, dict):
-                if data.get("no_change"):
-                    return None
-                # Validate: each value should be [min, max]
-                new_ranges = dict(current_ranges)
-                for name, bounds in data.items():
-                    if name in current_ranges and isinstance(bounds, list) and len(bounds) == 2:
-                        lo, hi = float(bounds[0]), float(bounds[1])
-                        if lo < hi:
-                            new_ranges[name] = [lo, hi]
-                if new_ranges != current_ranges:
-                    return new_ranges
-                return None
+            stripped = raw_text.strip()
+            if stripped.startswith("{"):
+                return json.loads(stripped)
         except (json.JSONDecodeError, ValueError, TypeError):
-            continue
+            pass
+        # Fallback: find outermost {...} block (handles nested braces)
+        start = raw_text.find("{")
+        if start >= 0:
+            depth = 0
+            for i, ch in enumerate(raw_text[start:], start):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(raw_text[start:i + 1])
+                        except (json.JSONDecodeError, ValueError, TypeError):
+                            break
+        return None
 
-    # Try inline JSON
-    try:
-        json_match = re.search(r'\{[^{}]+\}', text)
-        if json_match:
-            data = json.loads(json_match.group())
-            if isinstance(data, dict):
-                if data.get("no_change"):
-                    return None
-                new_ranges = dict(current_ranges)
-                for name, bounds in data.items():
-                    if name in current_ranges and isinstance(bounds, list) and len(bounds) == 2:
-                        lo, hi = float(bounds[0]), float(bounds[1])
-                        if lo < hi:
-                            new_ranges[name] = [lo, hi]
-                if new_ranges != current_ranges:
-                    return new_ranges
-    except (json.JSONDecodeError, ValueError, TypeError):
-        pass
+    data = _extract_data(text)
+    if not isinstance(data, dict):
+        return None
 
-    return None
+    no_range_change = bool(data.get("no_change"))
+    algo_params_raw = data.get("algorithm_params")
+
+    # Parse new parameter ranges
+    new_ranges = None
+    if not no_range_change:
+        candidate = dict(current_ranges)
+        changed = False
+        for name, bounds in data.items():
+            if name in ("no_change", "algorithm_params"):
+                continue
+            if name in current_ranges and isinstance(bounds, list) and len(bounds) == 2:
+                try:
+                    lo, hi = float(bounds[0]), float(bounds[1])
+                    if lo < hi:
+                        candidate[name] = [lo, hi]
+                        changed = True
+                except (ValueError, TypeError):
+                    continue
+        if changed:
+            new_ranges = candidate
+
+    # Parse algorithm param suggestions
+    new_algo_params = None
+    if isinstance(algo_params_raw, dict) and algo_params_raw:
+        parsed_algo = {}
+        for k, v in algo_params_raw.items():
+            try:
+                parsed_algo[k] = int(v) if isinstance(v, (int, float)) else v
+            except (ValueError, TypeError):
+                pass
+        if parsed_algo:
+            new_algo_params = parsed_algo
+
+    if new_ranges is None and new_algo_params is None:
+        return None
+
+    return {"ranges": new_ranges, "algo_params": new_algo_params}
+
+
+llm_calibrate.__agent_hint__ = (
+    "LLM-guided iterative calibration: each round runs SCE-UA with a DIFFERENT random seed, "
+    "LLM analyzes results and adjusts BOTH parameter ranges AND algorithm params (rep/ngs). "
+    "Random seed varies automatically per round to avoid identical results. "
+    "If NSE is low with no boundary hits, LLM recommends increasing rep/ngs automatically. "
+    "Pass algorithm_params={'rep': 1500, 'ngs': 300} for difficult basins (semiarid, negative NSE). "
+    "Returns best_nse and best_params directly. Still call evaluate_model(calibration_dir=...) for test period."
+)

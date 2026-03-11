@@ -104,6 +104,13 @@ def fn_to_schema(fn: Callable) -> dict[str, Any] | None:
         # Split docstring into description and args
         description, param_docs = _parse_docstring(doc)
 
+        # Append __agent_hint__ if defined — operational call-site knowledge
+        # (parameter gotchas, output→input relationships, common mistakes).
+        # Kept separate from docstring so it survives _parse_docstring truncation.
+        hint = getattr(fn, "__agent_hint__", None)
+        if hint:
+            description = description.rstrip(".") + ". " + hint.strip()
+
         properties = {}
         required = []
 
@@ -153,8 +160,16 @@ def fn_to_schema(fn: Callable) -> dict[str, Any] | None:
         return None
 
 
+_PARAM_DESC_MAX = 100  # max chars for each parameter description in schema
+
 def _parse_docstring(doc: str) -> tuple[str, dict[str, str]]:
-    """Parse docstring into description and parameter docs."""
+    """Parse docstring into description and parameter docs.
+
+    Schema-size policy:
+    - Function description: first sentence only (up to first '. ' or 120 chars)
+    - Parameter descriptions: truncated to _PARAM_DESC_MAX chars
+    Full docstrings remain in source for developer reference.
+    """
     lines = doc.strip().split("\n")
     description_lines = []
     param_docs: dict[str, str] = {}
@@ -172,11 +187,21 @@ def _parse_docstring(doc: str) -> tuple[str, dict[str, str]]:
             import re
             match = re.match(r"(\w+)(?:\s*\([^)]*\))?\s*:\s*(.*)", stripped)
             if match:
-                param_docs[match.group(1)] = match.group(2).strip()
+                desc = match.group(2).strip()
+                # Truncate long param descriptions to keep schema lean
+                if len(desc) > _PARAM_DESC_MAX:
+                    desc = desc[:_PARAM_DESC_MAX - 3] + "..."
+                param_docs[match.group(1)] = desc
         elif not in_args and not stripped.startswith("---"):
             description_lines.append(stripped)
 
-    description = " ".join(description_lines).strip()
+    full_desc = " ".join(description_lines).strip()
+    # Keep only the first sentence for the schema; full text stays in source
+    dot_idx = full_desc.find(". ")
+    if 0 < dot_idx < 120:
+        description = full_desc[: dot_idx + 1]
+    else:
+        description = full_desc[:120]
     return description, param_docs
 
 

@@ -222,7 +222,8 @@ def _summarize_result(result: Any) -> Any:
             summary = {}
             for k, v in result.items():
                 if k in ("error", "success", "metrics", "best_params", "calibration_dir",
-                         "valid", "valid_basins", "plot_count", "file_path"):
+                         "valid", "valid_basins", "plot_count", "file_path",
+                         "best_nse", "rounds", "nse_history"):
                     summary[k] = v
                 elif isinstance(v, list):
                     summary[k] = f"[{len(v)} items]"

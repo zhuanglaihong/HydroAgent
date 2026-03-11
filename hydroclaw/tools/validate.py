@@ -59,6 +59,12 @@ def validate_basin(
 
     all_valid = len(invalid_basins) == 0 and len(warnings) == 0
 
+    # Expose data_path and dataset metadata so downstream tools (e.g. generate_code)
+    # have everything they need to read data correctly without guessing.
+    from hydroclaw.utils.basin_validator import _dataset_dir, _DATASET_CLASS_MAP, _has_hydrodataset
+    data_path = str(_dataset_dir) if _dataset_dir else None
+    dataset_info = _probe_dataset_info(data_source, _dataset_dir, _has_hydrodataset, _DATASET_CLASS_MAP)
+
     result = {
         "valid": all_valid or len(valid_basins) > 0,
         "valid_basins": valid_basins,
@@ -66,6 +72,8 @@ def validate_basin(
         "warnings": warnings,
         "train_period": train_period,
         "test_period": test_period,
+        "data_path": data_path,
+        **dataset_info,
     }
 
     logger.info(
@@ -73,3 +81,56 @@ def validate_basin(
         f"{len(warnings)} warnings"
     )
     return result
+
+
+validate_basin.__agent_hint__ = (
+    "Returns data_path, available_variables, full_time_range, read_api_note. "
+    "Pass data_path+available_variables+full_time_range to generate_code. "
+    "If data_path=None, use ask_user to get the dataset directory."
+)
+
+
+def _probe_dataset_info(data_source: str, dataset_dir, has_hydrodataset: bool, class_map: dict) -> dict:
+    """Query the dataset object for metadata useful to code generation.
+
+    Returns a dict with keys:
+      available_variables  - list of readable variable names
+      full_time_range      - ["YYYY-MM-DD", "YYYY-MM-DD"] full available period
+      time_resolution      - "daily" / "hourly" / unknown
+      read_api_note        - one-line reminder of the correct read call
+    """
+    info: dict = {
+        "available_variables": None,
+        "full_time_range": None,
+        "time_resolution": "daily",
+        "read_api_note": (
+            "Use ds.read_ts_xrdataset(gage_id_lst=[...], t_range=[start, end], var_lst=[...]). "
+            "t_range is REQUIRED — omitting it triggers a full cache rebuild and may fail."
+        ),
+    }
+    if not has_hydrodataset or not dataset_dir:
+        return info
+
+    entry = class_map.get(data_source.lower())
+    if entry is None:
+        return info
+
+    mod_name, cls_name = entry
+    try:
+        import importlib
+        mod = importlib.import_module(mod_name)
+        cls = getattr(mod, cls_name, None)
+        if cls is None:
+            return info
+        ds = cls(data_path=dataset_dir)
+
+        if hasattr(ds, "_dynamic_variable_mapping") and ds._dynamic_variable_mapping:
+            info["available_variables"] = list(ds._dynamic_variable_mapping.keys())
+
+        if hasattr(ds, "default_t_range") and ds.default_t_range:
+            info["full_time_range"] = ds.default_t_range
+
+    except Exception as e:
+        logger.debug("_probe_dataset_info failed for %s: %s", data_source, e)
+
+    return info
