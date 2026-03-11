@@ -127,6 +127,13 @@ def compare_models(
     }
 
 
+compare_models.__agent_hint__ = (
+    "Calibrates AND evaluates multiple models on the same basin. "
+    "Returns best_model, best_nse, and per-model comparison table. "
+    "Use this instead of calling calibrate_model + evaluate_model in a loop."
+)
+
+
 def _build_table(comparison: list[dict]) -> str:
     """Build a markdown comparison table."""
     header = "| 模型 | 流域 | 算法 | NSE | RMSE | KGE |"

@@ -1,0 +1,116 @@
+{
+  "description": "HydroClaw Error Knowledge Base — auto-updated",
+  "updated_at": "2026-03-09T21:04:00.914470",
+  "entries": [
+    {
+      "id": "err_001",
+      "category": "missing_import",
+      "pattern": "NameError: name '(\\w+)' is not defined",
+      "description": "Variable used at module level without import",
+      "solutions": [
+        "Move all imports inside the function body (lazy import pattern).",
+        "For numpy: add `import numpy as np` at the top of the function.",
+        "For pandas: add `import pandas as pd` inside the function.",
+        "For matplotlib: add `import matplotlib.pyplot as plt` inside the function.",
+        "Check if the variable is a typo of an imported name."
+      ],
+      "example_fix": "def my_tool(x: int) -> dict:\n    import numpy as np          # import inside function body\n    arr = np.array([x])\n    return {'result': arr.tolist(), 'success': True}",
+      "times_seen": 1,
+      "times_resolved": 0,
+      "last_seen": "2026-03-09T21:04:00.913408"
+    },
+    {
+      "id": "err_002",
+      "category": "import_error",
+      "pattern": "(ImportError|ModuleNotFoundError): [Nn]o module named '(\\S+)'",
+      "description": "Package not installed or wrong import path",
+      "solutions": [
+        "Check if the package is installed: run `pip show <package>` in terminal.",
+        "If the package is not installed, add a try/except around the import and return {\"error\": \"Package X not installed. Run: pip install X\", \"success\": False}.",
+        "Verify the exact import path — do not hallucinate submodule paths.",
+        "Use inspect_dir or read_file to verify the real import structure before importing."
+      ],
+      "example_fix": "def my_tool() -> dict:\n    try:\n        import spotpy\n    except ImportError:\n        return {'error': 'spotpy not installed. Run: pip install spotpy', 'success': False}\n    ...",
+      "times_seen": 0,
+      "times_resolved": 0,
+      "last_seen": null
+    },
+    {
+      "id": "err_003",
+      "category": "attribute_error",
+      "pattern": "AttributeError: .* has no attribute '(\\w+)'",
+      "description": "Wrong attribute or method name on an object",
+      "solutions": [
+        "Use inspect_dir or read_file to check the actual API of the package.",
+        "Do not guess method names — verify with the package documentation.",
+        "Add a stub that returns an error rather than calling an unverified API."
+      ],
+      "example_fix": "# Instead of guessing: result = pkg.unknown_method()\n# Use a safe stub:\nreturn {'error': 'API not verified — inspect package first', 'success': False}  # TODO: verify import path",
+      "times_seen": 0,
+      "times_resolved": 0,
+      "last_seen": null
+    },
+    {
+      "id": "err_004",
+      "category": "syntax_error",
+      "pattern": "SyntaxError: (.*)",
+      "description": "Python syntax error in generated code",
+      "solutions": [
+        "Check for unclosed parentheses, brackets, or quotes.",
+        "Ensure f-strings are properly closed.",
+        "Verify indentation is consistent (use 4 spaces, not tabs).",
+        "Check for missing colons after def/if/for/with statements."
+      ],
+      "example_fix": "",
+      "times_seen": 0,
+      "times_resolved": 0,
+      "last_seen": null
+    },
+    {
+      "id": "err_005",
+      "category": "type_error",
+      "pattern": "TypeError: (.*)",
+      "description": "Wrong argument type or count passed to a function",
+      "solutions": [
+        "Check the function signature and ensure argument types match.",
+        "Verify the number of positional arguments.",
+        "Add type conversion if needed (e.g. int(), str(), list())."
+      ],
+      "example_fix": "",
+      "times_seen": 0,
+      "times_resolved": 0,
+      "last_seen": null
+    },
+    {
+      "id": "err_006",
+      "category": "unknown",
+      "pattern": "ValueError:\\ could\\ not\\ convert\\ string\\ to\\ float:\\ 'N/A'",
+      "description": "ValueError: could not convert string to float: 'N/A'",
+      "solutions": [
+        "Strip non-numeric characters before float conversion"
+      ],
+      "example_fix": "",
+      "times_seen": 1,
+      "times_resolved": 1,
+      "last_seen": "2026-03-09T21:04:00.914379",
+      "auto_added": true
+    },
+    {
+      "id": "err_007",
+      "category": "wrong_tool_choice",
+      "pattern": "inspect_dir.*inspect_dir.*inspect_dir|连续.*inspect_dir|basin.*data.*not found|没有找到.*数据文件|模拟数据.*演示",
+      "description": "Agent used inspect_dir repeatedly to guess CAMELS basin data path instead of calling validate_basin first",
+      "solutions": [
+        "When generating code that needs basin data (streamflow/precipitation), call validate_basin(basin_id) FIRST to get the correct data_path.",
+        "validate_basin returns 'data_path' which is the exact directory for that basin's CAMELS files.",
+        "Pass data_path from validate_basin directly into generate_code as context — do NOT hardcode or guess paths.",
+        "If validate_basin returns success=False, report the error to the user and stop — do NOT fall back to simulated data silently.",
+        "Do NOT use inspect_dir to explore data directories more than 2 times. If path is not found after 2 tries, call validate_basin."
+      ],
+      "example_fix": "# Step 1: get basin data path\nresult = validate_basin(basin_id='12025000')\ndata_path = result['data_path']\n# Step 2: generate code using the real path\ngenerate_code(task='compute runoff coefficient and FDC', data_path=data_path, ...)",
+      "times_seen": 1,
+      "times_resolved": 0,
+      "last_seen": "2026-03-09T21:38:09"
+    }
+  ]
+}

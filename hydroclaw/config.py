@@ -22,7 +22,8 @@ DEFAULTS = {
         "api_key_env": "LLM_API_KEY",
         "temperature": 0.1,
         "max_tokens": 20000,
-        "timeout": 60,
+        "timeout": 120,      # seconds per request; increase if API is slow
+        "max_retries": 1,    # openai SDK retries; default 2 causes 3-min stalls on timeout
         "supports_function_calling": None,  # None = auto-detect
     },
     "defaults": {
@@ -193,6 +194,15 @@ def _load_from_hydroagent(cfg: dict):
         base_url = getattr(_defs, "OPENAI_BASE_URL", None)
         if base_url and (not cfg["llm"].get("base_url") or cfg["llm"]["base_url"] == DEFAULTS["llm"]["base_url"]):
             cfg["llm"]["base_url"] = base_url
+        llm_model = getattr(_defs, "LLM_MODEL", None)
+        if llm_model:
+            cfg["llm"]["model"] = llm_model
+        llm_timeout = getattr(_defs, "LLM_TIMEOUT", None)
+        if llm_timeout:
+            cfg["llm"]["timeout"] = llm_timeout
+        llm_max_retries = getattr(_defs, "LLM_MAX_RETRIES", None)
+        if llm_max_retries is not None:
+            cfg["llm"]["max_retries"] = llm_max_retries
         if not cfg["paths"]["dataset_dir"]:
             cfg["paths"]["dataset_dir"] = getattr(_defs, "DATASET_DIR", None)
         if not cfg["paths"]["project_dir"]:

@@ -37,7 +37,13 @@ def calibrate_model(
         algorithm: Optimization algorithm ("SCE_UA", "GA", "scipy")
         train_period: Training period ["YYYY-MM-DD", "YYYY-MM-DD"]
         test_period: Testing period ["YYYY-MM-DD", "YYYY-MM-DD"]
-        algorithm_params: Algorithm parameter overrides as a dict, e.g. {"rep": 500, "ngs": 200}. Must be a dict, NOT a string.
+        algorithm_params: Dict of algorithm parameter overrides. Must be a dict, NOT a string.
+            Pass None to use project defaults (recommended for most cases).
+            SCE_UA keys: rep (total evaluations), ngs (complexes), kstop (convergence steps).
+              e.g. {"rep": 200, "ngs": 50} for a quick test, {"rep": 1500, "ngs": 300} for
+              high-quality results. Default: rep=750, ngs=200.
+            GA keys: pop_size, n_generations. e.g. {"pop_size": 20, "n_generations": 10}.
+            scipy keys: method ("SLSQP"/"L-BFGS-B"), max_iterations. e.g. {"method": "SLSQP", "max_iterations": 30}.
         param_range_file: Path to custom parameter range YAML file for boundary expansion
         output_dir: Output directory for results
 
@@ -72,6 +78,8 @@ def calibrate_model(
         f"Starting calibration: {model_name}/{algorithm} for basins {basin_ids}"
     )
 
+    output_dir = config["training_cfgs"]["output_dir"]
+
     try:
         result = hm_calibrate(config)
     except KeyboardInterrupt:
@@ -85,89 +93,70 @@ def calibrate_model(
             try:
                 result = hm_calibrate(config)
             except Exception as e2:
-                return {"error": f"Calibration failed: {e2}", "success": False}
+                return _calibration_error(str(e2), output_dir)
         else:
-            return {"error": f"Calibration failed: {e}", "success": False}
+            return _calibration_error(error_msg, output_dir)
 
-    # Parse results
+    # Parse results - hydromodel calibrate() only returns best_params + objective_value,
+    # NOT NSE/KGE metrics. To get metrics, call evaluate_model() explicitly afterwards.
     parsed = parse_calibration_result(result, config)
+    cal_dir = parsed.get("calibration_dir", "")
 
-    # Evaluate on training period and save to <calibration_dir>/train_metrics/
-    train_metrics = {}
-    cal_dir = parsed.get("calibration_dir")
+    # Build list of key files the Agent can read to observe the calibration output
+    observable_files = {}
     if cal_dir:
-        actual_train_period = config["data_cfgs"]["train_period"]
-        train_metrics = _evaluate_train(cal_dir, actual_train_period)
+        from pathlib import Path as _Path
+        _d = _Path(cal_dir)
+        for fname in ["calibration_results.json", "basins_denorm_params.csv",
+                      "param_range.yaml", "calibration_config.yaml"]:
+            if (_d / fname).exists():
+                observable_files[fname] = str(_d / fname)
 
     return {
         "best_params": parsed.get("best_params", {}),
-        "metrics": parsed.get("metrics", {}),
-        "train_metrics": train_metrics,
-        "calibration_dir": parsed.get("calibration_dir", ""),
+        "calibration_dir": cal_dir,
+        "train_period": config["data_cfgs"]["train_period"],
+        "test_period": config["data_cfgs"]["test_period"],
         "output_files": parsed.get("output_files", []),
+        "observable_files": observable_files,
         "model_name": model_name,
         "algorithm": algorithm,
         "basin_ids": basin_ids,
         "success": True,
+        "next_steps": [
+            f"Call evaluate_model('{cal_dir}', eval_period=train_period) to get train NSE/KGE.",
+            f"Call evaluate_model('{cal_dir}', eval_period=test_period) to get test NSE/KGE.",
+            "Or call inspect_dir(calibration_dir) to see all output files.",
+            "Or call read_file(observable_files['calibration_results.json']) to inspect raw parameters.",
+        ],
     }
 
 
-def _evaluate_train(calibration_dir: str, train_period: list) -> dict:
-    """Evaluate on training period and save metrics to <calibration_dir>/train_metrics/.
+def _calibration_error(error_msg: str, output_dir: str) -> dict:
+    """Return a diagnostic error dict so the Agent can reason about what went wrong."""
+    from pathlib import Path as _Path
+    p = _Path(output_dir)
+    diagnosis = {
+        "output_dir_exists": p.exists(),
+        "files_found": [f.name for f in p.iterdir() if f.is_file()] if p.exists() else [],
+    }
+    hint = ""
+    if "HDF error" in error_msg or "NetCDF" in error_msg:
+        hint = "HDF/NetCDF file lock — try again or call inspect_dir(output_dir) to check partial output."
+    elif "No such file" in error_msg or "dataset" in error_msg.lower():
+        hint = "Dataset path issue — check DATASET_DIR in configs/private.py points to the parent of CAMELS_US/."
+    elif not diagnosis["output_dir_exists"]:
+        hint = "Output directory was never created — calibration likely failed before writing any files."
+    else:
+        hint = f"Use inspect_dir('{output_dir}') to see what was produced before the failure."
 
-    Returns metrics dict, or empty dict on failure.
-    """
-    import csv
-    try:
-        from hydromodel.trainers.unified_evaluate import evaluate
-        from hydromodel.configs.config_manager import load_config_from_calibration
+    return {
+        "error": f"Calibration failed: {error_msg}",
+        "success": False,
+        "diagnosis": diagnosis,
+        "hint": hint,
+    }
 
-        config = load_config_from_calibration(calibration_dir)
-        train_dir = Path(calibration_dir) / "train_metrics"
-        train_dir.mkdir(exist_ok=True)
-
-        result = evaluate(
-            config,
-            param_dir=calibration_dir,
-            eval_period=train_period,
-            eval_output_dir=str(train_dir),
-        )
-
-        # Primary: read from train_dir/basins_metrics.csv
-        metrics_file = train_dir / "basins_metrics.csv"
-        if metrics_file.exists():
-            with open(metrics_file, newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    return {
-                        k: float(v)
-                        for k, v in row.items()
-                        if k and k.strip() and v and v.strip()
-                    }
-
-        # Fallback: parse directly from result dict
-        import numpy as np
-        if isinstance(result, dict):
-            basin_ids = [k for k in result if isinstance(result.get(k), dict)]
-            if basin_ids:
-                first = result[basin_ids[0]]
-                if isinstance(first, dict) and "metrics" in first:
-                    flat = {}
-                    for k, v in first["metrics"].items():
-                        if isinstance(v, (list, np.ndarray)):
-                            flat[k] = float(v[0]) if len(v) > 0 else None
-                        else:
-                            flat[k] = v
-                    # Also save to json for traceability
-                    import json
-                    (train_dir / "metrics.json").write_text(
-                        json.dumps(flat, ensure_ascii=False, indent=2), encoding="utf-8"
-                    )
-                    return flat
-
-    except Exception as e:
-        logger.warning(f"Train period evaluation failed: {e}")
-    return {}
 
 
 def _inject_negated_losses():
@@ -204,3 +193,10 @@ def _clear_caches():
         gc.collect()
     except Exception:
         pass
+
+
+calibrate_model.__agent_hint__ = (
+    "Returns calibration_dir and best_params — NO metrics (NSE/KGE). "
+    "Must call evaluate_model(calibration_dir=...) separately to get metrics. "
+    "If NSE is low, check if params hit boundaries via read_file(calibration_results.json)."
+)

@@ -78,7 +78,19 @@ python -m hydroclaw "率定GR4J，流域12025000"  # 单次查询
 python -m hydroclaw -w results/exp1 -v       # 指定工作目录 + 详细日志
 ```
 
-详见 [docs/getting-started.md](docs/getting-started.md)
+**交互模式斜杠命令**：
+
+| 命令 | 说明 |
+|------|------|
+| `/tasks` | 显示当前批量任务列表和进度 |
+| `/pause` | 请求暂停（Agent 在当前步骤完成后停下，任务进度自动保存） |
+| `/resume` | 恢复上次未完成的批量任务，已完成任务自动跳过 |
+| `/help` | 列出所有可用命令 |
+| `/quit` | 安全退出（有未完成任务时提示确认） |
+
+**Ctrl+C**：中断正在运行的任务（如率定进度条），返回输入提示符，可用 `/resume` 继续。
+
+详见 [docs/getting-started.md](docs/getting-started.md) · [docs/usage.md](docs/usage.md)
 
 ---
 

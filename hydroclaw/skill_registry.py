@@ -48,6 +48,7 @@ class SkillRegistry:
                     "tools": meta.get("tools", []),
                     "when_to_use": meta.get("when_to_use", ""),
                     "content": content,
+                    "skill_md_path": str(skill_md),  # absolute path for read_file
                 }
                 logger.debug(f"Loaded skill: {dir_name} ({meta.get('name', dir_name)})")
             except Exception as e:
@@ -55,9 +56,16 @@ class SkillRegistry:
 
         logger.info(f"Loaded {len(self.skills)} skills: {list(self.skills.keys())}")
 
-    def match(self, query: str) -> list[str]:
-        """Return matched skill content list for the given query.
+    # Max chars of a skill's content to inject per request.
+    # Full content is ~1500-3000 chars; 800 chars covers the key workflow steps.
+    _SKILL_CONTENT_MAX = 800
 
+    def match(self, query: str) -> list[str]:
+        """Return matched skill content snippets for the given query.
+
+        Injects up to _SKILL_CONTENT_MAX chars per matched skill to keep
+        the system prompt lean. Full skill.md is available on disk if the
+        agent needs more detail via read_file / inspect_dir.
         Falls back to 'calibration' skill if nothing matches.
         """
         query_lower = query.lower()
@@ -66,13 +74,18 @@ class SkillRegistry:
         for skill in self.skills.values():
             keywords = skill.get("keywords", [])
             if any(str(kw).lower() in query_lower for kw in keywords):
-                matched.append(skill["content"])
+                content = skill["content"]
+                if len(content) > self._SKILL_CONTENT_MAX:
+                    content = content[: self._SKILL_CONTENT_MAX] + "\n...(see skill.md for full workflow)"
+                matched.append(content)
 
         if not matched:
-            # Default fallback: calibration skill
             default = self.skills.get("calibration")
             if default:
-                matched.append(default["content"])
+                content = default["content"]
+                if len(content) > self._SKILL_CONTENT_MAX:
+                    content = content[: self._SKILL_CONTENT_MAX] + "\n...(see skill.md for full workflow)"
+                matched.append(content)
 
         return matched
 
@@ -87,15 +100,32 @@ class SkillRegistry:
             for s in self.skills.values()
         ]
 
-    def available_skills_prompt(self) -> str:
-        """Return a compact skill list for injecting into the system prompt."""
+    def available_skills_prompt(self, state_mgr=None) -> str:
+        """Return a skill list with file paths for the system prompt.
+
+        Each entry shows the skill name, description, when_to_use, and the
+        path to skill.md so the agent can read the full workflow via read_file.
+
+        Args:
+            state_mgr: Optional SkillStateManager to show lifecycle badges.
+        """
         if not self.skills:
             return ""
-        lines = ["## Available Skills\n"]
-        for s in self.skills.values():
-            lines.append(f"- **{s['name']}**: {s['description']}")
+        lines = [
+            "## Available Skills",
+            "",
+            "若任务匹配某个 Skill，先用 `read_file` 读取其 `skill_md_path`，",
+            "阅读完整工作流后再执行。不要跳过这一步。",
+            "",
+        ]
+        for dir_name, s in self.skills.items():
+            badge = state_mgr.status_badge(dir_name) if state_mgr else ""
+            badge_str = f" {badge}" if badge else ""
+            lines.append(f"- **{s['name']}**{badge_str}")
+            lines.append(f"  - 描述: {s['description']}")
             if s.get("when_to_use"):
                 lines.append(f"  - 何时使用: {s['when_to_use']}")
+            lines.append(f"  - 读取路径: `{s['skill_md_path']}`")
         lines.append(
             "\n当用户需求超出以上 Skill 时，使用 `create_skill` 自动生成新的 Skill 包。"
         )

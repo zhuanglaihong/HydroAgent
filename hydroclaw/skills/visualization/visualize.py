@@ -72,3 +72,10 @@ def visualize(
 
     logger.info(f"Generated {len(plot_files)} plots")
     return {"plot_files": plot_files, "plot_count": len(plot_files)}
+
+
+visualize.__agent_hint__ = (
+    "Requires calibration_dir (from calibrate_model) or eval_dirs list. "
+    "plot_types defaults to ['timeseries', 'scatter']. "
+    "Returns plot_files paths — tell user where to find the images."
+)

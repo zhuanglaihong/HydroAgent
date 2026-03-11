@@ -52,6 +52,12 @@ class TokenTracker:
     def total(self) -> int:
         return self.total_prompt + self.total_completion
 
+    def reset(self):
+        """Reset counters for a new session."""
+        self.total_prompt = 0
+        self.total_completion = 0
+        self.call_count = 0
+
     def summary(self) -> dict:
         return {
             "calls": self.call_count,
@@ -74,8 +80,16 @@ class LLMClient:
         self.api_key = config.get("api_key")
         self.temperature = config.get("temperature", 0.1)
         self.max_tokens = config.get("max_tokens", 20000)
-        self.timeout = config.get("timeout", 60)
+        self.timeout = config.get("timeout", 120)
+        self.max_retries = config.get("max_retries", 1)
         self.tokens = TokenTracker()
+
+        # Rate limiting: min seconds between consecutive API calls
+        self._request_interval: float = config.get("request_interval", 0.5)
+        # 429 retry: wait `rate_limit_delay` seconds, double each retry, up to `rate_limit_retries`
+        self._rate_limit_retries: int = config.get("rate_limit_retries", 3)
+        self._rate_limit_delay: float = config.get("rate_limit_delay", 30.0)
+        self._last_call_time: float = 0.0
 
         # Auto-detect or use config
         self._supports_fc = config.get("supports_function_calling")
@@ -85,11 +99,19 @@ class LLMClient:
     def client(self):
         if self._client is None:
             from openai import OpenAI
-            kwargs = {"api_key": self.api_key}
+            kwargs = {
+                "api_key": self.api_key,
+                "max_retries": self.max_retries,
+                "timeout": self.timeout,
+            }
             if self.base_url:
                 kwargs["base_url"] = self.base_url
             self._client = OpenAI(**kwargs)
-            logger.info(f"LLM client initialized: model={self.model}, base_url={self.base_url}")
+            logger.info(
+                f"LLM client initialized: model={self.model}, "
+                f"base_url={self.base_url}, timeout={self.timeout}s, "
+                f"max_retries={self.max_retries}"
+            )
         return self._client
 
     @property
@@ -124,9 +146,54 @@ class LLMClient:
         else:
             return self._chat_text(messages, temp)
 
+    def _create_completion(self, **kwargs):
+        """Single entry point for all API calls: enforces request interval and retries on 429.
+
+        Distinguishes two types of 429:
+          - insufficient_quota: quota exhausted, retrying is futile -> raise immediately
+            with a clear message so the experiment fails fast instead of wasting wait time.
+          - rate_limit / too_many_requests: TPM/TPS throttle -> retry with exponential backoff.
+        """
+        # Enforce minimum interval between consecutive calls
+        elapsed = time.time() - self._last_call_time
+        if elapsed < self._request_interval:
+            time.sleep(self._request_interval - elapsed)
+
+        delay = self._rate_limit_delay
+        for attempt in range(self._rate_limit_retries + 1):
+            try:
+                self._last_call_time = time.time()
+                return self.client.chat.completions.create(**kwargs)
+            except Exception as e:
+                err_str = str(e)
+
+                # Quota exhausted: no point retrying, fail immediately
+                if "insufficient_quota" in err_str.lower():
+                    logger.error(
+                        "API quota exhausted (insufficient_quota). "
+                        "Please check your account balance or wait for quota reset. "
+                        "Original error: %s", err_str,
+                    )
+                    raise
+
+                is_rate_limit = (
+                    "429" in err_str
+                    or "rate_limit" in err_str.lower()
+                    or "too many requests" in err_str.lower()
+                )
+                if is_rate_limit and attempt < self._rate_limit_retries:
+                    logger.warning(
+                        "Rate limit hit (429). Waiting %.0fs before retry %d/%d...",
+                        delay, attempt + 1, self._rate_limit_retries,
+                    )
+                    time.sleep(delay)
+                    delay = min(delay * 2, 300)  # cap at 5 min
+                    continue
+                raise
+
     def _chat_text(self, messages: list[dict], temperature: float) -> LLMResponse:
         """Simple text chat without tools."""
-        response = self.client.chat.completions.create(
+        response = self._create_completion(
             model=self.model,
             messages=messages,
             temperature=temperature,
@@ -142,7 +209,7 @@ class LLMClient:
     ) -> LLMResponse:
         """Chat using native function calling."""
         try:
-            response = self.client.chat.completions.create(
+            response = self._create_completion(
                 model=self.model,
                 messages=messages,
                 tools=tools,
@@ -196,7 +263,7 @@ class LLMClient:
         else:
             augmented.insert(0, {"role": "system", "content": tool_desc})
 
-        response = self.client.chat.completions.create(
+        response = self._create_completion(
             model=self.model,
             messages=augmented,
             temperature=temperature,
@@ -286,7 +353,7 @@ class LLMClient:
     def test_connection(self) -> tuple[bool, str]:
         """Send a minimal request to verify API key and connectivity."""
         try:
-            self.client.chat.completions.create(
+            self._create_completion(
                 model=self.model,
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=5,

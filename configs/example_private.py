@@ -19,7 +19,9 @@ OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 # 其他常用端点（取消注释即可切换）：
 # OPENAI_BASE_URL = "https://api.deepseek.com/v1"           # DeepSeek
 # OPENAI_BASE_URL = "https://api.openai.com/v1"             # OpenAI
-# OPENAI_BASE_URL = "http://localhost:11434/v1"              # Ollama 本地
+
+# LLM 模型名称（默认 deepseek-v3.1，可在此覆盖）
+# LLM_MODEL = "qwen-plus"
 
 # ============================================================================
 # 数据路径（必填）
@@ -39,12 +41,3 @@ PROJECT_DIR = r"D:\your\path\to\HydroAgent"
 # HydroClaw 启动时自动写入 ~/hydro_setting.yml，无需手动配置。
 CACHE_DIR = r""
 
-# ============================================================================
-# 可选配置
-# ============================================================================
-
-# LLM 模型名称（默认 deepseek-v3.1，可在此覆盖）
-# LLM_MODEL = "qwen-plus"
-
-# 本地 Ollama 端点（如需使用本地模型）
-# OLLAMA_BASE_URL = "http://localhost:11434"

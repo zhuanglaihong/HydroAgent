@@ -2,52 +2,88 @@
 name: LLM Calibration
 description: LLM 智能参数范围调整，突破边界限制，迭代优化 NSE
 keywords: [ai率定, 智能率定, 专家模式, llm率定, ai calibrat, llm calibrat]
-tools: [llm_calibrate, validate_basin, evaluate_model, visualize]
+tools: [llm_calibrate, validate_basin, evaluate_model, inspect_dir, read_file, visualize]
 when_to_use: 传统率定 NSE 偏低时，或用户明确要求 AI/智能率定
 ---
 
-## LLM 专家率定工作流（智能参数范围调整）
+## 目标
 
-当用户要求"AI率定"、"智能率定"、"专家模式率定"、"LLM率定"时使用此工作流。
+通过 LLM 作为**虚拟水文专家**，迭代调整 SCE-UA 的参数搜索空间，
+最终获得比单轮 SCE-UA 更高的训练期 NSE，并在测试期验证泛化能力。
 
-### 核心机制
+成功标志：
+- 达到 `nse_target`（默认 0.75），或在 `max_rounds` 轮内显著改善
+- 返回 `history` 中可看到 NSE 随轮次的变化轨迹
+- 最终参数无明显边界效应（`final_boundary_hits` 为空列表）
 
-`llm_calibrate` 工具将 LLM 作为**虚拟水文专家**，在 SCE-UA 优化算法外层构建迭代决策循环：
+## 判断框架
+
+### 何时选择此技能（而非标准率定）
+
+满足以下任一条件即优先选择 `llm_calibrate`：
+- 用户明确要求"AI率定"、"智能调参"、"LLM率定"
+- 已知标准 SCE-UA 结果 NSE < 0.65
+- 已知某参数触碰边界（距边界 < 5%）
+- 想研究参数范围对结果的影响
+
+### 任务开始
+
+- 先调用 `validate_basin` 确认流域数据
+- 告知用户：`llm_calibrate` 每轮都是完整 SCE-UA，共最多 `max_rounds` 轮（默认 5），总耗时较长
+
+### `llm_calibrate` 返回后，如何解读结果
+
+`llm_calibrate` 内部已调用 `evaluate_model` 计算每轮的训练期 NSE，
+但**测试期评估不在内**，需要在返回后显式调用：
 
 ```
-轮次 1: SCE-UA 在初始参数范围内优化 → 得到最优参数
-    ↓
-LLM 分析：参数是否碰到边界？NSE 是否满足目标？
-    ↓ 是 (边界效应)
-轮次 2: SCE-UA 在调整后的更大范围内重新优化
-    ↓
-... 最多 max_rounds 轮，直到满足 nse_target 或无需调整
+evaluate_model(
+    calibration_dir=result['calibration_dir'],
+    eval_period=test_period
+)
 ```
 
-**关键区别**：与传统 SCE-UA 相比，LLM 负责识别边界效应并智能扩展搜索空间，而非替代优化算法本身。
+其中 `test_period` 可从 `llm_calibrate` 返回的 `history[-1]` 或用户输入中获取。
 
-### 执行步骤
+### 如何解读 `history` 和边界信息
 
-1. 调用 `validate_basin` 验证流域
-2. 调用 `llm_calibrate` 执行 LLM 闭环率定
-   - 默认最多 5 轮（每轮执行完整 SCE-UA）
-   - 目标 NSE ≥ 0.75（可调）
-   - LLM 检测参数边界效应并调整范围
-3. 调用 `evaluate_model` 在测试期验证最优参数
-4. 调用 `visualize` 生成收敛曲线 + 水文过程线
-5. 生成报告，包含：
-   - 每轮迭代的 NSE 变化（收敛过程）
-   - 最优参数及其物理解释
-   - LLM 调整的参数范围记录
-   - 与标准 SCE-UA（单轮）的性能对比
+检查 `history` 中每轮记录（含 `round`, `nse`, `boundary_hits`, `param_ranges`）：
 
-### 何时推荐此模式
+| 观察到的情况 | 判断 |
+|------------|------|
+| NSE 逐轮上升，最终达到目标 | 成功，边界扩展有效 |
+| NSE 无变化，`boundary_hits` 为空 | 范围本身不是瓶颈，考虑换模型或数据问题 |
+| `final_boundary_hits` 非空 | 最终参数仍触边界，可手动扩展 `param_ranges` 再试 |
+| 某轮失败（`error` 字段存在）| 跳过该轮，看其余轮次趋势 |
 
-- 传统单轮 SCE-UA 结果较差（NSE < 0.65），怀疑参数范围设置不合理
-- 用户明确要求"AI率定"或"智能调参"
-- 想要了解参数边界对率定结果的影响
+### 何时主动观测文件
 
-### 参考文献
+| 情况 | 该做什么 |
+|------|---------|
+| 不确定某轮的 `calibration_dir` 是否完整 | `inspect_dir(history[i]['calibration_dir'])` |
+| 想看具体参数值和边界距离 | `read_file(calibration_dir/calibration_results.json)` |
+| 测试期 `evaluate_model` 失败 | `inspect_dir(best calibration_dir)` 诊断 |
 
-Zhu et al. (2026), Geophysical Research Letters, doi:10.1029/2025GL120043
-HydroClaw 在此基础上扩展：LLM 不直接搜索参数，而是通过范围调整指导 SCE-UA 跳出局部最优。
+## 异常处理
+
+| 异常 | 处理方式 |
+|------|---------|
+| `llm_calibrate` 返回 `success: False` | 检查 `error` 字段；若为 LLM 未连接，检查 API key |
+| 所有轮次 NSE 均 < 0.5 | 观测参数文件，检查是否数据问题（而非范围问题）|
+| 某轮 calibration_dir 为空字符串 | 该轮失败，查看该轮 `error`，继续看 `best_nse` |
+| `nse_target` 始终未达到 | 报告最优 NSE，给出原因分析和后续建议 |
+
+## 报告格式
+
+最终报告包含：
+- **收敛轨迹**：每轮 NSE（表格形式，展示改善趋势）
+- **LLM 调整记录**：哪些参数范围被扩展了多少
+- **最优参数及边界状态**：`final_boundary_hits` 分析
+- **测试期泛化指标**：NSE / KGE / RMSE
+- **与标准 SCE-UA 对比**：若已知单轮结果，对比提升幅度
+- **改进建议**：基于最终边界情况
+
+## 参考
+
+Zhu et al. (2026), GRL, doi:10.1029/2025GL120043
+HydroClaw 扩展：LLM 不直接搜索参数，而是通过范围调整指导 SCE-UA 跳出局部最优。
