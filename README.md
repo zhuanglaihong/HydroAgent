@@ -72,10 +72,13 @@ DEFAULT_SCE_UA_PARAMS = {"rep": 1000, ...}
 
 ### 运行
 
+#### 终端模式
+
 ```bash
 python -m hydroclaw                    # 交互模式
 python -m hydroclaw "率定GR4J，流域12025000"  # 单次查询
-python -m hydroclaw -w results/exp1 -v       # 指定工作目录 + 详细日志
+python -m hydroclaw --dev              # 开发者模式（显示完整工具日志）
+python -m hydroclaw -w results/exp1    # 指定工作目录
 ```
 
 **交互模式斜杠命令**：
@@ -88,9 +91,26 @@ python -m hydroclaw -w results/exp1 -v       # 指定工作目录 + 详细日志
 | `/help` | 列出所有可用命令 |
 | `/quit` | 安全退出（有未完成任务时提示确认） |
 
-**Ctrl+C**：中断正在运行的任务（如率定进度条），返回输入提示符，可用 `/resume` 继续。
+**Ctrl+C**：中断正在运行的任务，可用 `/resume` 继续。
 
-详见 [docs/getting-started.md](docs/getting-started.md) · [docs/usage.md](docs/usage.md)
+#### Web UI 模式
+
+```bash
+pip install streamlit          # 首次使用需安装
+python -m hydroclaw --web      # 启动浏览器界面（默认端口 8501）
+python -m hydroclaw --web --port 8080  # 自定义端口
+```
+
+浏览器将自动打开 `http://localhost:8501`，提供：
+
+- **对话界面**：自然语言提问，实时显示工具调用过程和思考步骤
+- **右侧执行面板**：展示每次提问的工具执行状态，可点击查看参数和结果详情
+- **历史对话**：侧边栏显示历史会话，可一键加载
+- **可用功能**：折叠展示所有 Skill，点击查看详细说明
+- **停止控制**：执行面板右上角 **停止** 按钮，随时终止当前任务
+- **Token 监控**：侧边栏实时显示 Token 用量，超过 100 万时提示是否继续
+
+详见 [docs/usage.md](docs/usage.md#web-ui-模式) · [docs/getting-started.md](docs/getting-started.md)
 
 ---
 
@@ -220,21 +240,32 @@ You> 帮我做参数敏感性分析，用 SALib 包
 
 ```
 HydroAgent/
-├── hydroclaw/
-│   ├── agent.py              # Agentic Loop 核心
-│   ├── llm.py                # LLM 客户端（Function Calling + Prompt 降级）
-│   ├── memory.py             # 三层记忆（会话/MEMORY.md/流域档案）
-│   ├── config.py             # 配置加载 + hydromodel 配置构建
-│   ├── skill_registry.py     # Skill 自动扫描与关键词匹配
-│   ├── cli.py / ui.py        # CLI 入口 + Rich 终端 UI
-│   ├── tools/                # 独立工具（validate, simulate, create_skill）
-│   ├── skills/               # Skill 包（工作流指引 + 工具实现）
-│   └── knowledge/            # 结构化领域知识（参数物理含义、率定经验）
+├── hydroclaw/                    # 核心包
+│   ├── agent.py                  # Agentic Loop 核心（ReAct 模式）
+│   ├── llm.py                    # LLM 客户端（Function Calling + Prompt 降级）
+│   ├── memory.py                 # 三层记忆（会话/MEMORY.md/流域档案）
+│   ├── config.py                 # 配置加载 + hydromodel 配置构建
+│   ├── skill_registry.py         # Skill 自动扫描与关键词匹配
+│   ├── skill_states.py           # Skill 生命周期状态管理
+│   ├── interface/                # 用户界面层
+│   │   ├── cli.py                # CLI 入口 + 交互 REPL
+│   │   ├── ui.py                 # Rich 终端 UI（user / dev 两种模式）
+│   │   └── web_app.py            # Streamlit Web UI
+│   ├── tools/                    # 工具集（自动注册）
+│   ├── skills/                   # Skill 包（工作流指引 + 工具实现）
+│   ├── knowledge/                # 结构化领域知识（参数物理含义、率定经验）
+│   └── utils/                    # 辅助模块
+│       ├── error_kb.py           # 错误知识库（自动积累）
+│       ├── task_state.py         # 批量任务状态持久化
+│       ├── setup_wizard.py       # 首次启动配置向导
+│       ├── context_utils.py      # Token 估算与上下文截断
+│       └── basin_validator.py    # 流域数据验证工具
 ├── configs/
-│   ├── model_config.py       # 用户自定义参数（算法轮次、目标函数等）
-│   └── private.py            # API Key、数据路径（gitignore）
-├── scripts/                  # 论文实验脚本（exp1~exp6）
-└── docs/                     # 项目文档
+│   ├── model_config.py           # 算法参数（轮次、目标函数等）
+│   └── private.py                # API Key、数据路径（gitignore）
+├── sessions/                     # 会话历史（*.jsonl + *_summary.json）
+├── scripts/                      # 论文实验脚本
+└── docs/                         # 项目文档
 ```
 
 ---

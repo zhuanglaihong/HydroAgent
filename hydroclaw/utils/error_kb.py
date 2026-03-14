@@ -13,7 +13,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_KB_FILE = Path(__file__).parent / "knowledge" / "error_solutions.json"
+_KB_FILE = Path(__file__).parent.parent / "knowledge" / "error_solutions.json"
 
 # ── Built-in seed entries ────────────────────────────────────────────────────
 # Added on first run if the KB file does not exist.

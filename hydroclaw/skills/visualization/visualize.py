@@ -36,7 +36,11 @@ def visualize(
     except ImportError as e:
         return {"error": f"hydromodel visualization not available: {e}", "plot_files": [], "plot_count": 0}
 
-    calib_path = Path(calibration_dir)
+    from hydroclaw.utils.path_utils import resolve_path
+    resolved = resolve_path(calibration_dir, _workspace)
+    if resolved is None:
+        return {"error": f"calibration_dir not found: {calibration_dir}", "plot_files": [], "plot_count": 0}
+    calib_path = resolved
     eval_dirs = list(calib_path.glob("evaluation_*"))
     if not eval_dirs:
         eval_dirs = [calib_path]
@@ -77,5 +81,7 @@ def visualize(
 visualize.__agent_hint__ = (
     "Requires calibration_dir (from calibrate_model) or eval_dirs list. "
     "plot_types defaults to ['timeseries', 'scatter']. "
-    "Returns plot_files paths — tell user where to find the images."
+    "The web UI will automatically display the images inline in the chat — "
+    "do NOT say you cannot show images. Just tell the user the plots have been generated "
+    "and briefly describe what each figure shows."
 )

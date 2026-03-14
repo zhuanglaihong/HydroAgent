@@ -114,6 +114,7 @@ def llm_calibrate(
     _workspace: Path | None = None,
     _cfg: dict | None = None,
     _llm: object | None = None,
+    _ui=None,
 ) -> dict:
     """LLM-guided iterative calibration using SCE-UA as the optimizer.
 
@@ -206,7 +207,7 @@ def llm_calibrate(
                 f"{_base_algo_params} -> {round_algo_params}"
             )
 
-        # Run calibration
+        # Run calibration (pass _ui so progress events are emitted each round)
         result = calibrate_model(
             basin_ids=basin_ids,
             model_name=model_name,
@@ -218,6 +219,8 @@ def llm_calibrate(
             output_dir=str(((_workspace or Path("results")) / f"llm_round_{round_idx}")),
             _workspace=_workspace,
             _cfg=_cfg,
+            _ui=_ui,
+            _round_label=f"Round {round_idx + 1}/{max_rounds}",
         )
 
         if not result.get("success"):

@@ -9,7 +9,7 @@ Description: Self-driven task planning tools. Let the agent create and track
 
 from pathlib import Path
 
-from hydroclaw.task_state import TaskState
+from hydroclaw.utils.task_state import TaskState
 
 
 def _state(workspace: Path | None) -> TaskState:

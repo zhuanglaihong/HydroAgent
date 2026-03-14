@@ -19,7 +19,7 @@ from hydroclaw.skill_registry import SkillRegistry
 from hydroclaw.skill_states import SkillStateManager
 from hydroclaw.tools import discover_tools, get_tool_schemas
 from hydroclaw.utils.context_utils import estimate_tokens, truncate_tool_result
-from hydroclaw.ui import ConsoleUI
+from hydroclaw.interface.ui import ConsoleUI
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ class HydroClaw:
         self.workspace = workspace or Path(".")
         self.ui = ui or ConsoleUI(mode="user")
         self._pause_requested = False   # set by request_pause(); checked between turns
+        self._stop_requested  = False   # set by request_stop(); stops after current tool
 
         skills_dir = Path(__file__).parent / "skills"
         self.skill_registry = SkillRegistry(skills_dir)
@@ -57,7 +58,11 @@ class HydroClaw:
             f"model={self.cfg['llm']['model']}, max_turns={self.max_turns}"
         )
 
-    def run(self, query: str) -> str:
+    def request_stop(self):
+        """Request immediate stop after current tool completes."""
+        self._stop_requested = True
+
+    def run(self, query: str, prior_messages: list[dict] | None = None) -> str:
         """Run the agentic loop for a user query.
 
         Args:
@@ -66,8 +71,9 @@ class HydroClaw:
         Returns:
             Final text response from the LLM.
         """
-        messages = self._build_context(query)
+        messages = self._build_context(query, prior_messages=prior_messages)
         self.llm.tokens.reset()   # reset per-session counter
+        _run_start = time.time()
 
         # Token budget (0 = unlimited). If set, agent is informed at start
         # and receives progressive warnings as it approaches the limit.
@@ -100,7 +106,14 @@ class HydroClaw:
         for turn in range(self.max_turns):
             logger.debug(f"Turn {turn + 1}/{self.max_turns}")
 
-            # Check pause flag (set by request_pause() between turns)
+            # Check stop/pause flag (set externally, e.g. web UI Stop button)
+            if self._stop_requested:
+                self._stop_requested = False
+                msg = "已停止。"
+                self.memory.save_session(query, msg)
+                self.ui.on_answer(msg, turn)
+                return msg
+
             if self._pause_requested:
                 self._pause_requested = False
                 msg = "已暂停。任务状态已保存，输入 /resume 继续批量任务。"
@@ -150,6 +163,10 @@ class HydroClaw:
             with self.ui.thinking(turn + 1):
                 response = self.llm.chat(messages, tools=self.tool_schemas)
 
+            # Emit reasoning text (thought before tool calls) if available
+            if response.tool_calls and response.text and hasattr(self.ui, "on_thought"):
+                self.ui.on_thought(response.text, turn + 1)
+
             if response.is_text():
                 tok = self.llm.tokens.summary()
                 logger.info(
@@ -161,6 +178,12 @@ class HydroClaw:
                 )
                 self.memory.save_session(query, response.text)
                 self.ui.on_answer(response.text, turn + 1)
+                if hasattr(self.ui, "on_session_summary"):
+                    self.ui.on_session_summary(
+                        total_turns=turn + 1,
+                        elapsed_s=time.time() - _run_start,
+                        tokens=tok,
+                    )
                 return response.text
 
             # LLM wants to call tools
@@ -183,6 +206,13 @@ class HydroClaw:
                 messages.append(assistant_msg)
 
                 for tc in response.tool_calls:
+                    # Stop check before executing each tool
+                    if self._stop_requested:
+                        self._stop_requested = False
+                        stop_msg = "已停止。"
+                        self.ui.on_answer(stop_msg, turn)
+                        return stop_msg
+
                     # Consecutive-call guard: abort if same tool is stuck in a loop
                     _consecutive[tc.name] = _consecutive.get(tc.name, 0) + 1
                     for other in list(_consecutive):
@@ -313,7 +343,7 @@ class HydroClaw:
     _MAX_SYSTEM_CHARS   = 20_000  # total system prompt cap — warn if exceeded
     _WARN_CONTEXT_TOKENS = 30_000 # warn if initial context already exceeds this
 
-    def _build_context(self, query: str) -> list[dict]:
+    def _build_context(self, query: str, prior_messages: list[dict] | None = None) -> list[dict]:
         """Build initial message context: system prompt + domain knowledge + skills + memory.
 
         P3 change: skill content is NO LONGER injected here. Only a skill list with
@@ -358,10 +388,11 @@ class HydroClaw:
                 f"(~{len(system_content)//3:,} est. tokens). May hit API limits."
             )
 
-        messages = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": query},
-        ]
+        messages = [{"role": "system", "content": system_content}]
+        # Inject recent web chat history so agent remembers previous results
+        if prior_messages:
+            messages.extend(prior_messages)
+        messages.append({"role": "user", "content": query})
 
         # Pre-flight token budget check
         est = estimate_tokens(messages)

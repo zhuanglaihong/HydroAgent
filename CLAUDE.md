@@ -20,34 +20,36 @@
 
 ```
 hydroclaw/
-├── agent.py          # Agentic Loop 核心（ReAct 模式）
-├── llm.py            # LLM 客户端（Function Calling + Prompt fallback）
-├── memory.py         # 记忆系统（会话日志 + 跨会话 MEMORY.md）
-├── config.py         # 配置加载 + hydromodel config 构建
-├── cli.py            # CLI 入口
-├── __main__.py       # python -m hydroclaw 入口
-├── tools/            # 工具集（自动发现）
-│   ├── __init__.py       # 自动注册 + schema 生成
-│   ├── calibrate.py      # 标准率定（SCE-UA/GA/scipy）
-│   ├── llm_calibrate.py  # LLM 智能率定（参数范围迭代调整）★
-│   ├── evaluate.py       # 模型评估
-│   ├── simulate.py       # 模型模拟
-│   ├── validate.py       # 流域数据验证
-│   ├── visualize.py      # 可视化
-│   ├── generate_code.py  # 代码生成
-│   ├── run_code.py       # 代码执行
-│   └── create_tool.py    # 动态工具生成（元工具）★
-├── skills/           # 工作流指引（按查询关键词注入）
-│   ├── system.md         # 系统基础 prompt
-│   ├── calibration.md    # 标准率定流程
-│   ├── llm_calibration.md # LLM 智能率定流程
-│   ├── iterative.md      # 迭代优化
-│   ├── comparison.md     # 多模型对比
-│   ├── batch.md          # 批量任务
-│   └── analysis.md       # 代码分析
-└── knowledge/        # 结构化领域知识（按查询关键词注入）★
-    ├── model_parameters.md  # 模型参数物理含义 + 典型范围
-    └── calibration_guide.md # 率定策略 + 诊断经验
+├── agent.py              # Agentic Loop 核心（ReAct 模式）
+├── llm.py                # LLM 客户端（Function Calling + Prompt fallback）
+├── memory.py             # 记忆系统（会话日志 + 跨会话 MEMORY.md）
+├── config.py             # 配置加载 + hydromodel config 构建
+├── skill_registry.py     # Skill 自动扫描与关键词匹配
+├── skill_states.py       # Skill 生命周期状态管理
+├── __main__.py           # python -m hydroclaw 入口
+├── interface/            # 用户界面层（终端 + Web）
+│   ├── cli.py            # CLI 入口 + 交互 REPL
+│   ├── ui.py             # Rich 终端 UI（user / dev 两种模式）
+│   └── web_app.py        # Streamlit Web UI
+├── tools/                # 工具集（自动发现）
+│   ├── __init__.py           # 自动注册 + schema 生成
+│   ├── calibrate.py          # 标准率定（SCE-UA/GA/scipy）
+│   ├── llm_calibrate.py      # LLM 智能率定（参数范围迭代调整）★
+│   ├── evaluate.py           # 模型评估
+│   ├── simulate.py           # 模型模拟
+│   ├── validate.py           # 流域数据验证
+│   ├── visualize.py          # 可视化
+│   ├── generate_code.py      # 代码生成
+│   ├── run_code.py           # 代码执行
+│   └── create_skill.py       # 动态 Skill 生成（元工具）★
+├── skills/               # 工作流指引（按查询关键词注入）
+├── knowledge/            # 结构化领域知识（参数物理含义、率定经验）★
+└── utils/                # 辅助模块
+    ├── error_kb.py           # 错误知识库（自动积累）
+    ├── task_state.py         # 批量任务状态持久化
+    ├── setup_wizard.py       # 首次启动配置向导
+    ├── context_utils.py      # Token 估算与上下文截断
+    └── basin_validator.py    # 流域数据验证工具
 ```
 
 ### 论文核心创新点对应代码

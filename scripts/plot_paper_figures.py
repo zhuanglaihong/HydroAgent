@@ -1,24 +1,21 @@
 """
-Paper Figure Generator for HydroClaw
-=====================================
-从各实验的 JSON 结果文件生成论文图表（PNG + PDF）。
-支持单独指定实验绘图，也可一次全部生成。
+Plot Paper Figures - HydroClaw
+==============================
+Reads all 4 experiment result JSONs and generates publication-quality figures.
 
-用法：
-  python scripts/plot_paper_figures.py          # 生成所有可用图
-  python scripts/plot_paper_figures.py --exp 2  # 只生成 Exp2 的图
+Output: results/paper/figures/
+  Fig1a_exp1_nse_heatmap.png    - Exp1: NSE heatmap (basin x model)
+  Fig1b_exp1_nse_bar.png        - Exp1: Train/Test NSE grouped bar
+  Fig2a_exp2_comparison.png     - Exp2: A/B/C NSE comparison bars
+  Fig2b_exp2_trajectory.png     - Exp2: Method-C NSE convergence trajectory
+  Fig3_exp3_capability.png      - Exp3: Capability breadth (A/B/C sections)
+  Fig4a_exp4_ablation.png       - Exp4: Knowledge ablation token/match heatmap
+  Fig4b_exp4_adversarial.png    - Exp4: Adversarial prior detection
 
-输出目录：results/paper/figures/
-
-图表列表：
-  Fig1_exp1_nse_heatmap.pdf        Exp1: NSE 热力图（流域 × 模型）
-  Fig1_exp1_nse_bar.pdf            Exp1: 训练/测试期 NSE 分组柱状图
-  Fig2_exp2_method_comparison.pdf  Exp2: A/B/C 三路 NSE 对比 + 边界命中
-  Fig2_exp2_nse_trajectory.pdf     Exp2: Method C NSE 收敛轨迹
-  Fig3_exp3_match_rate.pdf         Exp3: 知识条件 × 场景类别匹配率
-  Fig4_exp4_skill_creation.pdf     Exp4: Skill 生成成功率瀑布图
-  Fig5_exp5_memory.pdf             Exp5: 三阶段记忆验证综合图
-  Fig6_exp6_ablation_heatmap.pdf   Exp6: 三层知识消融热力图
+Usage:
+  python scripts/plot_paper_figures.py          # generate all
+  python scripts/plot_paper_figures.py --exp 2  # only exp2 figures
+  python scripts/plot_paper_figures.py --show   # also display interactively
 """
 
 import sys
@@ -28,35 +25,47 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import argparse
 import json
 import warnings
-
+import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import numpy as np
+from matplotlib.gridspec import GridSpec
 
 warnings.filterwarnings("ignore")
 
-# ── 全局样式 ─────────────────────────────────────────────────────────────────
-
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
 RESULTS_DIR = Path("results/paper")
 FIG_DIR     = RESULTS_DIR / "figures"
 
-# 论文配色方案（色盲友好）
+# ---------------------------------------------------------------------------
+# Style
+# ---------------------------------------------------------------------------
 COLORS = {
-    "A":  "#4878CF",   # 蓝：Method A / 标准
-    "B":  "#D65F5F",   # 红：Method B / Zhu et al.
-    "C":  "#6ACC65",   # 绿：Method C / HydroClaw
-    "full": "#2c7bb6", # 蓝：full_knowledge
-    "none": "#d7191c", # 红：no_knowledge
-    "K0": "#d9d9d9",
-    "K1": "#a6bddb",
-    "K2": "#3690c0",
-    "K3": "#034e7b",
+    "A":    "#4878CF",   # blue:  Method A / gr4j
+    "B":    "#D65F5F",   # red:   Method B / Zhu et al.
+    "C":    "#6ACC65",   # green: Method C / HydroClaw
+    "K0":   "#d9d9d9",
+    "K1":   "#a6bddb",
+    "K2":   "#3690c0",
+    "K3":   "#034e7b",
     "pass": "#4dac26",
     "fail": "#d01c8b",
     "gray": "#888888",
 }
+
+ZONE_LABELS = {
+    "humid_cold":        "Humid-Cold",
+    "mediterranean":     "Mediterranean",
+    "semiarid_mountain": "Semiarid-Mtn",
+    "humid_temperate":   "Humid-Temperate",
+    "humid_subtropical": "Humid-Sub.",
+}
+
+TRAJ_COLORS = ["#1b7837", "#762a83", "#e08214"]
+
 
 def _style():
     plt.rcParams.update({
@@ -77,13 +86,16 @@ def _style():
         "savefig.bbox":      "tight",
     })
 
-def _save(fig, name: str):
+
+def _save(fig, name: str, show: bool = False):
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    for ext in ("pdf", "png"):
-        p = FIG_DIR / f"{name}.{ext}"
-        fig.savefig(p)
-    print(f"  Saved: {name}.pdf / .png")
+    p = FIG_DIR / f"{name}.png"
+    fig.savefig(p)
+    print(f"  Saved: {name}.png")
+    if show:
+        plt.show()
     plt.close(fig)
+
 
 def _load(exp_num: int) -> dict | None:
     p = RESULTS_DIR / f"exp{exp_num}" / f"exp{exp_num}_results.json"
@@ -93,469 +105,410 @@ def _load(exp_num: int) -> dict | None:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-# ── Exp1 ─────────────────────────────────────────────────────────────────────
+def _short_basin(basin_id: str, zone: str = "") -> str:
+    label = ZONE_LABELS.get(zone, zone)
+    return f"{basin_id}\n({label})" if label else basin_id
 
-def fig_exp1(data: dict):
-    """Fig1a: NSE 热力图（流域 × 模型）
-       Fig1b: 训练期 vs 测试期 NSE 分组柱状图
-    """
+
+# ===========================================================================
+# Exp1: Standard Calibration
+# ===========================================================================
+
+def fig_exp1(data: dict, show: bool = False):
     results = data["results"]
-    basins = sorted({r["basin_id"] for r in results})
+    basins_ordered = []
+    seen = set()
+    for r in results:
+        bid = r["basin_id"]
+        if bid not in seen:
+            basins_ordered.append((bid, r.get("climate_zone", "")))
+            seen.add(bid)
     models = sorted({r["model_name"] for r in results})
 
-    # ── Fig1a: 热力图 ──────────────────────────────────────────────────────
+    basins = [bid for bid, _ in basins_ordered]
+
+    # --- Fig1a: NSE heatmap ---
     train_mat = np.full((len(basins), len(models)), np.nan)
     test_mat  = np.full((len(basins), len(models)), np.nan)
     for r in results:
         i = basins.index(r["basin_id"])
         j = models.index(r["model_name"])
-        if r["success"]:
-            train_mat[i, j] = r["train_metrics"].get("NSE", np.nan)
-            test_mat[i, j]  = r.get("test_metrics", {}).get("NSE", np.nan)
+        if r.get("success"):
+            train_mat[i, j] = (r.get("train_metrics") or {}).get("NSE", np.nan)
+            test_mat[i, j]  = (r.get("test_metrics")  or {}).get("NSE", np.nan)
 
-    fig, axes = plt.subplots(1, 2, figsize=(9, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.5))
     for ax, mat, title in zip(axes, [train_mat, test_mat], ["Train NSE", "Test NSE"]):
-        im = ax.imshow(mat, vmin=0.4, vmax=1.0, cmap="RdYlGn", aspect="auto")
+        im = ax.imshow(mat, vmin=0.3, vmax=1.0, cmap="RdYlGn", aspect="auto")
         ax.set_xticks(range(len(models)))
         ax.set_xticklabels([m.upper() for m in models])
         ax.set_yticks(range(len(basins)))
-        ax.set_yticklabels(basins, fontsize=8)
-        ax.set_title(title)
+        ax.set_yticklabels([_short_basin(bid, zone) for bid, zone in basins_ordered],
+                           fontsize=8)
+        ax.set_title(title, fontweight="bold")
         ax.grid(False)
         for i in range(len(basins)):
             for j in range(len(models)):
                 v = mat[i, j]
                 if not np.isnan(v):
                     ax.text(j, i, f"{v:.2f}", ha="center", va="center",
-                            fontsize=8, color="black" if v > 0.6 else "white")
+                            fontsize=9, color="black" if v > 0.55 else "white")
         fig.colorbar(im, ax=ax, shrink=0.8)
-
     fig.suptitle("Exp1: Standard Calibration — NSE Heatmap", fontweight="bold")
     fig.tight_layout()
-    _save(fig, "Fig1a_exp1_nse_heatmap")
+    _save(fig, "Fig1a_exp1_nse_heatmap", show)
 
-    # ── Fig1b: 分组柱状图（训练 vs 测试）─────────────────────────────────
-    fig, ax = plt.subplots(figsize=(10, 4))
-    n_groups  = len(basins)
-    n_models  = len(models)
-    width     = 0.35
-    x         = np.arange(n_groups)
+    # --- Fig1b: grouped bar ---
+    fig, ax = plt.subplots(figsize=(11, 4.5))
+    n_basins = len(basins)
+    n_models = len(models)
+    width    = 0.35
+    x        = np.arange(n_basins)
+    model_colors = [COLORS["A"], COLORS["B"], COLORS["C"], "#FF9F40"]
 
-    model_colors = ["#4878CF", "#D65F5F", "#6ACC65", "#FF9F40"]
     for j, model in enumerate(models):
-        train_vals = []
-        test_vals  = []
-        for basin in basins:
-            r = next((r for r in results if r["basin_id"] == basin and r["model_name"] == model), {})
-            train_vals.append(r.get("train_metrics", {}).get("NSE", 0) if r.get("success") else 0)
-            test_vals.append(r.get("test_metrics", {}).get("NSE", 0) if r.get("success") else 0)
-
+        train_vals, test_vals = [], []
+        for bid, _ in basins_ordered:
+            r = next((r for r in results if r["basin_id"] == bid and r["model_name"] == model), {})
+            train_vals.append((r.get("train_metrics") or {}).get("NSE", 0) if r.get("success") else 0)
+            test_vals.append((r.get("test_metrics")   or {}).get("NSE", 0) if r.get("success") else 0)
         offset = (j - (n_models - 1) / 2) * width
-        bars_t = ax.bar(x + offset, train_vals, width * 0.45,
-                        color=model_colors[j], alpha=0.85,
-                        label=f"{model.upper()} Train")
-        bars_v = ax.bar(x + offset + width * 0.45, test_vals, width * 0.45,
-                        color=model_colors[j], alpha=0.45,
-                        label=f"{model.upper()} Test")
+        ax.bar(x + offset,              train_vals, width * 0.47,
+               color=model_colors[j], alpha=0.85, label=f"{model.upper()} Train")
+        ax.bar(x + offset + width*0.47, test_vals,  width * 0.47,
+               color=model_colors[j], alpha=0.45, label=f"{model.upper()} Test")
 
-    ax.axhline(0.75, color="gray", ls="--", lw=1, alpha=0.7, label="NSE=0.75 (good)")
-    ax.axhline(0.65, color="gray", ls=":",  lw=1, alpha=0.5)
+    ax.axhline(0.75, color="gray", ls="--", lw=1, alpha=0.7, label="NSE=0.75 (Good)")
     ax.set_xticks(x)
-    ax.set_xticklabels(basins, rotation=15, ha="right")
+    ax.set_xticklabels([_short_basin(bid, zone) for bid, zone in basins_ordered],
+                       fontsize=8)
     ax.set_ylabel("NSE")
     ax.set_ylim(0, 1.05)
     ax.set_title("Exp1: Standard Calibration — Train vs Test NSE", fontweight="bold")
     ax.legend(ncol=n_models, loc="upper right", fontsize=8)
     fig.tight_layout()
-    _save(fig, "Fig1b_exp1_nse_bar")
+    _save(fig, "Fig1b_exp1_nse_bar", show)
 
 
-# ── Exp2 ─────────────────────────────────────────────────────────────────────
+# ===========================================================================
+# Exp2: LLM Calibration Comparison
+# ===========================================================================
 
-def fig_exp2(data: dict):
-    """Fig2a: A/B/C 三路 NSE 对比柱状图（含边界命中标注）
-       Fig2b: Method C NSE 收敛轨迹（折线）
-    """
+def fig_exp2(data: dict, show: bool = False):
     results = data["results"]
-    basins  = [r["basin_id"] for r in results]
+    basins  = [(r["basin_id"], r.get("climate_zone", "")) for r in results]
+    n       = len(basins)
+    x       = np.arange(n)
+    width   = 0.25
 
-    # ── Fig2a: 三路对比 ────────────────────────────────────────────────────
-    a_nse = [r["method_A"].get("train_metrics", {}).get("NSE") for r in results]
-    b_nse = [r["method_B"].get("best_nse") for r in results]
-    c_nse = [r["method_C"].get("best_nse") for r in results]
+    def _get(r, path, default=np.nan):
+        """Safely traverse nested dict using dot notation."""
+        cur = r
+        for key in path.split("."):
+            if not isinstance(cur, dict):
+                return default
+            cur = cur.get(key, default)
+        return cur if cur is not None else default
 
-    x = np.arange(len(basins))
-    width = 0.25
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    a_train = [_get(r, "method_A.train_metrics.NSE") for r in results]
+    b_train = [_get(r, "method_B.nse_train")          for r in results]
+    c_train = [_get(r, "method_C.best_nse")            for r in results]
+    a_test  = [_get(r, "method_A.test_metrics.NSE")   for r in results]
+    b_test  = [_get(r, "method_B.nse_test")            for r in results]
+    c_test  = [_get(r, "method_C.test_metrics.NSE")   for r in results]
 
-    def safe(vals):
-        return [v if isinstance(v, float) else 0 for v in vals]
+    def _safe(vals):
+        return [v if isinstance(v, (int, float)) and not (isinstance(v, float) and np.isnan(v)) else 0
+                for v in vals]
 
-    ba = ax.bar(x - width, safe(a_nse), width, color=COLORS["A"], alpha=0.85, label="A: Standard SCE-UA")
-    bb = ax.bar(x,         safe(b_nse), width, color=COLORS["B"], alpha=0.85, label="B: Zhu et al. 2026")
-    bc = ax.bar(x + width, safe(c_nse), width, color=COLORS["C"], alpha=0.85, label="C: HydroClaw (ours)")
-
-    # 标注 Δ(C-A)
-    for i, (na, nc) in enumerate(zip(a_nse, c_nse)):
-        if isinstance(na, float) and isinstance(nc, float) and nc > na:
-            ax.annotate(
-                f"+{nc-na:.3f}",
-                xy=(x[i] + width, nc + 0.005),
-                ha="center", va="bottom", fontsize=7.5, color=COLORS["C"],
-                fontweight="bold",
-            )
-
-    # 标注边界命中数量（method A）
-    for i, r in enumerate(results):
-        hits = len(r["method_A"].get("boundary_hits", []))
-        if hits > 0:
-            ax.text(x[i] - width, 0.02, f"⚠{hits}", ha="center", va="bottom",
-                    fontsize=7, color="#8B0000")
-
-    ax.axhline(0.75, color="gray", ls="--", lw=1, alpha=0.6, label="NSE=0.75")
-    ax.set_xticks(x)
-    ax.set_xticklabels(basins, rotation=10)
-    ax.set_ylabel("NSE (train period)")
-    ax.set_ylim(0, 1.0)
-    ax.set_title("Exp2: LLM Calibration Comparison — Three Methods", fontweight="bold")
-    ax.legend(loc="upper right")
-    # ⚠N = N parameter boundary hits in Method A
-    ax.text(0.01, 0.02, "⚠N = boundary hits in Method A",
-            transform=ax.transAxes, fontsize=7, color="#8B0000", alpha=0.7)
-    fig.tight_layout()
-    _save(fig, "Fig2a_exp2_method_comparison")
-
-    # ── Fig2b: Method C NSE 收敛轨迹 ─────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(7, 4))
-    traj_colors = ["#1b7837", "#762a83", "#e08214"]
-    for i, r in enumerate(results):
-        hist = r["method_C"].get("nse_history", [])
-        hist = [v for v in hist if isinstance(v, float)]
-        if hist:
-            rounds = list(range(1, len(hist) + 1))
-            ax.plot(rounds, hist, "o-", color=traj_colors[i % len(traj_colors)],
-                    lw=2, ms=6, label=r["basin_id"])
-            # Method A baseline
-            a = r["method_A"].get("train_metrics", {}).get("NSE")
-            if isinstance(a, float):
-                ax.axhline(a, color=traj_colors[i % len(traj_colors)],
-                           ls=":", lw=1.2, alpha=0.5)
-
-    ax.axhline(0.75, color="gray", ls="--", lw=1, alpha=0.7, label="Target NSE")
-    ax.set_xlabel("Round (LLM range adjustment)")
-    ax.set_ylabel("NSE")
-    ax.set_title("Exp2: Method C — NSE Convergence Trajectory", fontweight="bold")
-    ax.legend()
-    ax.set_xticks(range(1, max(
-        len([v for v in r["method_C"].get("nse_history",[]) if isinstance(v,float)])
-        for r in results
-    ) + 1))
-    # 虚线 = Method A baseline
-    ax.text(0.98, 0.02, "dotted = Method A (SCE-UA) baseline",
-            transform=ax.transAxes, ha="right", fontsize=7.5, color="gray")
-    fig.tight_layout()
-    _save(fig, "Fig2b_exp2_nse_trajectory")
-
-
-# ── Exp3 ─────────────────────────────────────────────────────────────────────
-
-def fig_exp3(data: dict):
-    """Fig3: 知识条件 × 场景类别 匹配率对比（分组柱状图 + 差值标注）"""
-    results = data["results"]
-    conditions = data.get("conditions", ["full_knowledge", "no_knowledge"])
-
-    # 按 category 和 condition 聚合
-    from collections import defaultdict
-    cat_data: dict = defaultdict(lambda: defaultdict(lambda: {"n": 0, "ok": 0}))
-    for r in results:
-        cat_data[r["category"]][r["condition"]]["n"] += 1
-        if r.get("match"):
-            cat_data[r["category"]][r["condition"]]["ok"] += 1
-
-    categories = list(cat_data.keys())
-    n = len(categories)
-    x = np.arange(n)
-    width = 0.35
-
-    fig, ax = plt.subplots(figsize=(11, 4.5))
-    for ci, (cond, color) in enumerate(zip(conditions, [COLORS["full"], COLORS["none"]])):
-        rates = [
-            cat_data[cat][cond]["ok"] / cat_data[cat][cond]["n"]
-            if cat_data[cat][cond]["n"] > 0 else 0
-            for cat in categories
+    # --- Fig2a: A/B/C bar comparison (train + test side by side) ---
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    for ax, yA, yB, yC, split in [
+        (axes[0], a_train, b_train, c_train, "Train"),
+        (axes[1], a_test,  b_test,  c_test,  "Test"),
+    ]:
+        bars = [
+            ax.bar(x - width, _safe(yA), width, color=COLORS["A"], alpha=0.85, label="A: SCE-UA"),
+            ax.bar(x,         _safe(yB), width, color=COLORS["B"], alpha=0.85, label="B: Zhu 2026"),
+            ax.bar(x + width, _safe(yC), width, color=COLORS["C"], alpha=0.85, label="C: HydroClaw"),
         ]
-        offset = (ci - 0.5) * width
-        bars = ax.bar(x + offset, rates, width, color=color, alpha=0.85,
-                      label=cond.replace("_", " "))
-        # 标注具体值
-        for bar, val in zip(bars, rates):
-            if val > 0:
-                ax.text(bar.get_x() + bar.get_width() / 2, val + 0.02,
-                        f"{val:.0%}", ha="center", va="bottom", fontsize=7.5)
+        # annotate delta C-A
+        for i, (va, vc) in enumerate(zip(yA, yC)):
+            if isinstance(va, float) and isinstance(vc, float) and not np.isnan(va + vc):
+                delta = vc - va
+                sign  = "+" if delta >= 0 else ""
+                ax.text(x[i] + width, max(_safe([vc])[0], 0.02) + 0.02,
+                        f"{sign}{delta:.3f}", ha="center", fontsize=7.5,
+                        color=COLORS["C"] if delta >= 0 else COLORS["B"], fontweight="bold")
+        ax.axhline(0.75, color="gray", ls="--", lw=1, alpha=0.6, label="NSE=0.75")
+        ax.axhline(0,    color="black", lw=0.5)
+        ax.set_xticks(x)
+        ax.set_xticklabels([_short_basin(bid, zone) for bid, zone in basins], fontsize=8)
+        ax.set_ylabel("NSE")
+        y_min = min([v for v in _safe(yA) + _safe(yB) + _safe(yC)] + [-0.05]) - 0.05
+        ax.set_ylim(y_min, 1.0)
+        ax.set_title(f"{split} NSE", fontweight="bold")
+        ax.legend(fontsize=8, loc="lower right")
 
-    # 整体匹配率
-    stats = data.get("stats_by_condition", {})
-    for cond, color, anchor_x in zip(conditions,
-                                      [COLORS["full"], COLORS["none"]],
-                                      [0.02, 0.18]):
-        s = stats.get(cond, {})
-        if s:
-            ax.text(anchor_x, 0.97,
-                    f"{cond.replace('_', ' ')}: overall {s.get('match_rate', 0):.0%}",
-                    transform=ax.transAxes, color=color, fontsize=8.5,
-                    va="top", fontweight="bold")
+    fig.suptitle("Exp2: Autonomous LLM Calibration — A/B/C Comparison", fontweight="bold")
+    fig.tight_layout()
+    _save(fig, "Fig2a_exp2_comparison", show)
 
-    ax.set_xticks(x)
-    ax.set_xticklabels([c.replace("_", "\n") for c in categories],
-                       fontsize=8, rotation=0)
-    ax.set_ylabel("Tool Sequence Match Rate")
-    ax.set_ylim(0, 1.25)
-    ax.set_title("Exp3: Natural Language Robustness — Match Rate by Category × Knowledge Condition",
+    # --- Fig2b: Method C NSE trajectory ---
+    fig, ax = plt.subplots(figsize=(7, 4))
+    max_rounds = 0
+    for i, r in enumerate(results):
+        hist = r.get("method_C", {}).get("nse_history", [])
+        hist = [v for v in hist if isinstance(v, (int, float))]
+        if not hist:
+            continue
+        max_rounds = max(max_rounds, len(hist))
+        bid, zone = basins[i]
+        label = _short_basin(bid, zone)
+        ax.plot(range(1, len(hist) + 1), hist, "o-",
+                color=TRAJ_COLORS[i % len(TRAJ_COLORS)], lw=2, ms=6, label=label)
+        # Method A baseline (dotted)
+        a_val = _get(r, "method_A.train_metrics.NSE")
+        if isinstance(a_val, float) and not np.isnan(a_val):
+            ax.axhline(a_val, color=TRAJ_COLORS[i % len(TRAJ_COLORS)],
+                       ls=":", lw=1.2, alpha=0.5)
+        ax.text(len(hist) + 0.1, hist[-1], f"{hist[-1]:.3f}", va="center", fontsize=8)
+
+    ax.axhline(0.75, color="gray", ls="--", lw=1, alpha=0.7, label="NSE=0.75 target")
+    ax.set_xlabel("LLM Round")
+    ax.set_ylabel("NSE (train)")
+    ax.set_title("Exp2: Method C — NSE Convergence Trajectory\n(dotted = Method A baseline)",
                  fontweight="bold")
-    ax.legend(loc="upper right")
+    if max_rounds > 0:
+        ax.set_xticks(range(1, max_rounds + 1))
+    ax.legend(fontsize=8.5)
+    ax.grid(alpha=0.3)
     fig.tight_layout()
-    _save(fig, "Fig3_exp3_match_rate")
+    _save(fig, "Fig2b_exp2_trajectory", show)
 
 
-# ── Exp4 ─────────────────────────────────────────────────────────────────────
+# ===========================================================================
+# Exp3: Capability Breadth (A: NL Robustness, B: Dynamic Skill, C: Self-Driven)
+# ===========================================================================
 
-def fig_exp4(data: dict):
-    """Fig4: Skill 生成验证 — 各场景 4 项指标气泡/矩阵图"""
-    results = data["results"]
-    scenarios = [r["id"] for r in results]
-    metrics = [
-        ("create_skill_called", "create_skill\ncalled"),
-        ("skill_md_exists",     "skill.md\ngenerated"),
-        ("tool_py_exists",      "tool.py\ngenerated"),
-        ("tool_py_syntax_ok",   "syntax\nvalid"),
-        ("tool_registered",     "tool\nregistered"),
-    ]
+def fig_exp3(data: dict, show: bool = False):
+    secs = data["sections"]
 
-    fig, ax = plt.subplots(figsize=(8, 3.5))
-    n_s = len(scenarios)
-    n_m = len(metrics)
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
 
-    for j, (key, label) in enumerate(metrics):
-        for i, r in enumerate(results):
-            val = r.get(key, False)
-            color = COLORS["pass"] if val else COLORS["fail"]
-            ax.scatter(j, i, s=320, color=color, zorder=3, marker="s")
-            ax.text(j, i, "✓" if val else "✗", ha="center", va="center",
-                    fontsize=11, color="white", fontweight="bold")
-
-    ax.set_xticks(range(n_m))
-    ax.set_xticklabels([m[1] for m in metrics], fontsize=9)
-    ax.set_yticks(range(n_s))
-    ax.set_yticklabels([f"{r['id']}\n{r['description'][:22]}" for r in results], fontsize=8)
-    ax.set_xlim(-0.5, n_m - 0.5)
-    ax.set_ylim(-0.5, n_s - 0.5)
-    ax.set_title("Exp4: Dynamic Skill Creation — Verification Matrix", fontweight="bold")
-    ax.grid(False)
-
-    # 图例
-    pass_patch = mpatches.Patch(color=COLORS["pass"], label="Pass")
-    fail_patch = mpatches.Patch(color=COLORS["fail"], label="Fail")
-    ax.legend(handles=[pass_patch, fail_patch], loc="lower right")
-
-    # 总体成功率
-    sr = data.get("success_rate", 0)
-    ax.text(0.98, 0.98, f"Success rate: {sr:.0%}",
-            transform=ax.transAxes, ha="right", va="top",
-            fontsize=9, fontweight="bold")
-
-    fig.tight_layout()
-    _save(fig, "Fig4_exp4_skill_creation")
-
-
-# ── Exp5 ─────────────────────────────────────────────────────────────────────
-
-def fig_exp5(data: dict):
-    """Fig5: 跨会话记忆综合图（3个子图）
-       5a: Phase A vs B NSE 对比
-       5b: 上下文注入验证（文本标注图）
-       5c: Phase C 对抗先验检测结果
-    """
-    comparisons = data.get("comparisons", [])
-    profile_checks = data.get("profile_checks", {})
-    context_checks = data.get("context_checks", {})
-    adversarial_checks = data.get("adversarial_checks", {})
-
-    fig = plt.figure(figsize=(13, 4.5))
-    gs = fig.add_gridspec(1, 3, wspace=0.35)
-
-    # ── 5a: Phase A vs B NSE ─────────────────────────────────────────────
-    ax1 = fig.add_subplot(gs[0])
-    if comparisons:
-        basins  = [c["basin_id"] for c in comparisons]
-        nse_a   = [c.get("phase_a_nse") for c in comparisons]
-        nse_b   = [c.get("phase_b_nse") for c in comparisons]
-        x       = np.arange(len(basins))
-        width   = 0.35
-        bar1 = ax1.bar(x - width/2, [v or 0 for v in nse_a], width,
-                       color="#4878CF", alpha=0.85, label="Phase A (cold)")
-        bar2 = ax1.bar(x + width/2, [v or 0 for v in nse_b], width,
-                       color="#6ACC65", alpha=0.85, label="Phase B (prior)")
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(basins, rotation=10, fontsize=8)
-        ax1.set_ylabel("NSE")
-        ax1.set_ylim(0, 1.0)
-        ax1.set_title("5a: Phase A vs B NSE", fontweight="bold")
-        ax1.legend(fontsize=7.5)
-
-    # ── 5b: 档案持久化 + 上下文注入验证 ────────────────────────────────
-    ax2 = fig.add_subplot(gs[1])
-    ax2.axis("off")
-    y = 0.92
-    ax2.text(0.5, 1.0, "5b: Memory Verification", ha="center", va="top",
-             transform=ax2.transAxes, fontsize=10, fontweight="bold")
-    for basin_id in list(profile_checks.keys()):
-        pc = profile_checks[basin_id]
-        cc = context_checks.get(basin_id, {})
-        p_ok = pc.get("profile_exists") and pc.get("nse_consistent")
-        c_ok = cc.get("profile_in_context")
-        color_p = COLORS["pass"] if p_ok  else COLORS["fail"]
-        color_c = COLORS["pass"] if c_ok  else COLORS["fail"]
-        nse_v = pc.get("saved_nse")
-        nse_str = f"{nse_v:.3f}" if isinstance(nse_v, float) else "N/A"
-        ax2.text(0.05, y,
-                 f"{basin_id}",
-                 transform=ax2.transAxes, fontsize=9, fontweight="bold", va="top")
-        y -= 0.09
-        ax2.text(0.08, y,
-                 f"Profile saved (NSE={nse_str}): {'✓' if p_ok else '✗'}",
-                 transform=ax2.transAxes, fontsize=8.5, color=color_p, va="top")
-        y -= 0.09
-        ax2.text(0.08, y,
-                 f"Profile in LLM context:  {'✓' if c_ok else '✗'}",
-                 transform=ax2.transAxes, fontsize=8.5, color=color_c, va="top")
-        y -= 0.12
-
-    # ── 5c: 对抗先验检测 ────────────────────────────────────────────────
-    ax3 = fig.add_subplot(gs[2])
-    ax3.axis("off")
-    ax3.text(0.5, 1.0, "5c: Adversarial Prior Detection", ha="center", va="top",
-             transform=ax3.transAxes, fontsize=10, fontweight="bold")
-    y = 0.82
-    ax3.text(0.05, y, "Injected prior: NSE=0.97, params at boundaries",
-             transform=ax3.transAxes, fontsize=8, color="#8B0000", va="top",
-             style="italic")
-    y -= 0.14
-    for basin_id, ac in adversarial_checks.items():
-        detected = ac.get("anomaly_detected", False)
-        kws = ac.get("keywords_found", [])
-        color = COLORS["pass"] if detected else COLORS["fail"]
-        ax3.text(0.05, y,
-                 f"{basin_id}:",
-                 transform=ax3.transAxes, fontsize=9, fontweight="bold", va="top")
-        y -= 0.10
-        ax3.text(0.08, y,
-                 f"Detected: {'✓ YES' if detected else '✗ NO'}",
-                 transform=ax3.transAxes, fontsize=8.5, color=color, va="top")
-        y -= 0.10
-        if kws:
-            ax3.text(0.08, y,
-                     f"Keywords: {', '.join(kws[:3])}",
-                     transform=ax3.transAxes, fontsize=8, color="gray", va="top")
-        y -= 0.14
-
-    fig.suptitle("Exp5: Cross-Session Memory", fontweight="bold", fontsize=12)
-    _save(fig, "Fig5_exp5_memory")
-
-
-# ── Exp6 ─────────────────────────────────────────────────────────────────────
-
-def fig_exp6(data: dict):
-    """Fig6a: 三层知识消融热力图（条件 × 场景）
-       Fig6b: 知识层叠加效果折线图（match rate vs token cost）
-    """
-    results_list = data["results"]
-    conditions   = data["conditions"]    # [{id, key, name}]
-    scenarios    = data["scenarios"]     # [{id, name}]
-
-    cond_ids  = [c["id"]   for c in conditions]
-    cond_names= [c["name"] for c in conditions]
-    scen_ids  = [s["id"]   for s in scenarios]
-    scen_names= [s["name"] for s in scenarios]
-
-    # ── Fig6a: 热力图 ─────────────────────────────────────────────────────
-    match_mat = np.zeros((len(cond_ids), len(scen_ids)))
-    for r in results_list:
-        ci = cond_ids.index(r["condition_id"])  if r["condition_id"]  in cond_ids  else -1
-        si = scen_ids.index(r["scenario_id"])   if r["scenario_id"]   in scen_ids  else -1
-        if ci >= 0 and si >= 0:
-            match_mat[ci, si] = 1.0 if r.get("tool_match") else 0.0
-
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
-
+    # --- Section A: NL Robustness ---
     ax = axes[0]
-    im = ax.imshow(match_mat, vmin=0, vmax=1, cmap="RdYlGn", aspect="auto")
-    ax.set_xticks(range(len(scen_ids)))
-    ax.set_xticklabels([f"{sid}\n{sn}" for sid, sn in zip(scen_ids, scen_names)],
-                       fontsize=8.5)
-    ax.set_yticks(range(len(cond_ids)))
-    ax.set_yticklabels(cond_names, fontsize=9)
-    ax.set_title("Tool Match (1=pass, 0=fail)", fontweight="bold")
-    ax.grid(False)
-    for i in range(len(cond_ids)):
-        for j in range(len(scen_ids)):
-            v = match_mat[i, j]
-            ax.text(j, i, "✓" if v == 1.0 else "✗",
-                    ha="center", va="center", fontsize=13,
-                    color="white" if v == 1.0 else "#cc0000")
-    fig.colorbar(im, ax=ax, shrink=0.7)
+    results_a = secs["A"]["results"]
+    categories = list(dict.fromkeys(r["category"] for r in results_a))  # preserve order
+    cat_match = [sum(r.get("tool_match", False)        for r in results_a if r["category"] == c) for c in categories]
+    cat_first = [sum(r.get("first_tool_correct", False) for r in results_a if r["category"] == c) for c in categories]
+    cat_total = [sum(1                                  for r in results_a if r["category"] == c) for c in categories]
 
-    # ── Fig6b: 匹配率 vs token 成本折线图 ────────────────────────────────
-    ax2 = axes[1]
-    stats = data.get("stats_by_condition", {})
+    xp = np.arange(len(categories))
+    w  = 0.3
+    b1 = ax.bar(xp - w/2, cat_match, w, color=COLORS["A"], alpha=0.85, label="Tool Match",   edgecolor="white")
+    b2 = ax.bar(xp + w/2, cat_first, w, color=COLORS["B"], alpha=0.85, label="First Correct", edgecolor="white")
+    for xi, (m, f, t) in enumerate(zip(cat_match, cat_first, cat_total)):
+        ax.text(xi - w/2, m + 0.05, f"{m}/{t}", ha="center", fontsize=8.5)
+        ax.text(xi + w/2, f + 0.05, f"{f}/{t}", ha="center", fontsize=8.5)
+    stats_a = secs["A"]["stats"]
+    ax.text(0.97, 0.97, f"Match {stats_a['tool_match_rate']:.0%}  First {stats_a['first_tool_rate']:.0%}",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8.5, color="gray")
+    ax.set_xticks(xp)
+    ax.set_xticklabels([c.replace("_", "\n") for c in categories], fontsize=8)
+    ax.set_ylim(0, max(cat_total) + 1.5)
+    ax.set_ylabel("Count")
+    ax.set_title("(a) NL Robustness", fontweight="bold")
+    ax.legend(fontsize=8)
+    ax.grid(axis="y", alpha=0.3)
 
-    match_rates = [stats.get(cid, {}).get("tool_match_rate", 0) * 100 for cid in cond_ids]
-    token_costs = [stats.get(cid, {}).get("avg_tokens", 0) for cid in cond_ids]
-    first_rates = [stats.get(cid, {}).get("first_tool_rate", 0) * 100 for cid in cond_ids]
+    # --- Section B: Dynamic Skill Creation ---
+    ax = axes[1]
+    results_b = secs["B"]["results"]
+    n_b  = len(results_b)
+    keys_b = [
+        ("create_skill_called", "create_skill\ncalled"),
+        ("skill_md_exists",     "skill.md\nexists"),
+        ("tool_py_syntax_ok",   "syntax\nvalid"),
+        ("tool_registered",     "registered"),
+    ]
+    labels_b = [lb for _, lb in keys_b]
+    vals_b   = [sum(r.get(k, False) for r in results_b) for k, _ in keys_b]
+    bars = ax.bar(range(len(labels_b)), vals_b, color=COLORS["C"], alpha=0.85, edgecolor="white")
+    for bar, v in zip(bars, vals_b):
+        ax.text(bar.get_x() + bar.get_width() / 2, v + 0.05, f"{v}/{n_b}",
+                ha="center", fontsize=9.5)
+    stats_b = secs["B"]["stats"]
+    ax.text(0.97, 0.97, f"Success {stats_b['success_rate']:.0%}",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8.5, color="gray")
+    ax.set_xticks(range(len(labels_b)))
+    ax.set_xticklabels(labels_b, fontsize=8)
+    ax.set_ylim(0, n_b + 1.5)
+    ax.set_ylabel("Count")
+    ax.set_title("(b) Dynamic Skill Creation", fontweight="bold")
+    ax.grid(axis="y", alpha=0.3)
 
-    x = range(len(cond_ids))
-    ax2.plot(x, match_rates, "o-", color="#034e7b", lw=2.5, ms=8,
-             label="Tool Match Rate (%)")
-    ax2.plot(x, first_rates, "s--", color="#3690c0", lw=2, ms=7, alpha=0.8,
-             label="First Tool Correct (%)")
+    # --- Section C: Self-Driven Planning ---
+    ax = axes[2]
+    phases = secs["C"]["phases"]
+    n_ph   = len(phases)
+    comp   = [p.get("completion_rate", 0) for p in phases]
+    done   = [p.get("tasks_done",  0) for p in phases]
+    total  = [p.get("tasks_total", 1) for p in phases]
+    ok     = [p.get("success", False) for p in phases]
+    colors_c = [COLORS["K3"] if s else COLORS["K0"] for s in ok]
 
-    ax2_r = ax2.twinx()
-    ax2_r.bar(x, token_costs, alpha=0.3, color="#bdbdbd", label="Avg Tokens (cost)")
-    ax2_r.set_ylabel("Avg Token Count", color="gray")
-    ax2_r.tick_params(axis="y", colors="gray")
+    bars = ax.bar(range(n_ph), comp, color=colors_c, alpha=0.85, edgecolor="white")
+    for i, (bar, d, t) in enumerate(zip(bars, done, total)):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
+                f"{d}/{t}", ha="center", fontsize=9.5)
+    stats_c = secs["C"]["stats"]
+    ax.text(0.97, 0.97, f"Pass {stats_c['pass_rate']:.0%}",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8.5, color="gray")
+    ax.set_xticks(range(n_ph))
+    ax.set_xticklabels([f"Phase {p['phase']}" for p in phases], fontsize=9)
+    ax.set_ylim(0, 1.35)
+    ax.set_ylabel("Task Completion Rate")
+    ax.set_title("(c) Self-Driven Planning", fontweight="bold")
+    ax.legend(handles=[
+        mpatches.Patch(color=COLORS["K3"], alpha=0.85, label="Pass"),
+        mpatches.Patch(color=COLORS["K0"], alpha=0.85, label="Fail"),
+    ], fontsize=8)
+    ax.grid(axis="y", alpha=0.3)
 
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(cond_names, rotation=10, fontsize=8.5)
-    ax2.set_ylabel("Match Rate (%)")
-    ax2.set_ylim(0, 115)
-    ax2.set_title("Knowledge Layer Contribution\nvs Token Cost", fontweight="bold")
-
-    lines1, labels1 = ax2.get_legend_handles_labels()
-    lines2, labels2 = ax2_r.get_legend_handles_labels()
-    ax2.legend(lines1 + lines2, labels1 + labels2, loc="upper left", fontsize=7.5)
-
-    fig.suptitle("Exp6: Three-Layer Knowledge Ablation", fontweight="bold", fontsize=12)
+    fig.suptitle("Exp3: Capability Breadth — NL Robustness / Dynamic Skill / Self-Driven Planning",
+                 fontweight="bold")
     fig.tight_layout()
-    _save(fig, "Fig6_exp6_ablation")
+    _save(fig, "Fig3_exp3_capability", show)
 
 
-# ── 主入口 ───────────────────────────────────────────────────────────────────
+# ===========================================================================
+# Exp4: Knowledge Ablation + Adversarial Robustness
+# ===========================================================================
 
-EXP_MAP = {
-    1: fig_exp1,
-    2: fig_exp2,
-    3: fig_exp3,
-    4: fig_exp4,
-    5: fig_exp5,
-    6: fig_exp6,
-}
+def fig_exp4(data: dict, show: bool = False):
+    main      = data["main_ablation"]
+    adv_data  = data["adversarial_robustness"]
+
+    conditions = [c["id"] for c in main["conditions"]]   # K0 K1 K2 K3
+    scenarios  = [s["id"] for s in main["scenarios"]]    # T1 T2 T3
+    results    = main["results"]
+    lookup     = {(r["condition_id"], r["scenario_id"]): r for r in results}
+
+    n_cond, n_scen = len(conditions), len(scenarios)
+    tokens_mat = np.zeros((n_cond, n_scen))
+    match_mat  = np.zeros((n_cond, n_scen))
+    first_mat  = np.zeros((n_cond, n_scen))
+
+    for ci, cond in enumerate(conditions):
+        for si, scen in enumerate(scenarios):
+            rec = lookup.get((cond, scen), {})
+            tokens_mat[ci, si] = rec.get("token_count", 0) / 1000
+            match_mat[ci, si]  = 1.0 if rec.get("tool_match",       False) else 0.0
+            first_mat[ci, si]  = 1.0 if rec.get("first_tool_correct", False) else 0.0
+
+    # --- Fig4a: token heatmap + match/first bar ---
+    fig = plt.figure(figsize=(13, 5))
+    gs  = GridSpec(1, 2, figure=fig, width_ratios=[1.5, 1], wspace=0.4)
+
+    ax_tok  = fig.add_subplot(gs[0])
+    ax_rate = fig.add_subplot(gs[1])
+
+    # Token heatmap
+    im = ax_tok.imshow(tokens_mat, cmap="YlOrRd", aspect="auto",
+                       vmin=0, vmax=tokens_mat.max())
+    ax_tok.set_xticks(range(n_scen))
+    ax_tok.set_xticklabels(["T1\n(Calibration)", "T2\n(Boundary)", "T3\n(Code)"], fontsize=8.5)
+    ax_tok.set_yticks(range(n_cond))
+    ax_tok.set_yticklabels(
+        ["K0: No Knowledge", "K1: +Skill Guide", "K2: +Domain KB", "K3: +Memory (Full)"],
+        fontsize=8.5)
+    ax_tok.set_title("(a) Token Consumption (k tokens)", fontweight="bold")
+    ax_tok.grid(False)
+    for ci in range(n_cond):
+        for si in range(n_scen):
+            v     = tokens_mat[ci, si]
+            color = "white" if v > tokens_mat.max() * 0.65 else "black"
+            ax_tok.text(si, ci, f"{v:.0f}k", ha="center", va="center",
+                        fontsize=10, color=color, fontweight="bold")
+    plt.colorbar(im, ax=ax_tok, label="kTokens", fraction=0.046, pad=0.04)
+
+    # Match/first bar
+    avg_match = match_mat.mean(axis=1)
+    avg_first = first_mat.mean(axis=1)
+    xp = np.arange(n_cond)
+    w  = 0.35
+    b1 = ax_rate.bar(xp - w/2, avg_match, w, color=COLORS["A"], alpha=0.85,
+                     label="Tool Match Rate", edgecolor="white")
+    b2 = ax_rate.bar(xp + w/2, avg_first, w, color=COLORS["B"], alpha=0.85,
+                     label="First Tool Correct", edgecolor="white")
+    for bar, v in zip(list(b1) + list(b2), list(avg_match) + list(avg_first)):
+        ax_rate.text(bar.get_x() + bar.get_width() / 2, v + 0.01,
+                     f"{v:.2f}", ha="center", va="bottom", fontsize=9)
+    ax_rate.set_xticks(xp)
+    ax_rate.set_xticklabels(conditions, fontsize=9)
+    ax_rate.set_ylim(0, 1.3)
+    ax_rate.set_ylabel("Rate (avg T1/T2/T3)")
+    ax_rate.set_title("(b) Tool Planning Accuracy", fontweight="bold")
+    ax_rate.legend(fontsize=8)
+    ax_rate.grid(axis="y", alpha=0.3)
+
+    fig.suptitle("Exp4: Knowledge Ablation (K0-K3) — Token Cost vs Accuracy",
+                 fontweight="bold")
+    fig.tight_layout()
+    _save(fig, "Fig4a_exp4_ablation", show)
+
+    # --- Fig4b: adversarial detection ---
+    adv_results = adv_data["results"]
+    n_adv   = len(adv_results)
+    det     = [r.get("anomaly_detected", False) for r in adv_results]
+    basins  = [r["basin_id"] for r in adv_results]
+
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+    colors  = [COLORS["pass"] if d else COLORS["fail"] for d in det]
+    ax.bar(range(n_adv), [1] * n_adv, color=colors, alpha=0.85, edgecolor="white")
+    for i, (bid, d) in enumerate(zip(basins, det)):
+        status = "DETECTED" if d else "MISSED"
+        ax.text(i, 0.5, status, ha="center", va="center",
+                fontsize=9, color="white", fontweight="bold", rotation=90)
+        ax.text(i, 1.05, bid, ha="center", va="bottom", fontsize=8)
+        kws = adv_results[i].get("keywords_found", [])
+        if kws:
+            ax.text(i, -0.08, ", ".join(kws[:2]), ha="center", va="top",
+                    fontsize=7, color="gray")
+    ax.set_xticks(range(n_adv))
+    ax.set_xticklabels(basins, fontsize=8.5)
+    ax.set_ylim(-0.2, 1.3)
+    ax.set_yticks([])
+    ax.set_title("Exp4: Adversarial Prior Detection (K3)\n"
+                 "Injected: NSE=0.97, params at boundaries",
+                 fontweight="bold")
+    ax.legend(handles=[
+        mpatches.Patch(color=COLORS["pass"], alpha=0.85, label="Anomaly Detected"),
+        mpatches.Patch(color=COLORS["fail"], alpha=0.85, label="Missed"),
+    ], fontsize=8.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    fig.tight_layout()
+    _save(fig, "Fig4b_exp4_adversarial", show)
+
+
+# ===========================================================================
+# Dispatch
+# ===========================================================================
+
+EXP_MAP = {1: fig_exp1, 2: fig_exp2, 3: fig_exp3, 4: fig_exp4}
 
 
 def main():
     _style()
 
-    parser = argparse.ArgumentParser(description="Generate paper figures from experiment results")
+    parser = argparse.ArgumentParser(description="Generate HydroClaw paper figures")
     parser.add_argument("--exp", type=int, nargs="+",
-                        help="Experiment numbers to plot (default: all)")
+                        help="Experiment numbers to plot (default: all available)")
+    parser.add_argument("--show", action="store_true",
+                        help="Display figures interactively")
     args = parser.parse_args()
 
     exps = args.exp if args.exp else list(EXP_MAP.keys())
@@ -564,11 +517,11 @@ def main():
     print(f"\nGenerating figures -> {FIG_DIR}/\n")
     for exp_num in exps:
         print(f"[Exp{exp_num}]")
-        data = _load(exp_num)
-        if data is None:
+        d = _load(exp_num)
+        if d is None:
             continue
         try:
-            EXP_MAP[exp_num](data)
+            EXP_MAP[exp_num](d, show=args.show)
         except Exception as e:
             print(f"  ERROR: {e}")
             import traceback

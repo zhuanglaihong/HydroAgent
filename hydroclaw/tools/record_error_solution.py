@@ -36,7 +36,7 @@ def record_error_solution(
     Returns:
         {"entry_id": str, "action": str, "success": bool}
     """
-    from hydroclaw.error_kb import ErrorKnowledgeBase
+    from hydroclaw.utils.error_kb import ErrorKnowledgeBase
 
     kb = ErrorKnowledgeBase()
 

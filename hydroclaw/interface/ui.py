@@ -21,6 +21,7 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 from rich import box
+from rich.columns import Columns
 
 # ── Human-readable labels for each tool ─────────────────────────────
 _TOOL_LABELS: dict[str, str] = {
@@ -110,6 +111,19 @@ def _tool_context(name: str, args: dict) -> str:
     return ""
 
 
+def _nse_color(nse) -> str:
+    """Return Rich color tag for a NSE value."""
+    if not isinstance(nse, (int, float)):
+        return "dim"
+    if nse >= 0.75:
+        return "green"
+    if nse >= 0.65:
+        return "yellow"
+    if nse >= 0.5:
+        return "dark_orange"
+    return "red"
+
+
 def _result_summary(name: str, result: dict) -> str:
     """工具成功时显示的简要结果（用户模式）。"""
     if name == "validate_basin":
@@ -118,11 +132,17 @@ def _result_summary(name: str, result: dict) -> str:
     if name in ("calibrate_model", "llm_calibrate"):
         metrics = result.get("metrics", {})
         nse = metrics.get("NSE")
-        return f"[dim]训练期 NSE={nse:.3f}[/dim]" if nse is not None else ""
+        if nse is not None:
+            color = _nse_color(nse)
+            return f"[{color}]NSE={nse:.3f}[/{color}]"
+        return ""
     if name == "evaluate_model":
         metrics = result.get("metrics", {})
         nse = metrics.get("NSE")
-        return f"[dim]测试期 NSE={nse:.3f}[/dim]" if nse is not None else ""
+        if nse is not None:
+            color = _nse_color(nse)
+            return f"[{color}]NSE={nse:.3f}[/{color}]"
+        return ""
     if name == "visualize":
         n = result.get("plot_count", 0)
         return f"[dim]{n} 张图片[/dim]"
@@ -167,32 +187,42 @@ class ConsoleUI:
 
     def print_banner(self, tools_count: int, skills: list[dict], model: str):
         self.console.print()
-        title = Text()
-        title.append("HydroClaw v0.3", style="bold cyan")
-        title.append(f"  |  {model}", style="dim")
-        title.append(f"  |  {tools_count} Tools", style="dim")
-        title.append(f"  |  {len(skills)} Skills", style="dim")
-        self.console.print(Panel(title, border_style="cyan", padding=(0, 2)))
+
+        # Two-column header: branding left, stats right
+        left  = Text()
+        left.append("HydroClaw", style="bold cyan")
+        left.append("  v0.3", style="cyan")
+        left.append(f"\n{model}", style="dim")
+
+        right = Text(justify="right")
+        right.append(f"{tools_count} tools", style="dim")
+        right.append("  |  ", style="dim")
+        right.append(f"{len(skills)} skills", style="dim")
+        if self.mode == "dev":
+            right.append("  |  ", style="dim")
+            right.append("DEV MODE", style="bold yellow")
+
+        header_table = Table.grid(expand=True)
+        header_table.add_column(ratio=1)
+        header_table.add_column(ratio=1, justify="right")
+        header_table.add_row(left, right)
+        self.console.print(Panel(header_table, border_style="cyan", padding=(0, 2)))
 
         if skills:
-            table = Table(box=None, show_header=False, padding=(0, 2))
-            table.add_column("idx",  style="dim", width=4)
-            table.add_column("name", style="bold", width=28)
-            table.add_column("desc")
+            self.console.print(Padding("[dim]可用技能:[/dim]", (0, 2)))
+            skill_table = Table(box=None, show_header=False, padding=(0, 2))
+            skill_table.add_column("idx",  style="dim",  width=4)
+            skill_table.add_column("name", style="bold cyan", width=22)
+            skill_table.add_column("desc", style="dim")
             for i, s in enumerate(skills, 1):
-                table.add_row(f"[{i}]", s["name"], s["description"])
-            self.console.print(Padding(table, (0, 2)))
-            self.console.print(Padding(
-                "[dim]Tip: 如需以上技能无法覆盖的功能，直接描述需求，系统将自动生成新技能。[/dim]",
-                (0, 4),
-            ))
+                skill_table.add_row(f"[{i}]", s["name"], s.get("description", "")[:60])
+            self.console.print(Padding(skill_table, (0, 2)))
 
         self.console.print(Rule(style="dim"))
-        self.console.print(
-            "[dim]输入你的问题（中文或英文）。"
-            "/tasks 查看任务进度  /pause 暂停  /resume 继续  /help 帮助  "
-            "quit 退出  Ctrl+C 中断当前任务[/dim]"
-        )
+        self.console.print(Padding(
+            "[dim]/tasks  /pause  /resume  /help  quit  |  Ctrl+C 中断当前任务[/dim]",
+            (0, 2),
+        ))
         self.console.print()
 
     # ── Query ─────────────────────────────────────────────────────────
@@ -235,6 +265,11 @@ class ConsoleUI:
             yield
             self.console.print(f"  [dim]LLM responded in {time.time()-t:.2f}s[/dim]")
 
+    def on_thought(self, text: str, turn: int):
+        """Called when LLM emits reasoning text before tool calls."""
+        if self.mode == "dev" and text:
+            self.dev_log(f"[Turn {turn}] Thought: {text[:120]}...")
+
     # ── Tool calls ───────────────────────────────────────────────────
 
     def on_tool_start(self, name: str, args: dict):
@@ -272,8 +307,12 @@ class ConsoleUI:
                     f"  [dim]{elapsed:.1f}s[/dim]"
                     + (f"  {summary}" if summary else "")
                 )
+                # Structured result card for calibration tools
+                if name in ("calibrate_model", "llm_calibrate"):
+                    self._print_calibration_card(result)
+                elif name == "evaluate_model":
+                    self._print_eval_card(result)
             else:
-                # 用户界面不暴露原始错误，LLM 会自行处理重试
                 self.console.print(
                     f"  {icon}  [bold]{label}[/bold]"
                     f"  [dim]{elapsed:.1f}s  (LLM 将自动处理)[/dim]"
@@ -287,6 +326,67 @@ class ConsoleUI:
                 f"[bold]{icon} {name}[/bold]  [dim]({elapsed:.2f}s)[/dim]\n"
                 f"[dim]{result_str}[/dim]\n"
             )
+
+    def _print_calibration_card(self, result: dict):
+        """Print a structured parameter + metric card after calibration."""
+        params  = result.get("best_params") or {}
+        metrics = result.get("metrics") or {}
+        if not params and not metrics:
+            return
+
+        # Build two side-by-side mini-tables using Table.grid
+        grid = Table.grid(expand=False, padding=(0, 3))
+        grid.add_column()
+        grid.add_column()
+
+        # Params table
+        if params:
+            p_table = Table(
+                box=box.SIMPLE, show_header=True, header_style="dim",
+                padding=(0, 1), min_width=22,
+            )
+            p_table.add_column("参数", style="cyan",  width=8)
+            p_table.add_column("最优值",              width=12, justify="right")
+            for k, v in params.items():
+                p_table.add_row(k, f"{v:.4f}" if isinstance(v, float) else str(v))
+        else:
+            p_table = Text()
+
+        # Metrics table
+        if metrics:
+            m_table = Table(
+                box=box.SIMPLE, show_header=True, header_style="dim",
+                padding=(0, 1), min_width=22,
+            )
+            m_table.add_column("指标", style="cyan", width=8)
+            m_table.add_column("值",                  width=10, justify="right")
+            show_keys = ["NSE", "KGE", "RMSE", "Bias"]
+            for k in show_keys:
+                v = metrics.get(k)
+                if v is None:
+                    continue
+                color = _nse_color(v) if k == "NSE" else "default"
+                m_table.add_row(k, f"[{color}]{v:.4f}[/{color}]")
+        else:
+            m_table = Text()
+
+        grid.add_row(p_table, m_table)
+        self.console.print(Padding(grid, (0, 6)))
+
+    def _print_eval_card(self, result: dict):
+        """Print compact evaluation metrics card."""
+        metrics = result.get("metrics") or {}
+        if not metrics:
+            return
+        parts = []
+        for k in ("NSE", "KGE", "RMSE"):
+            v = metrics.get(k)
+            if v is None:
+                continue
+            color = _nse_color(v) if k == "NSE" else "dim"
+            parts.append(f"[dim]{k}=[/dim][{color}]{v:.3f}[/{color}]")
+        if parts:
+            self.console.print(Padding("  ".join(parts), (0, 8)))
 
     def ask_user(self, question: str, context: str | None = None) -> str:
         """Display a question panel and read one line of user input.
@@ -354,6 +454,23 @@ class ConsoleUI:
                 padding=(0, 1),
             ))
         self.console.print()
+
+    def on_session_summary(self, total_turns: int, elapsed_s: float, tokens: dict):
+        """Print a compact session stats footer (user mode only)."""
+        if self.mode != "user":
+            return
+        total_tok = tokens.get("total_tokens", 0)
+        prompt    = tokens.get("prompt_tokens", 0)
+        compl     = tokens.get("completion_tokens", 0)
+        tok_str   = (
+            f"[dim]tokens:[/dim] [cyan]{total_tok:,}[/cyan]"
+            f" [dim](prompt {prompt:,} / compl {compl:,})[/dim]"
+        )
+        time_str  = f"[dim]time:[/dim] [cyan]{elapsed_s:.1f}s[/cyan]"
+        turns_str = f"[dim]turns:[/dim] [cyan]{total_turns}[/cyan]"
+        self.console.print(
+            Padding(f"  {turns_str}    {time_str}    {tok_str}", (0, 2))
+        )
 
     # ── Errors ───────────────────────────────────────────────────────
 

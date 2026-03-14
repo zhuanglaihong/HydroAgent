@@ -42,9 +42,11 @@ def evaluate_model(
     except ImportError as e:
         return {"error": f"hydromodel not available: {e}", "success": False}
 
-    logger.info(f"Evaluating model from: {calibration_dir}")
+    from hydroclaw.utils.path_utils import resolve_path
+    resolved = resolve_path(calibration_dir, _workspace)
+    logger.info(f"Evaluating model from: {calibration_dir} -> resolved: {resolved}")
 
-    cal_path = Path(calibration_dir)
+    cal_path = resolved if resolved is not None else Path(calibration_dir)
 
     # --- Pre-flight checks: give Agent actionable diagnosis before even trying ---
     if not cal_path.exists():

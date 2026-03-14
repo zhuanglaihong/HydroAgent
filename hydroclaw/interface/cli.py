@@ -33,17 +33,30 @@ Examples:
         """,
     )
     parser.add_argument("query", nargs="?", help="Query to run (omit for interactive mode)")
-    parser.add_argument("--dev", action="store_true", help="Developer mode: show full execution details and logs")
+    parser.add_argument("--dev",    action="store_true", help="Developer mode: show full execution details and logs")
+    parser.add_argument("--server", action="store_true", help="Launch FastAPI web server (recommended)")
+    parser.add_argument("--web",    action="store_true", help="Launch legacy Streamlit web UI")
+    parser.add_argument("--port",   type=int, default=7860, help="Port for web server (default: 7860)")
     parser.add_argument("--config", "-c", default=None, help="Path to config.json")
     parser.add_argument("--workspace", "-w", default=None, help="Working directory for results")
     parser.add_argument("--log-file", default=None, help="Log file path (dev mode default: logs/)")
 
     args = parser.parse_args()
 
+    # FastAPI server mode
+    if args.server:
+        _launch_server(args.port, args.workspace)
+        return
+
+    # Legacy Streamlit web UI
+    if args.web:
+        _launch_web_ui(args.port if args.port != 7860 else 8501)
+        return
+
     mode = "dev" if args.dev else "user"
 
     # Create UI first so we can use its console for logging in dev mode
-    from hydroclaw.ui import ConsoleUI
+    from hydroclaw.interface.ui import ConsoleUI
     ui = ConsoleUI(mode=mode)
 
     # Setup logging: visible in dev mode, suppressed in user mode
@@ -67,6 +80,108 @@ Examples:
     else:
         _print_banner(ui, agent)
         _interactive_loop(ui, agent)
+
+
+def _launch_server(port: int = 7860, workspace: str | None = None):
+    """Launch FastAPI + WebSocket server and open browser."""
+    import asyncio
+    import threading
+    import time
+    import webbrowser
+
+    import uvicorn
+
+    from hydroclaw.interface.server import create_app
+
+    # Windows + VPN (e.g. Astrill) 会导致 ProactorEventLoop 的 overlapped I/O
+    # 句柄在销毁时仍有 pending 操作而崩溃，切换到 SelectorEventLoop 可规避。
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    ws_path = Path(workspace).resolve() if workspace else Path(".").resolve()
+
+    # Setup file logging for the server process
+    _setup_server_logging(ws_path)
+
+    app = create_app(str(ws_path))
+    url = f"http://localhost:{port}"
+
+    print(f"HydroClaw Web Server -> {url}")
+    print(f"Workspace: {ws_path}")
+    log_dir = ws_path / "logs"
+    print(f"Log dir  : {log_dir}")
+    print("Press Ctrl+C to stop.\n")
+
+    def _open():
+        time.sleep(1.2)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open, daemon=True).start()
+
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+
+
+def _setup_server_logging(ws_path: Path):
+    """Configure logging for the FastAPI server process.
+
+    Writes to logs/hydroclaw_server_YYYYMMDD_HHMMSS.log in the workspace.
+    Also prints INFO+ to stderr so the terminal shows activity.
+    """
+    from datetime import datetime
+
+    logs_dir = ws_path / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = logs_dir / f"hydroclaw_server_{ts}.log"
+
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+                             datefmt="%H:%M:%S")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(fmt)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(fmt)
+
+    logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, stream_handler], force=True)
+
+    # Quiet noisy libs
+    for lib in ("httpx", "openai", "urllib3", "matplotlib", "PIL",
+                "asyncio", "h11", "h2", "httpcore", "charset_normalizer",
+                "uvicorn.access"):
+        logging.getLogger(lib).setLevel(logging.WARNING)
+
+    print(f"Logging -> {log_path}")
+
+
+def _launch_web_ui(port: int = 8501):
+    """Launch Streamlit web UI in a subprocess and open browser."""
+    import subprocess
+    import webbrowser
+
+    web_app = Path(__file__).parent / "web_app.py"
+    url     = f"http://localhost:{port}"
+
+    print(f"Launching HydroClaw Web UI -> {url}")
+    print("Press Ctrl+C to stop the server.\n")
+
+    # Open browser after a short delay (let Streamlit start first)
+    def _open():
+        import time
+        time.sleep(2)
+        webbrowser.open(url)
+
+    import threading
+    threading.Thread(target=_open, daemon=True).start()
+
+    subprocess.run(
+        [sys.executable, "-m", "streamlit", "run", str(web_app),
+         "--server.port", str(port),
+         "--server.headless", "true",
+         "--theme.base", "dark"],
+        check=False,
+    )
 
 
 def _print_banner(ui, agent):
@@ -292,7 +407,7 @@ def _maybe_run_setup_wizard(ui, explicit_config_path: str | None):
         return  # 用户已明确指定配置，信任他
 
     from hydroclaw.config import load_config
-    from hydroclaw.setup_wizard import needs_setup, run_wizard
+    from hydroclaw.utils.setup_wizard import needs_setup, run_wizard
 
     cfg = load_config()
     if needs_setup(cfg):

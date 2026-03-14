@@ -121,7 +121,7 @@ def run_single_task(
     and verified by reading calibration outputs from disk.
     """
     from hydroclaw.agent import HydroClaw
-    from hydroclaw.ui import ConsoleUI
+    from hydroclaw.interface.ui import ConsoleUI
 
     combo = f"{model_name}_{basin_id}"
     task_workspace = OUTPUT_DIR / combo

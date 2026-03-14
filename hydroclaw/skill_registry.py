@@ -90,14 +90,15 @@ class SkillRegistry:
         return matched
 
     def list_all(self) -> list[dict]:
-        """Return [{name, description, when_to_use}, ...] for all skills."""
+        """Return [{id, name, description, when_to_use}, ...] for all skills."""
         return [
             {
+                "id": dir_name,
                 "name": s["name"],
                 "description": s["description"],
                 "when_to_use": s["when_to_use"],
             }
-            for s in self.skills.values()
+            for dir_name, s in self.skills.items()
         ]
 
     def available_skills_prompt(self, state_mgr=None) -> str:

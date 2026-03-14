@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 _dataset_dir = None
 _has_hydrodataset = False
+_has_hydrodatasource = False
+_selfmade_data_path = None
+_selfmade_dataset_name = None
 
 # Initialize on import
 try:
@@ -23,8 +26,21 @@ except ImportError:
     pass
 
 try:
+    from configs import private as _priv
+    _selfmade_data_path = getattr(_priv, "SELFMADE_DATA_PATH", None)
+    _selfmade_dataset_name = getattr(_priv, "SELFMADE_DATASET_NAME", None)
+except ImportError:
+    pass
+
+try:
     import hydrodataset  # noqa: F401
     _has_hydrodataset = True
+except ImportError:
+    pass
+
+try:
+    import hydrodatasource  # noqa: F401
+    _has_hydrodatasource = True
 except ImportError:
     pass
 
@@ -63,9 +79,28 @@ _DATASET_CLASS_MAP = {
 @lru_cache(maxsize=8)
 def _get_basin_ids(data_source: str = "camels_us") -> set[str] | None:
     """Get all basin IDs for the given data source."""
+    ds_key = data_source.lower()
+
+    # selfmade / selfmadehydrodataset -> use hydrodatasource
+    if ds_key in ("selfmade", "selfmadehydrodataset"):
+        if not _has_hydrodatasource or not _selfmade_data_path or not _selfmade_dataset_name:
+            return None
+        try:
+            from hydrodatasource.reader.data_source import SelfMadeHydroDataset
+            ds = SelfMadeHydroDataset(
+                data_path=_selfmade_data_path,
+                dataset_name=_selfmade_dataset_name,
+                time_unit=["1D"],
+            )
+            return {str(bid) for bid in ds.read_object_ids()}
+        except Exception as e:
+            logger.warning(f"Failed to load basin IDs for selfmade dataset: {e}")
+        return None
+
+    # public datasets -> use hydrodataset
     if not _has_hydrodataset or not _dataset_dir:
         return None
-    entry = _DATASET_CLASS_MAP.get(data_source.lower())
+    entry = _DATASET_CLASS_MAP.get(ds_key)
     if entry is None:
         return None
     mod_name, cls_name = entry
@@ -120,6 +155,10 @@ def validate_basin_id(
                     msg += f" Similar: {', '.join(similar)}"
                 return False, msg
             return True, None
+
+    # selfmade: no fixed format requirement, accept any non-empty string
+    if data_source.lower() in ("selfmade", "selfmadehydrodataset"):
+        return True, None
 
     # Fallback: format-only check (CAMELS-US uses 8-digit IDs)
     if data_source.lower() == "camels_us" and not re.match(r"^\d{8}$", basin_id):

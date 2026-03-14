@@ -65,13 +65,16 @@ DEFAULTS = {
         "dataset_dir": None,     # CAMELS 数据集根目录，必须在 configs/definitions_private.py 中设置
         "results_dir": "results",
         "project_dir": None,
+        "selfmade_data_path": None,    # 自制数据集父目录（hydrodatasource）
+        "selfmade_dataset_name": None, # 数据集文件夹名
     },
     "max_turns": 30,             # Agentic Loop 最大轮次
     "context_compress_threshold": 60_000,  # 上下文压缩触发阈值（估算 token 数）
 }
 
 
-def _ensure_hydro_setting(dataset_dir: str | None, cache_dir: str | None = None):
+def _ensure_hydro_setting(dataset_dir: str | None, cache_dir: str | None = None,
+                          selfmade_data_path: str | None = None):
     """Sync ~/hydro_setting.yml with paths from configs/private.py.
 
     Priority:
@@ -105,13 +108,18 @@ def _ensure_hydro_setting(dataset_dir: str | None, cache_dir: str | None = None)
         cache_path = Path(cache_dir) if cache_dir else dataset_path / "cache"
 
         # Build updated local_data_path, preserving any extra keys already present.
-        updated_local = dict(current_local)  # keep existing fields (e.g. basins-origin)
+        updated_local = dict(current_local)  # keep existing fields
         updated_local["root"] = str(root_path)
         updated_local["datasets-origin"] = str(dataset_path)
         # datasets-interim is required by hydromodel; default to same as datasets-origin
         if "datasets-interim" not in updated_local:
             updated_local["datasets-interim"] = str(dataset_path)
         updated_local["cache"] = str(cache_path)
+        # basins-origin: parent directory of custom (selfmade) datasets
+        if selfmade_data_path:
+            updated_local["basins-origin"] = str(Path(selfmade_data_path))
+            if "basins-interim" not in updated_local:
+                updated_local["basins-interim"] = str(Path(selfmade_data_path))
 
         if updated_local != current_local:
             existing["local_data_path"] = updated_local
@@ -212,9 +220,16 @@ def _load_from_hydroagent(cfg: dict):
             cfg["paths"]["results_dir"] = result_dir
         cache_dir = getattr(_defs, "CACHE_DIR", None) or None
         cfg["paths"]["cache_dir"] = cache_dir or None
+        selfmade_data_path = getattr(_defs, "SELFMADE_DATA_PATH", None)
+        selfmade_dataset_name = getattr(_defs, "SELFMADE_DATASET_NAME", None)
+        if selfmade_data_path:
+            cfg["paths"]["selfmade_data_path"] = selfmade_data_path
+        if selfmade_dataset_name:
+            cfg["paths"]["selfmade_dataset_name"] = selfmade_dataset_name
 
-        # Auto-sync paths to ~/hydro_setting.yml so hydrodataset works out of the box
-        _ensure_hydro_setting(cfg["paths"]["dataset_dir"], cache_dir)
+        # Auto-sync paths to ~/hydro_setting.yml so hydrodataset/hydrodatasource work out of the box
+        _ensure_hydro_setting(cfg["paths"]["dataset_dir"], cache_dir,
+                              selfmade_data_path=selfmade_data_path)
 
     # Load algorithm params: try model_config -> config (backward compat)
     _hcfg = None
@@ -329,13 +344,22 @@ def build_hydromodel_config(
         results_dir = cfg.get("paths", {}).get("results_dir") or "results"
         output_dir = str(Path(results_dir) / f"{model_name}_{algorithm}_{basin_ids[0]}")
 
-    # Get dataset directory
-    dataset_dir = cfg.get("paths", {}).get("dataset_dir")
+    # Determine data source type and path
+    data_source = defaults.get("data_source", "camels_us")
+    # Normalize alias: "selfmade" -> "selfmadehydrodataset"
+    if data_source.lower() in ("selfmade", "selfmadehydrodataset"):
+        data_source = "selfmadehydrodataset"
+        data_source_path = cfg.get("paths", {}).get("selfmade_data_path")
+    else:
+        data_source_path = cfg.get("paths", {}).get("dataset_dir")
+
+    # Extra kwargs for selfmade datasets
+    selfmade_dataset_name = cfg.get("paths", {}).get("selfmade_dataset_name")
 
     config = {
         "data_cfgs": {
-            "data_source_type": defaults.get("data_source", "camels_us"),
-            "data_source_path": dataset_dir,
+            "data_source_type": data_source,
+            "data_source_path": data_source_path,
             "basin_ids": basin_ids,
             "train_period": train_period,
             "test_period": test_period,
@@ -345,6 +369,9 @@ def build_hydromodel_config(
                 "potential_evapotranspiration",
                 "streamflow",
             ],
+            # selfmadehydrodataset requires dataset_name and time_unit
+            **({"dataset_name": selfmade_dataset_name, "time_unit": ["1D"]}
+               if data_source == "selfmadehydrodataset" and selfmade_dataset_name else {}),
         },
         "model_cfgs": {
             "model_name": model_name,

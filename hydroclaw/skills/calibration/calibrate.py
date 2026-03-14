@@ -5,6 +5,8 @@ Description: Model calibration tool - calls hydromodel for parameter optimizatio
 """
 
 import logging
+import threading
+import time
 from pathlib import Path
 
 # Force non-GUI matplotlib backend
@@ -12,6 +14,39 @@ import matplotlib
 matplotlib.use("Agg")
 
 logger = logging.getLogger(__name__)
+
+
+def _count_spotpy_evals(output_dir: str) -> int:
+    """Estimate SCE-UA evaluation count by counting rows in SPOTPY CSV output."""
+    try:
+        csvs = list(Path(output_dir).glob("*.csv"))
+        if not csvs:
+            return 0
+        biggest = max(csvs, key=lambda f: f.stat().st_size)
+        return max(0, biggest.read_text(encoding="utf-8", errors="ignore").count("\n") - 1)
+    except Exception:
+        return 0
+
+
+def _progress_monitor(stop_event: threading.Event, ui, output_dir: str,
+                      rep: int, algo: str, round_label: str = ""):
+    """Background thread: emit calibration_progress every 2 s until stop_event is set."""
+    t0 = time.time()
+    # Conservative estimate: ~0.15 s per SCE-UA evaluation
+    estimated_s = max(rep * 0.15, 30.0)
+    while not stop_event.wait(timeout=2.0):
+        elapsed = time.time() - t0
+        ev_count = _count_spotpy_evals(output_dir)
+        if ev_count > 0 and rep > 0:
+            pct = min(ev_count / rep * 100.0, 99.0)
+        else:
+            pct = min(elapsed / estimated_s * 100.0, 95.0)
+        if hasattr(ui, "on_calibration_progress"):
+            ui.on_calibration_progress(
+                pct=pct, elapsed=elapsed,
+                eval_count=ev_count, rep=rep,
+                algo=algo, round_label=round_label,
+            )
 
 
 def calibrate_model(
@@ -25,6 +60,8 @@ def calibrate_model(
     output_dir: str | None = None,
     _workspace: Path | None = None,
     _cfg: dict | None = None,
+    _ui=None,
+    _round_label: str = "",
 ) -> dict:
     """Calibrate a hydrological model using the specified algorithm.
 
@@ -80,6 +117,27 @@ def calibrate_model(
 
     output_dir = config["training_cfgs"]["output_dir"]
 
+    # Determine total evaluations for progress estimation
+    _algo_p = algorithm_params or {}
+    if algorithm == "SCE_UA":
+        _rep = int(_algo_p.get("rep", 750))
+    elif algorithm == "GA":
+        _rep = int(_algo_p.get("pop_size", 50)) * int(_algo_p.get("n_generations", 50))
+    else:
+        _rep = int(_algo_p.get("max_iterations", 100))
+
+    # Start progress monitor thread (emits calibration_progress events every 2s)
+    _stop_monitor = threading.Event()
+    _monitor = None
+    if _ui and hasattr(_ui, "on_calibration_progress"):
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        _monitor = threading.Thread(
+            target=_progress_monitor,
+            args=(_stop_monitor, _ui, output_dir, _rep, algorithm, _round_label),
+            daemon=True, name="cal-progress",
+        )
+        _monitor.start()
+
     try:
         result = hm_calibrate(config)
     except KeyboardInterrupt:
@@ -96,6 +154,10 @@ def calibrate_model(
                 return _calibration_error(str(e2), output_dir)
         else:
             return _calibration_error(error_msg, output_dir)
+    finally:
+        _stop_monitor.set()
+        if _monitor:
+            _monitor.join(timeout=3.0)
 
     # Parse results - hydromodel calibrate() only returns best_params + objective_value,
     # NOT NSE/KGE metrics. To get metrics, call evaluate_model() explicitly afterwards.

@@ -32,6 +32,9 @@ def validate_basin(
     from hydroclaw.utils.basin_validator import validate_basin_list, validate_time_range
 
     defaults = (_cfg or {}).get("defaults", {})
+    # Normalize selfmade alias
+    if data_source.lower() in ("selfmade",):
+        data_source = "selfmadehydrodataset"
     train_period = train_period or defaults.get("train_period", ["2000-01-01", "2009-12-31"])
     test_period = test_period or defaults.get("test_period", ["2010-01-01", "2014-12-31"])
 
@@ -61,9 +64,20 @@ def validate_basin(
 
     # Expose data_path and dataset metadata so downstream tools (e.g. generate_code)
     # have everything they need to read data correctly without guessing.
-    from hydroclaw.utils.basin_validator import _dataset_dir, _DATASET_CLASS_MAP, _has_hydrodataset
-    data_path = str(_dataset_dir) if _dataset_dir else None
-    dataset_info = _probe_dataset_info(data_source, _dataset_dir, _has_hydrodataset, _DATASET_CLASS_MAP)
+    from hydroclaw.utils.basin_validator import (
+        _dataset_dir, _DATASET_CLASS_MAP, _has_hydrodataset,
+        _has_hydrodatasource, _selfmade_data_path, _selfmade_dataset_name,
+    )
+    if data_source.lower() in ("selfmade", "selfmadehydrodataset"):
+        data_path = str(_selfmade_data_path) if _selfmade_data_path else None
+    else:
+        data_path = str(_dataset_dir) if _dataset_dir else None
+    dataset_info = _probe_dataset_info(
+        data_source, _dataset_dir, _has_hydrodataset, _DATASET_CLASS_MAP,
+        selfmade_data_path=_selfmade_data_path,
+        selfmade_dataset_name=_selfmade_dataset_name,
+        has_hydrodatasource=_has_hydrodatasource,
+    )
 
     result = {
         "valid": all_valid or len(valid_basins) > 0,
@@ -90,7 +104,9 @@ validate_basin.__agent_hint__ = (
 )
 
 
-def _probe_dataset_info(data_source: str, dataset_dir, has_hydrodataset: bool, class_map: dict) -> dict:
+def _probe_dataset_info(data_source: str, dataset_dir, has_hydrodataset: bool, class_map: dict,
+                        selfmade_data_path=None, selfmade_dataset_name=None,
+                        has_hydrodatasource=False) -> dict:
     """Query the dataset object for metadata useful to code generation.
 
     Returns a dict with keys:
@@ -108,6 +124,36 @@ def _probe_dataset_info(data_source: str, dataset_dir, has_hydrodataset: bool, c
             "t_range is REQUIRED — omitting it triggers a full cache rebuild and may fail."
         ),
     }
+    # selfmade datasets: probe via SelfMadeHydroDataset
+    if data_source.lower() in ("selfmade", "selfmadehydrodataset"):
+        if has_hydrodatasource and selfmade_data_path and selfmade_dataset_name:
+            try:
+                from hydrodatasource.reader.data_source import SelfMadeHydroDataset
+                ds = SelfMadeHydroDataset(
+                    data_path=selfmade_data_path,
+                    dataset_name=selfmade_dataset_name,
+                    time_unit=["1D"],
+                )
+                if hasattr(ds, "read_object_ids"):
+                    basin_ids = ds.read_object_ids()
+                    if basin_ids is not None:
+                        info["available_basins"] = [str(b) for b in basin_ids]
+                # Attempt to detect variables from units_info.json
+                import json
+                from pathlib import Path
+                units_file = Path(selfmade_data_path) / selfmade_dataset_name / "timeseries" / "1D_units_info.json"
+                if units_file.exists():
+                    units = json.loads(units_file.read_text(encoding="utf-8"))
+                    info["available_variables"] = list(units.keys())
+                info["read_api_note"] = (
+                    "Use SelfMadeHydroDataset(data_path, dataset_name, time_unit=['1D']). "
+                    "Then reader.read_ts_xrdataset(gage_id_lst=[...], t_range=[start,end], "
+                    "var_lst=[...], time_units=['1D'])."
+                )
+            except Exception as e:
+                logger.debug("selfmade _probe_dataset_info failed: %s", e)
+        return info
+
     if not has_hydrodataset or not dataset_dir:
         return info
 

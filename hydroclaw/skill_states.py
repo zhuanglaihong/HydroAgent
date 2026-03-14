@@ -42,7 +42,10 @@ class SkillStateManager:
     def _load(self) -> dict:
         if self.state_file.exists():
             try:
-                return json.loads(self.state_file.read_text(encoding="utf-8"))
+                text = self.state_file.read_text(encoding="utf-8").strip()
+                if not text:
+                    return {}
+                return json.loads(text)
             except Exception as e:
                 logger.warning(f"Failed to load skill states: {e}")
         return {}

@@ -327,7 +327,7 @@ def _run_method_a(basin_id: str, cfg: dict) -> dict:
     Agent autonomously performs: validate_basin -> calibrate_model -> evaluate_model.
     """
     from hydroclaw.agent import HydroClaw
-    from hydroclaw.ui import ConsoleUI
+    from hydroclaw.interface.ui import ConsoleUI
 
     task_workspace = OUTPUT_DIR / f"A_{MODEL}_{basin_id}"
     task_workspace.mkdir(parents=True, exist_ok=True)
@@ -383,7 +383,7 @@ def _run_method_c(basin_id: str, cfg: dict, llm) -> dict:
     Query is phrased to trigger the llm_calibration skill.
     """
     from hydroclaw.agent import HydroClaw
-    from hydroclaw.ui import ConsoleUI
+    from hydroclaw.interface.ui import ConsoleUI
 
     task_workspace = OUTPUT_DIR / f"C_{MODEL}_{basin_id}"
     task_workspace.mkdir(parents=True, exist_ok=True)
