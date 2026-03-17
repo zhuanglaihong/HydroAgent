@@ -201,6 +201,7 @@ __pycache__/
 definitions_private.py
 configs/definitions_private.py
 configs/private.py
+hydroclaw_config_override.json
 /workflows/generated/
 logs/
 test/results/

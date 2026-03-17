@@ -1,11 +1,98 @@
 marked.setOptions({ breaks: true, gfm: true });
 
+// Maps adapter/package operation names -> tool function names (for display)
+const OP_TO_TOOL = {
+  calibrate:           "calibrate_model",
+  evaluate:            "evaluate_model",
+  simulate:            "run_simulation",
+  visualize:           "visualize",
+  list_basins:         "list_basins",
+  read_data:           "read_dataset",
+  convert_to_nc:       "convert_dataset_to_nc",
+  list_camels_basins:  "list_camels_basins",
+  check_camels_data:   "check_camels_data",
+};
+
 const TOOL_ZH = {
   validate_basin:"验证流域数据", calibrate_model:"执行模型率定", evaluate_model:"评估模型性能",
   visualize:"生成可视化", llm_calibrate:"LLM 智能率定", batch_calibrate:"批量率定",
   compare_models:"多模型对比", generate_code:"生成分析代码", run_code:"执行分析脚本",
   create_skill:"创建新技能", read_file:"读取文件", inspect_dir:"查看目录",
   ask_user:"向用户提问", search_memory:"检索历史记忆", save_basin_profile:"保存流域档案",
+  simulate:"径流模拟", run_simulation:"径流模拟", observe:"观察工作区",
+  record_error_solution:"记录错误解决方案",
+  create_adapter:"创建水文包适配器", install_package:"安装 Python 包",
+  register_package:"注册已安装包",
+  create_task_list:"创建任务列表", get_pending_tasks:"获取待办任务",
+  add_task:"动态添加任务", update_task:"更新任务状态",
+  list_basins:"列出流域", read_dataset:"读取数据集", convert_dataset_to_nc:"转换为 NC",
+  list_camels_basins:"列出 CAMELS 流域", check_camels_data:"检查数据可用性",
+};
+// Short one-line Chinese descriptions for the tools panel
+const TOOL_ZH_DESC = {
+  calibrate_model:   "使用 SCE-UA/GA/scipy 等算法对水文模型进行参数率定",
+  evaluate_model:    "计算已率定模型在指定时段的 NSE、KGE 等性能指标",
+  llm_calibrate:     "LLM 驱动的智能率定：自动识别问题参数并迭代调整范围",
+  visualize:         "生成径流过程线、散点图等率定结果可视化图表",
+  simulate:          "用率定参数对指定时段进行径流模拟，输出预测流量序列",
+  validate_basin:    "验证流域 ID 是否有效、时段数据是否完整可用",
+  generate_code:     "根据任务描述生成可直接执行的 Python 分析脚本",
+  run_code:          "在工作区安全沙盒中执行 Python 代码并捕获输出结果",
+  batch_calibrate:   "对多个流域和多种模型并行批量执行率定任务",
+  compare_models:    "并排对比多个模型在同一流域的率定效果与指标",
+  create_skill:      "根据描述动态生成新的工作流技能文件，扩展 Agent 能力",
+  read_file:         "读取工作区内文本、JSON、YAML 等文件的内容",
+  inspect_dir:       "查看指定目录的文件列表与结构，辅助路径定位",
+  ask_user:          "当信息不足时暂停并向用户提问，等待用户输入后继续",
+  search_memory:     "检索跨会话的历史操作记录与流域率定经验",
+  save_basin_profile:"将本次率定的参数与指标保存为流域长期档案",
+  create_adapter:    "为新水文包生成标准适配器骨架文件",
+  install_package:   "通过 pip 安装额外的 Python 水文工具包",
+  register_package:  "将已安装包注册为可用适配器",
+  record_error_solution: "记录遇到的错误及解决方案，构建错误知识库",
+  observe:           "观察工作区状态与任务进度",
+  run_simulation:    "使用率定参数对指定时段进行径流模拟，输出预测流量序列",
+  create_task_list:  "为批量实验创建多步骤任务计划，自动跳过已完成任务",
+  get_pending_tasks: "获取下一个待执行的任务及整体进度概览",
+  add_task:          "根据中间结果动态向任务列表追加新任务",
+  update_task:       "将任务标记为已完成或失败，记录 NSE/KGE 等指标",
+  list_basins:          "列出自定义数据集中所有流域的 ID 列表",
+  read_dataset:         "读取自定义数据集的属性或时序数据",
+  convert_dataset_to_nc:"将自定义数据集的 CSV 原始文件转换为 NetCDF 缓存，加速后续读取",
+  list_camels_basins:   "列出指定 CAMELS 数据集中所有可用流域的 ID",
+  check_camels_data:    "验证 CAMELS 数据集是否已下载到本地、指定流域是否存在",
+};
+// Multi-paragraph Chinese detail descriptions
+const TOOL_ZH_DETAIL = {
+  calibrate_model:
+    `输入：模型名称（gr4j/gr5j/gr6j/lstm）、流域 ID 列表、训练/测试时段、优化算法。\n` +
+    `支持算法：SCE-UA（默认）、GA（遗传算法）、scipy minimize。\n` +
+    `输出：率定参数文件 calibration_config.yaml，存放在工作区 results/ 目录下。`,
+  evaluate_model:
+    `读取 calibrate_model 输出的 calibration_config.yaml，在指定时段运行模型并计算指标。\n` +
+    `默认指标：NSE（纳什效率系数）、KGE（Kling-Gupta 效率系数）、bias（偏差）。\n` +
+    `eval_period 留空时自动使用率定配置中的测试期。`,
+  llm_calibrate:
+    `区别于传统率定：LLM 分析每轮结果，判断哪些参数处于边界值，自动收窄/扩展参数范围。\n` +
+    `多轮迭代直到 NSE 不再显著提升或达到最大轮数。\n` +
+    `适用场景：标准率定结果 NSE < 0.5，或参数初始范围不合理时。`,
+  validate_basin:
+    `检查流域 ID 格式（8 位数字）是否在 CAMELS 数据集中存在。\n` +
+    `同时验证指定时段内的降水、气温、流量数据是否完整（无大段缺失）。\n` +
+    `建议在 calibrate_model 之前调用，避免因数据问题导致率定中途失败。`,
+  generate_code:
+    `调用 LLM 生成完整的 Python 脚本，包含导入语句、数据读取、分析逻辑、结果输出。\n` +
+    `生成后代码保存在工作区，可直接由 run_code 执行。`,
+  run_code:
+    `在受限沙盒中执行指定路径的 Python 脚本，stdout/stderr 实时捕获并截断（防上下文爆炸）。\n` +
+    `工作目录为当前工作区，可读取工作区内所有文件。`,
+};
+const TOOL_TIER = {20: "核心", 10: "技能", 5: "动态"};
+const KNOW_ZH = {
+  "calibration_guide.md": "率定策略指南",
+  "model_parameters.md":  "模型参数知识库",
+  "datasets.md":          "数据集说明",
+  "error_solutions.json": "错误解决方案",
 };
 const TOOL_ICON = {
   calibrate_model:"⚙", evaluate_model:"📊", llm_calibrate:"🤖",
@@ -13,6 +100,7 @@ const TOOL_ICON = {
   compare_models:"⚖", generate_code:"💻", run_code:"▶",
   create_skill:"✨", read_file:"📄", inspect_dir:"📁",
   ask_user:"❓", search_memory:"🔍", save_basin_profile:"💾",
+  simulate:"💧", observe:"👁", record_error_solution:"📝",
 };
 
 // ── Session management ───────────────────────────────────────────────────────
@@ -557,6 +645,19 @@ function showToast(msg, ms = 2800) {
 }
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
+// Active context menu state
+let _sessMenuSid = null;
+let _sessMenuEl = null;
+
+function _closeSessMenu() {
+  if (_sessMenuEl) { _sessMenuEl.remove(); _sessMenuEl = null; }
+  _sessMenuSid = null;
+}
+
+document.addEventListener("click", e => {
+  if (_sessMenuEl && !_sessMenuEl.contains(e.target)) _closeSessMenu();
+});
+
 async function loadSessions() {
   const res = await fetch("/api/sessions").catch(() => null);
   if (!res || !res.ok) return;
@@ -565,14 +666,39 @@ async function loadSessions() {
   el.innerHTML = "";
   const as = activeSess();
   const ls = liveSess();
-  sessions.slice(0, 40).forEach(s => {
+
+  // Sort: pinned first, then by order (server returns by recency)
+  const pinned = sessions.filter(s => s.pinned);
+  const rest   = sessions.filter(s => !s.pinned);
+  const sorted = [...pinned, ...rest].slice(0, 10);
+
+  sorted.forEach(s => {
     const item = mkEl("div", "session-item");
     item.title = `${s.timestamp?.slice(0,16).replace("T"," ")}  |  ${s.tool_calls || 0} tools`;
     item.dataset.sid = s.session_id;
     item.dataset.key = "";  // placeholder
+
+    // Pin icon
+    if (s.pinned) {
+      const pinIcon = mkEl("span", "sess-pin-icon");
+      pinIcon.textContent = "📌";
+      item.appendChild(pinIcon);
+    }
+
     const nameSpan = mkEl("span", "session-name");
-    nameSpan.textContent = s.query || "(无标题)";
+    nameSpan.textContent = s.title || s.query || "(无标题)";
     item.appendChild(nameSpan);
+
+    // action menu button - always in DOM, shown via CSS
+    const moreBtn = mkEl("button", "sess-more-btn");
+    moreBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+    moreBtn.title = "重命名 / 置顶 / 删除";
+    moreBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      _openSessMenu(s.session_id, s, moreBtn, item, nameSpan);
+    });
+    item.appendChild(moreBtn);
+
     // Active state
     if (as?.serverSid === s.session_id) item.classList.add("active");
     // Running dot for live session
@@ -580,14 +706,114 @@ async function loadSessions() {
       const dot = mkEl("span", "running-dot");
       item.insertBefore(dot, nameSpan);
     }
-    item.onclick = () => loadHistorySession(s.session_id);
+    item.onclick = (e) => {
+      if (e.target === moreBtn || moreBtn.contains(e.target)) return;
+      if (item.classList.contains("sess-renaming")) return;
+      loadHistorySession(s.session_id);
+    };
     el.appendChild(item);
   });
   // Scroll list to top (newest sessions are first)
   el.scrollTop = 0;
 }
 
+function _openSessMenu(sid, meta, anchorEl, itemEl, nameSpan) {
+  _closeSessMenu();
+  _sessMenuSid = sid;
+
+  const menu = mkEl("div", "sess-menu");
+  menu.innerHTML = `
+    <div class="sess-menu-item" data-action="rename">重命名</div>
+    <div class="sess-menu-item" data-action="pin">${meta.pinned ? "取消置顶" : "置顶"}</div>
+    <div class="sess-menu-item sess-menu-item-danger" data-action="delete">删除</div>
+  `;
+  _sessMenuEl = menu;
+  document.body.appendChild(menu);
+
+  // Position near anchor
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + "px";
+  menu.style.left = Math.max(4, rect.left - 80) + "px";
+
+  menu.addEventListener("click", e => {
+    const action = e.target.dataset.action;
+    if (!action) return;
+    _closeSessMenu();
+    if (action === "rename") {
+      _startRename(sid, itemEl, nameSpan);
+    } else if (action === "pin") {
+      _patchSession(sid, { pinned: !meta.pinned });
+    } else if (action === "delete") {
+      _confirmDeleteSession(sid);
+    }
+  });
+}
+
+function _startRename(sid, itemEl, nameSpan) {
+  itemEl.classList.add("sess-renaming");
+  const oldText = nameSpan.textContent;
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.className = "sess-rename-input";
+  inp.value = oldText;
+  nameSpan.replaceWith(inp);
+  inp.focus();
+  inp.select();
+
+  const okBtn = mkEl("button", "sess-rename-ok");
+  okBtn.textContent = "OK";
+  const cancelBtn = mkEl("button", "sess-rename-cancel");
+  cancelBtn.textContent = "取消";
+
+  inp.after(okBtn);
+  okBtn.after(cancelBtn);
+
+  function doRename() {
+    const newTitle = inp.value.trim();
+    if (newTitle && newTitle !== oldText) {
+      _patchSession(sid, { title: newTitle });
+    } else {
+      loadSessions();
+    }
+  }
+
+  function doCancel() {
+    inp.replaceWith(nameSpan);
+    okBtn.remove();
+    cancelBtn.remove();
+    itemEl.classList.remove("sess-renaming");
+  }
+
+  okBtn.onclick = e => { e.stopPropagation(); doRename(); };
+  cancelBtn.onclick = e => { e.stopPropagation(); doCancel(); };
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); doRename(); }
+    if (e.key === "Escape") { e.preventDefault(); doCancel(); }
+  });
+}
+
+async function _patchSession(sid, body) {
+  await fetch(`/api/sessions/${sid}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+  loadSessions();
+}
+
+async function _confirmDeleteSession(sid) {
+  if (!confirm("确定要删除这条对话记录吗？此操作不可撤销。")) return;
+  await fetch(`/api/sessions/${sid}`, { method: "DELETE" }).catch(() => {});
+  // If this session is active, clear the display
+  const s = activeSess();
+  if (s?.serverSid === sid) {
+    createAndSwitchNew();
+  }
+  loadSessions();
+}
+
 async function loadHistorySession(sid) {
+  closeCurrentPanel();
   // If already displaying this session, just scroll
   if (activeSess()?.serverSid === sid) return;
   // Check if liveKey session is this sid (i.e., currently running this session)
@@ -659,7 +885,7 @@ async function loadHistorySession(sid) {
       const tools = msg.tools || [];
 
       if (turns.length > 0) {
-        // New format: interleaved thought → tool → thought → tool → (final thought)
+        // New format: interleaved thought -> tool -> thought -> tool -> (final thought)
         turns.forEach(turn => {
           renderThoughtBlock(turn.thoughts);
           if (turn.toolName) renderToolCard({ name: turn.toolName, args: turn.args, result: turn.result, elapsed: turn.elapsed });
@@ -772,91 +998,683 @@ async function saveSnapshot() {
   }).catch(() => {});
 }
 
-// ── Skills Panel ──────────────────────────────────────────────────────────────
-let _allSkills = [];
-
-function openSkillsPanel() {
-  document.getElementById("skills-panel").style.display = "flex";
-  if (_allSkills.length === 0) fetchSkillCards();
-}
-function closeSkillsPanel() {
-  document.getElementById("skills-panel").style.display = "none";
-}
-// Close on backdrop click
-document.getElementById("skills-panel").addEventListener("click", function(e) {
-  if (e.target === this) closeSkillsPanel();
-});
-
-function fetchSkillCards() {
-  fetch("/api/skills").then(r => r.json()).then(skills => {
-    _allSkills = skills;
-    renderSkillCards(skills);
-  }).catch(() => {});
+// ── System panels ─────────────────────────────────────────────────────────────
+const _panelLoaded = {};
+function _lazyLoad(key, fn) {
+  if (_panelLoaded[key]) return;
+  _panelLoaded[key] = true;
+  fn();
 }
 
-function filterSkillCards() {
-  const q = document.getElementById("skills-search").value.toLowerCase();
-  renderSkillCards(q ? _allSkills.filter(s =>
-    s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
-  ) : _allSkills);
+async function loadSystemPanels() {
+  _loadSkills();   // pre-load skills count on sidebar
+  _preloadCounts(); // pre-load count badges for other nav items
 }
 
-function renderSkillCards(skills) {
-  const grid = document.getElementById("skills-grid");
-  grid.innerHTML = "";
-  if (!skills.length) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text2);padding:40px">暂无技能</div>';
-    return;
+// Pre-load count badges without rendering full content
+async function _preloadCounts() {
+  try {
+    const [tools, pkgs, know, mem] = await Promise.all([
+      fetch("/api/tools").then(r => r.json()).catch(() => []),
+      fetch("/api/packages").then(r => r.json()).catch(() => []),
+      fetch("/api/knowledge").then(r => r.json()).catch(() => []),
+      fetch("/api/memory").then(r => r.json()).catch(() => ({})),
+    ]);
+    const el = id => document.getElementById(id);
+    if (el("sd-tools-count"))    el("sd-tools-count").textContent    = tools.length    || "";
+    if (el("sd-packages-count")) el("sd-packages-count").textContent = pkgs.length     || "";
+    if (el("sd-knowledge-count"))el("sd-knowledge-count").textContent= know.length     || "";
+    const bp = (mem?.basin_profiles || []).length;
+    if (el("sd-memory-count"))   el("sd-memory-count").textContent   = bp > 0 ? `${bp} 流域` : "";
+  } catch(e) {}
+}
+
+// Panel metadata
+const _PAGE_PANELS = {
+  skills:   { title: "技能",    subtitle: "为您的智能体提供预封装且可重复的最佳实践与工具" },
+  tools:    { title: "工具",    subtitle: "已注册的工具函数及优先级" },
+  packages: { title: "水文包",   subtitle: "已集成的水文工具包，包括模型框架与数据读取库" },
+  knowledge:{ title: "知识库",  subtitle: "水文领域结构化知识文件" },
+  memory:   { title: "记忆",    subtitle: "跨会话记忆与流域档案" },
+  datasets: { title: "数据集",  subtitle: "公共水文数据集与自定义数据集管理" },
+  config:   { title: "模型配置",subtitle: "LLM 接口与参数配置" },
+};
+let _currentPanelId = null;
+
+// Switch #main to panel view, hiding chat
+function openPagePanel(id) {
+  const meta = _PAGE_PANELS[id];
+  if (!meta) return;
+  _currentPanelId = id;
+  document.getElementById("chat-view").style.display = "none";
+  const pv = document.getElementById("panel-view");
+  pv.style.display = "flex";
+  document.getElementById("panel-view-title").textContent = meta.title;
+  document.getElementById("panel-view-subtitle").textContent = meta.subtitle;
+  const body = document.getElementById("panel-view-body");
+  body.innerHTML = '<div class="s-empty">加载中...</div>';
+  // Highlight active nav item
+  document.querySelectorAll(".s-nav-item").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(`.s-nav-item[onclick*="'${id}'"]`).forEach(el => el.classList.add("active"));
+  // Deactivate session items
+  document.querySelectorAll(".session-item").forEach(el => el.classList.remove("active"));
+  switch(id) {
+    case "skills":   __loadSkills();          break;
+    case "tools":    __loadTools();          break;
+    case "packages": __loadPackages();       break;
+    case "knowledge":__loadKnowledge();      break;
+    case "memory":   __loadMemory();         break;
+    case "datasets": _loadDatasets();        break;
+    case "config":   _loadConfig();          break;
   }
-  skills.forEach(s => {
-    const card = document.createElement("div");
-    card.className = "skill-card";
-    card.innerHTML = `
-      <div class="skill-card-header">
-        <div class="skill-card-name">
-          <span class="skill-card-icon">⚙</span>
-          <span>${escHtml(s.name)}</span>
-        </div>
-        <div class="skill-toggle" title="已启用"></div>
+}
+
+// Return to chat view (called when switching to a session)
+function closeCurrentPanel() {
+  _currentPanelId = null;
+  document.getElementById("panel-view").style.display = "none";
+  document.getElementById("chat-view").style.display = "flex";
+  // Remove nav item highlights
+  document.querySelectorAll(".s-nav-item").forEach(el => el.classList.remove("active"));
+}
+
+// Skills: simple list like tools (clicking a skill pastes its example into input)
+async function __loadSkills() {
+  const body = document.getElementById("panel-view-body");
+  const countEl = document.getElementById("sd-skills-count");
+  if (!body) return;
+  try {
+    const res = await fetch("/api/skills");
+    if (!res.ok) throw new Error("fetch failed");
+    const skills = await res.json();
+    _skillsCache = skills;
+    if (countEl) countEl.textContent = skills.length || "";
+    if (!skills.length) { body.innerHTML = '<div class="panel-h2">可用技能</div><div class="s-empty">暂无技能</div>'; return; }
+    const builtIn  = skills.filter(s => s.when_to_use);
+    const custom   = skills.filter(s => !s.when_to_use);
+    const renderSkillGroup = (label, list) => {
+      if (!list.length) return "";
+      return `<div class="panel-h3">${label}</div>` + list.map(s => {
+        const kws   = (s.keywords || []).join("、");
+        const tools = (s.tools || []).join(", ");
+        const cnt   = s.content ? s.content.trim() : "";
+        return `<details class="tool-item">
+          <summary class="tool-item-summary">
+            <span class="tool-item-name">${escHtml(s.name)}</span>
+            <span class="tool-item-desc">${escHtml(s.description || "")}</span>
+            <span class="s-item-badge tool-item-badge">${s.when_to_use ? "内置" : "自定义"}</span>
+          </summary>
+          <div class="tool-item-doc">
+            <div class="item-code-id">skill: ${escHtml(s.id)}</div>
+            ${s.when_to_use ? `<div class="item-detail-row">适用场景：${escHtml(s.when_to_use)}</div>` : ""}
+            ${kws ? `<div class="item-detail-row">关键词：${escHtml(kws)}</div>` : ""}
+            ${tools ? `<div class="item-detail-row">工具：<span style="font-family:var(--font-mono);font-size:.75rem">${escHtml(tools)}</span></div>` : ""}
+            ${cnt ? `<pre class="tool-doc-pre" style="margin-top:6px">${escHtml(cnt)}</pre>` : ""}
+          </div>
+        </details>`;
+      }).join("");
+    };
+    body.innerHTML = '<div class="panel-h2">可用技能</div>'
+      + renderSkillGroup("内置技能", builtIn)
+      + renderSkillGroup("自定义技能", custom);
+  } catch(e) {
+    if (body) body.innerHTML = '<div class="s-empty">加载失败</div>';
+  }
+}
+function useSkill(name) {
+  const s = _skillsCache.find(x => x.name === name);
+  if (!s) return;
+  const examples = s.example_queries && s.example_queries.length ? s.example_queries : getDefaultExamples(s.name);
+  const inp = document.getElementById("input");
+  if (inp && examples[0]) { inp.value = examples[0]; inp.focus(); }
+  closeCurrentPanel();
+}
+
+async function _loadSkills() {
+  const countEl = document.getElementById("sd-skills-count");
+  try {
+    const res = await fetch("/api/skills");
+    if (!res.ok) throw new Error("fetch failed");
+    const skills = await res.json();
+    _skillsCache = skills;
+    if (countEl) countEl.textContent = skills.length || "";
+  } catch(e) {
+    // silently fail — count badge stays empty
+  }
+}
+let _skillsCache = [];
+
+async function __loadTools() {
+  const body = document.getElementById("panel-view-body");
+  const countEl = document.getElementById("sd-tools-count");
+  if (!body) return;
+  try {
+    const res = await fetch("/api/tools");
+    if (!res.ok) throw new Error("fetch failed");
+    const tools = await res.json();
+    if (countEl) countEl.textContent = tools.length;
+    if (!tools.length) { body.innerHTML = '<div class="panel-h2">已注册工具</div><div class="s-empty">暂无工具</div>'; return; }
+    // Group by priority tier
+    const core    = tools.filter(t => t.priority >= 20);
+    const skill   = tools.filter(t => t.priority >= 10 && t.priority < 20);
+    const dynamic = tools.filter(t => t.priority < 10);
+    let html = '<div class="panel-h2">已注册工具</div>';
+    const renderGroup = (label, list) => {
+      if (!list.length) return "";
+      return `<div class="panel-h3">${label}</div>` + list.map(t => {
+        const zhName   = t.zh_name || TOOL_ZH[t.name] || t.name;
+        const zhDesc   = t.zh_desc || TOOL_ZH_DESC[t.name] || "";
+        const zhDetail = TOOL_ZH_DETAIL[t.name] || "";
+        const tier     = TOOL_TIER[t.priority] || `p${t.priority}`;
+        const hasDetail = zhDetail.length > 0 || (t.doc && t.doc.trim().length > 0);
+        const detailContent = zhDetail || (t.doc ? t.doc.trim() : "");
+        return `<details class="tool-item">
+          <summary class="tool-item-summary">
+            <span class="tool-item-name">${escHtml(zhName)}</span>
+            <span class="tool-item-desc">${zhDesc ? escHtml(zhDesc) : ""}</span>
+            <span class="s-item-badge tool-item-badge">${tier}</span>
+          </summary>
+          <div class="tool-item-doc">
+            <div class="item-code-id">function: ${escHtml(t.name)}</div>
+            ${detailContent ? `<pre class="tool-doc-pre" style="margin-top:5px">${escHtml(detailContent)}</pre>` : ""}
+          </div>
+        </details>`;
+      }).join("");
+    };
+    html += renderGroup("核心工具", core) + renderGroup("技能工具", skill) + renderGroup("动态工具", dynamic);
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div class="s-empty">加载失败</div>';
+    if (countEl) countEl.textContent = "";
+  }
+}
+
+async function __loadPackages() {
+  const body = document.getElementById("panel-view-body");
+  const countEl = document.getElementById("sd-packages-count");
+  if (!body) return;
+  try {
+    const res = await fetch("/api/packages");
+    if (!res.ok) throw new Error("fetch failed");
+    const pkgs = await res.json();
+    if (countEl) countEl.textContent = pkgs.filter(p => p.installed).length || "";
+
+    const ROLE_LABEL = { model: "模型框架", data: "数据读取", adapter: "适配器" };
+    const installedPkgs = pkgs.filter(p => p.installed);
+    const missingPkgs   = pkgs.filter(p => !p.installed);
+
+    let html = '<div class="panel-h2">已安装水文包</div>';
+    if (!installedPkgs.length) html += '<div class="s-empty">暂无已安装水文包</div>';
+    html += installedPkgs.map(p => {
+      const ops = Array.isArray(p.operations) ? p.operations : [];
+      const opListHtml = ops.length ? `
+        <div class="pkg-op-list">
+          ${ops.map(op => {
+            const toolName = OP_TO_TOOL[op] || op;
+            const zhName   = TOOL_ZH[toolName] || toolName;
+            const zhDesc   = TOOL_ZH_DESC[toolName] || "";
+            return `<div class="pkg-op-item">
+              <span class="pkg-op-fn">${escHtml(toolName)}</span>
+              <span class="pkg-op-zh">${escHtml(zhName)}</span>
+              ${zhDesc ? `<span class="pkg-op-desc">${escHtml(zhDesc)}</span>` : ""}
+            </div>`;
+          }).join("")}
+        </div>` : "";
+      const detailHtml = p.detail
+        ? `<div class="item-detail-row" style="margin-top:${ops.length ? "8px" : "0"}">${escHtml(p.detail)}</div>`
+        : "";
+      return `
+      <details class="tool-item">
+        <summary class="tool-item-summary">
+          <span class="tool-item-name">${escHtml(p.label || p.name)}</span>
+          <span class="tool-item-desc">${escHtml(p.description)}</span>
+          <span class="s-item-badge badge-ready" style="flex-shrink:0">${escHtml(ROLE_LABEL[p.role] || p.role)}</span>
+          ${p.version ? `<span class="s-item-badge" style="flex-shrink:0">v${escHtml(p.version)}</span>` : ""}
+        </summary>
+        ${(opListHtml || detailHtml) ? `<div class="tool-item-doc">
+          <div class="item-code-id">adapter: ${escHtml(p.name)}</div>
+          ${opListHtml}${detailHtml}
+        </div>` : ""}
+      </details>`;
+    }).join("");
+
+    if (missingPkgs.length) {
+      html += '<div class="panel-h2">未安装（可选）</div>';
+      html += missingPkgs.map(p => `
+        <div class="s-item">
+          <span class="s-item-name">${escHtml(p.label || p.name)}</span>
+          <span class="tool-item-desc" style="flex:1;color:var(--text2);font-size:.78rem">${escHtml(p.description)}</span>
+          <span class="s-item-badge badge-gray">未安装</span>
+          <button class="s-btn s-btn-xs" onclick="installPkg('${escHtml(p.pip_name).replace(/'/g,"&#39;")}')">安装</button>
+        </div>`).join("");
+    }
+
+    html += `<div class="panel-h2" style="display:flex;align-items:center;justify-content:space-between">
+        <span>安装自定义包</span>
       </div>
-      <div class="skill-card-desc">${escHtml(s.description || "暂无描述")}</div>
-      <div class="skill-card-meta">
-        <span class="skill-badge">内置</span>
-        <span>·</span>
-        <span>${s.when_to_use ? escHtml(s.when_to_use.slice(0, 40)) + (s.when_to_use.length > 40 ? "…" : "") : ""}</span>
+      <div class="s-add-form">
+        <input class="s-input" id="pkg-install-name" placeholder="包名或 pip 安装字符串，例：hydrotools==1.0.0">
+        <button class="s-btn s-btn-primary" onclick="installPkg()">pip install</button>
+        <div id="pkg-install-msg" style="font-size:.76rem;padding:3px 0;color:var(--text2)"></div>
+      </div>`;
+
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div class="s-empty">加载失败</div>';
+    if (countEl) countEl.textContent = "";
+  }
+}
+
+async function installPkg(pkgName) {
+  const nameEl = document.getElementById("pkg-install-name");
+  const pkg = pkgName || nameEl?.value.trim();
+  const msgEl = document.getElementById("pkg-install-msg");
+  if (!pkg) { if (msgEl) msgEl.textContent = "请填写包名"; return; }
+  if (msgEl) msgEl.textContent = `正在安装 ${pkg}…`;
+  try {
+    const res = await fetch("/api/packages/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ package: pkg }),
+    });
+    const data = await res.json();
+    if (!data.ok) { if (msgEl) msgEl.textContent = "错误: " + (data.error || "未知"); return; }
+    // Poll
+    let tries = 0;
+    const poll = async () => {
+      if (tries++ > 60) { if (msgEl) msgEl.textContent = "安装超时，请手动检查"; return; }
+      const sr = await fetch(`/api/packages/install-status?package=${encodeURIComponent(pkg)}`).catch(() => null);
+      if (!sr) { setTimeout(poll, 3000); return; }
+      const sd = await sr.json();
+      if (sd.status === "ok") {
+        if (msgEl) msgEl.textContent = `${pkg} 安装成功，刷新页面后生效`;
+        await __loadPackages();
+      } else if (sd.status?.startsWith("error:")) {
+        if (msgEl) msgEl.textContent = "安装失败: " + sd.status.slice(6);
+      } else {
+        setTimeout(poll, 3000);
+      }
+    };
+    setTimeout(poll, 3000);
+  } catch (e) {
+    if (msgEl) msgEl.textContent = "请求失败: " + e.message;
+  }
+}
+
+async function __loadKnowledge() {
+  const body = document.getElementById("panel-view-body");
+  const countEl = document.getElementById("sd-knowledge-count");
+  if (!body) return;
+  try {
+    const res = await fetch("/api/knowledge");
+    if (!res.ok) throw new Error("fetch failed");
+    const items = await res.json();
+    if (countEl) countEl.textContent = items.length;
+    if (!items.length) { body.innerHTML = '<div class="panel-h2">领域知识文件</div><div class="s-empty">暂无知识文件</div>'; return; }
+    body.innerHTML = '<div class="panel-h2">领域知识文件</div>'
+      + items.map(k => {
+        const safeName = escHtml(k.name).replace(/'/g,"&#39;");
+        const safeId   = escHtml(k.name).replace(/\./g,"-").replace(/[^a-zA-Z0-9_-]/g,"_");
+        const zhTitle = KNOW_ZH[k.name] || k.title || k.name;
+        return `
+      <details class="tool-item know-item" id="know-${safeId}" ontoggle="onKnowToggle(event,'${safeName}','${safeId}')">
+        <summary class="tool-item-summary know-summary">
+          <span class="know-title">${escHtml(zhTitle)}</span>
+          <span class="tool-item-desc"></span>
+          <span class="know-filename">${escHtml(k.name)}</span>
+        </summary>
+        <div class="know-body" id="know-body-${safeId}">
+          <div class="s-empty" style="font-style:normal">点击展开加载内容</div>
+        </div>
+      </details>`;
+      }).join("");
+  } catch (e) {
+    body.innerHTML = '<div class="s-empty">加载失败</div>';
+    if (countEl) countEl.textContent = "";
+  }
+}
+
+function onKnowToggle(event, name, safeId) {
+  if (!event.target.open) return;
+  const bodyEl = document.getElementById(`know-body-${safeId}`);
+  if (!bodyEl || bodyEl.dataset.loaded) return;
+  bodyEl.dataset.loaded = "1";
+  bodyEl.innerHTML = `<div class="s-empty" style="font-style:normal">加载中...</div>`;
+  fetch(`/api/knowledge/${encodeURIComponent(name)}`)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(data => {
+      const mdHtml = (typeof marked !== "undefined")
+        ? marked.parse(data.content || "")
+        : `<pre class="tool-doc-pre">${escHtml(data.content || "")}</pre>`;
+      bodyEl.innerHTML = `<div class="know-content"><div class="item-code-id" style="margin-bottom:8px">file: ${escHtml(name)}</div>${mdHtml}</div>`;
+    })
+    .catch(e => {
+      bodyEl.dataset.loaded = "";  // allow retry on next open
+      bodyEl.innerHTML = `<div class="s-empty">加载失败: ${escHtml(e.message)}</div>`;
+    });
+}
+
+async function __loadMemory() {
+  const body = document.getElementById("panel-view-body");
+  const countEl = document.getElementById("sd-memory-count");
+  if (!body) return;
+  try {
+    const res = await fetch("/api/memory");
+    if (!res.ok) throw new Error("fetch failed");
+    const data = await res.json();
+    const bpCount = (data.basin_profiles || []).length;
+    if (countEl) countEl.textContent = bpCount > 0 ? `${bpCount} 流域` : "";
+
+    let html = "";
+    html += '<div class="panel-h2">工作区记忆</div>';
+    if (data.memory_text) {
+      const preview = data.memory_text.split("\n").slice(0, 8).join("\n").trim();
+      html += `<div class="s-item s-item-col"><span class="s-item-name">MEMORY.md</span><pre class="s-item-pre">${escHtml(preview)}</pre></div>`;
+    } else {
+      html += '<div class="s-empty">无工作区记忆</div>';
+    }
+    if (bpCount > 0) {
+      html += '<div class="panel-h2">流域档案</div>';
+      html += data.basin_profiles.map(bp => `
+        <div class="s-item">
+          <span class="s-item-name">${escHtml(bp.basin_id)}</span>
+          <span class="s-item-badge">${escHtml(bp.model || "")}</span>
+          ${bp.nse != null ? `<span class="s-item-badge" style="color:var(--ok)">NSE ${Number(bp.nse).toFixed(3)}</span>` : ""}
+        </div>
+      `).join("");
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div class="s-empty">加载失败</div>';
+    if (countEl) countEl.textContent = "";
+  }
+}
+
+// ── Datasets panel ────────────────────────────────────────────────────────────
+const _DS_FORMAT_HELP = `
+<div class="ds-help-box">
+  <div class="ds-help-title">目录结构要求</div>
+  <pre class="ds-help-pre">数据集根目录/
+├── attributes/
+│   └── attributes.csv          # 必需：basin_id, area 等属性
+├── timeseries/
+│   ├── 1D/                     # 按时间单位命名的子目录
+│   │   ├── 01013500.csv        # 每个流域一个文件（文件名=basin_id）
+│   │   └── ...
+│   └── 1D_units_info.json      # 各列的单位说明
+└── shapes/                     # 可选：流域边界 shapefile</pre>
+  <div class="ds-help-title" style="margin-top:10px">attributes.csv 示例</div>
+  <pre class="ds-help-pre">basin_id,area,elevation
+01013500,1234.5,850.2
+01022500,2340.8,920.1</pre>
+  <div class="ds-help-title" style="margin-top:10px">timeseries/1D/01013500.csv 示例</div>
+  <pre class="ds-help-pre">time,precipitation,temperature,streamflow
+2000-01-01,5.2,15.3,12.4
+2000-01-02,0.0,16.1,11.8</pre>
+  <div class="ds-help-title" style="margin-top:10px">1D_units_info.json 示例</div>
+  <pre class="ds-help-pre">{"precipitation":"mm/d","temperature":"°C","streamflow":"mm/d"}</pre>
+</div>`;
+
+async function _loadDatasets() {
+  const body = document.getElementById("panel-view-body");
+  if (!body) return;
+  try {
+    const res = await fetch("/api/datasets");
+    if (!res.ok) throw new Error("fetch failed");
+    const data = await res.json();
+    let html = "";
+
+    // Public datasets
+    html += '<div class="panel-h2">公开数据集</div>';
+    (data.public || []).forEach(d => {
+      const ready = d.status === "ready";
+      const units = Array.isArray(d.time_units) ? d.time_units : [];
+      const unitBadges = units.map(u =>
+        `<span class="s-item-badge badge-gray" style="font-size:.72rem">${escHtml(u)}</span>`
+      ).join("");
+      html += `
+        <div class="s-item">
+          <span class="s-item-name">${escHtml(d.label)}</span>
+          ${unitBadges}
+          <span class="s-item-meta">${d.region} · ${d.basins} 流域 · ${d.size}</span>
+          <span class="s-item-badge ${ready ? "badge-ready" : "badge-gray"}">${ready ? "就绪" : "未下载"}</span>
+        </div>
+      `;
+    });
+
+    // Custom datasets
+    if (data.custom && data.custom.length > 0) {
+      html += '<div class="panel-h2">自定义数据集</div>';
+      data.custom.forEach(d => {
+        // unique key per (dataset_name, time_unit)
+        const dsKey = d.dataset_name + "__" + (d.time_unit || "");
+        const isCaching = (window._dsCache || {})[dsKey] === "caching";
+        let statusLabel, statusCls;
+        if (isCaching) {
+          statusLabel = "转换中..."; statusCls = "badge-warn";
+        } else if (d.cache_status === "cached") {
+          statusLabel = "就绪"; statusCls = "badge-ready";
+        } else if (d.cache_status === "uncached") {
+          statusLabel = "未转换"; statusCls = "badge-warn";
+        } else {
+          statusLabel = "路径缺失"; statusCls = "badge-gray";
+        }
+        const canCache = !isCaching && d.cache_status !== "missing";
+        const cacheBtnLabel = d.cache_status === "cached" ? "重新转NC" : "转为NC";
+        const safeN = escHtml(d.dataset_name).replace(/'/g,"&#39;");
+        const safeU = escHtml(d.time_unit || "").replace(/'/g,"&#39;");
+        html += `
+          <div class="s-item" id="ds-item-${escHtml(dsKey)}">
+            <span class="s-item-name">${escHtml(d.dataset_name)}</span>
+            ${d.time_unit ? `<span class="s-item-badge badge-gray" style="font-size:.72rem;margin-left:4px">${escHtml(d.time_unit)}</span>` : ""}
+            ${d.basin_count ? `<span class="s-item-meta">${d.basin_count} 流域</span>` : ""}
+            <span class="s-item-badge ${statusCls}" id="ds-badge-${escHtml(dsKey)}">${statusLabel}</span>
+            ${canCache ? `<button class="s-btn s-btn-xs" onclick="cacheDataset('${safeN}','${safeU}',${d.cache_status === "cached"})">${cacheBtnLabel}</button>` : ""}
+            <button class="s-item-del-btn" title="删除此条目" onclick="deleteCustomDataset('${safeN}','${safeU}')">×</button>
+          </div>
+        `;
+      });
+    }
+
+    // Add custom dataset form
+    html += `<div class="panel-h2" style="display:flex;align-items:center;justify-content:space-between">
+        <span>添加自定义数据集</span>
+        <button class="s-btn s-btn-xs" onclick="toggleDsHelp()">数据格式说明</button>
+      </div>
+      <div class="s-add-form" id="custom-ds-form">
+        <div></div>
+        <div id="ds-help-panel" style="display:none">${_DS_FORMAT_HELP}</div>
+        <input class="s-input" id="cds-path" placeholder="父目录路径，例：D:\\project\\data（数据集文件夹的上一级）">
+        <input class="s-input" id="cds-name" placeholder="数据集名称，即父目录下的文件夹名，例：songliao_event">
+        <select class="s-input" id="cds-unit">
+          <option value="1D">1D（日数据）</option>
+          <option value="1h">1h（小时数据）</option>
+          <option value="3h">3h（3小时数据）</option>
+          <option value="8D">8D（8日数据）</option>
+        </select>
+        <button class="s-btn s-btn-primary" onclick="addCustomDataset()">验证并转换为NC</button>
+        <div id="cds-msg" style="font-size:.76rem;padding:4px 0;color:var(--text2)"></div>
       </div>
     `;
-    // Toggle click: visual only (skills are always active in HydroClaw)
-    const toggle = card.querySelector(".skill-toggle");
-    toggle.addEventListener("click", e => {
-      e.stopPropagation();
-      toggle.classList.toggle("off");
-      toggle.title = toggle.classList.contains("off") ? "已禁用" : "已启用";
-    });
-    card.addEventListener("click", e => {
-      if (e.target === toggle) return;
-      showSkillDetail(s);
-    });
-    grid.appendChild(card);
-  });
+
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div class="s-empty">加载失败</div>';
+  }
 }
 
-function showSkillDetail(s) {
-  document.getElementById("skill-modal-title").textContent = s.name;
-  document.getElementById("skill-modal-desc").textContent = s.description || "";
-  document.getElementById("skill-modal-body").innerHTML =
-    (s.when_to_use ? `<p><strong>适用场景：</strong>${escHtml(s.when_to_use)}</p>` : "") +
-    `<p><strong>示例：</strong></p><ul>` +
-    (s.example_queries || getDefaultExamples(s.name)).map(q =>
-      `<li><code>${escHtml(q)}</code></li>`).join("") +
-    `</ul>`;
-  document.getElementById("skill-use-btn").onclick = () => {
-    closeSkillModal();
-    closeSkillsPanel();
-    const ex = (s.example_queries || getDefaultExamples(s.name))[0];
-    if (ex) { const inp = document.getElementById("input"); inp.value = ex; inp.focus(); }
+function toggleDsHelp() {
+  const el = document.getElementById("ds-help-panel");
+  if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+}
+
+async function addCustomDataset() {
+  const path = document.getElementById("cds-path")?.value.trim();
+  const name = document.getElementById("cds-name")?.value.trim();
+  const unit = document.getElementById("cds-unit")?.value || "1D";
+  const msgEl = document.getElementById("cds-msg");
+  if (!path || !name) { if (msgEl) msgEl.textContent = "请填写路径和名称"; return; }
+  if (msgEl) msgEl.textContent = "验证中...";
+  try {
+    const res = await fetch("/api/datasets/custom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data_path: path, dataset_name: name, time_unit: unit }),
+    });
+    const data = await res.json();
+    if (!data.success) {
+      if (msgEl) {
+        msgEl.textContent = "错误: " + (data.error || "未知错误");
+        if (data.detail) {
+          msgEl.title = data.detail;  // hover shows full traceback
+          msgEl.style.cursor = "help";
+          // Also log to console for easy debugging
+          console.error("[dataset NC]", data.detail);
+        }
+      }
+      return;
+    }
+    if (msgEl) msgEl.textContent = `结构验证通过${data.basin_count ? "，发现 " + data.basin_count + " 个流域" : ""}，正在转换为NC文件…`;
+    await _loadDatasets();
+    // Start NC caching
+    cacheDataset(name, msgEl);
+  } catch (e) {
+    if (msgEl) msgEl.textContent = "请求失败: " + e.message;
+  }
+}
+
+// Track ongoing cache tasks
+window._dsCache = window._dsCache || {};
+
+async function cacheDataset(name, time_unit, isOverwrite, msgEl) {
+  window._dsCache = window._dsCache || {};
+  const dsKey = name + "__" + (time_unit || "");
+  window._dsCache[dsKey] = "caching";
+  const badge = document.getElementById(`ds-badge-${dsKey}`);
+  if (badge) { badge.textContent = "转换中..."; badge.className = "s-item-badge badge-warn"; }
+  if (!msgEl) msgEl = document.getElementById("cds-msg");
+  try {
+    const url = `/api/datasets/custom/${encodeURIComponent(name)}/cache` +
+                (time_unit ? `?time_unit=${encodeURIComponent(time_unit)}` : "");
+    const res = await fetch(url, { method: "POST" });
+    const data = await res.json();
+    if (!data.ok) {
+      window._dsCache[dsKey] = "error";
+      if (msgEl) msgEl.textContent = "启动失败: " + (data.error || "未知错误");
+      return;
+    }
+    if (data.was_cached && msgEl) {
+      msgEl.textContent = `${name}（${time_unit}）：已有 NC 缓存，覆盖重新生成中…`;
+    }
+    _pollCacheStatus(name, time_unit, msgEl);
+  } catch (e) {
+    window._dsCache[dsKey] = "error";
+    if (msgEl) msgEl.textContent = "请求失败: " + e.message;
+  }
+}
+
+async function _pollCacheStatus(name, time_unit, msgEl) {
+  const dsKey = name + "__" + (time_unit || "");
+  let attempts = 0;
+  const maxAttempts = 180; // up to 15 min (5s interval)
+  const poll = async () => {
+    if (attempts++ > maxAttempts) {
+      if (msgEl) msgEl.textContent = "转换超时，请检查数据格式后重试";
+      return;
+    }
+    try {
+      const url = `/api/datasets/custom/${encodeURIComponent(name)}/cache-status` +
+                  (time_unit ? `?time_unit=${encodeURIComponent(time_unit)}` : "");
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === "ready" || data.cached) {
+        window._dsCache[dsKey] = "ready";
+        if (msgEl) msgEl.textContent = `NC 转换完成（${time_unit || name}），数据集就绪！`;
+        await _loadDatasets();
+        return;
+      }
+      if (data.status && data.status.startsWith("error:")) {
+        window._dsCache[dsKey] = "error";
+        if (msgEl) msgEl.textContent = "转换失败: " + data.status.slice(6);
+        await _loadDatasets();
+        return;
+      }
+    } catch (_) {}
+    setTimeout(poll, 5000);
   };
-  document.getElementById("skill-modal").classList.add("open");
+  setTimeout(poll, 5000);
+}
+
+async function deleteCustomDataset(name, time_unit) {
+  const label = time_unit ? `"${name}"（${time_unit}）` : `"${name}"`;
+  if (!confirm(`确定删除自定义数据集 ${label}？`)) return;
+  const url = `/api/datasets/custom/${encodeURIComponent(name)}` +
+              (time_unit ? `?time_unit=${encodeURIComponent(time_unit)}` : "");
+  await fetch(url, { method: "DELETE" }).catch(() => {});
+  _loadDatasets();
+}
+
+// ── Config panel ──────────────────────────────────────────────────────────────
+async function _loadConfig() {
+  const body = document.getElementById("panel-view-body");
+  if (!body) return;
+  try {
+    const res = await fetch("/api/config");
+    if (!res.ok) throw new Error("fetch failed");
+    const cfg = await res.json();
+    const keyPlaceholder = cfg.api_key_set ? cfg.api_key_masked : "输入 API Key…";
+    body.innerHTML = `
+      <div class="panel-h2">LLM 配置</div>
+      <div class="s-form">
+        <label class="s-form-label">模型名称</label>
+        <input class="s-input" id="cfg-model" value="${escHtml(cfg.model || "")}">
+        <label class="s-form-label">API Base URL</label>
+        <input class="s-input" id="cfg-base-url" value="${escHtml(cfg.base_url || "")}">
+        <label class="s-form-label">API Key ${cfg.api_key_set ? '<span style="color:var(--ok);font-size:.75rem">✓ 已配置</span>' : '<span style="color:var(--text2);font-size:.75rem">未配置</span>'}</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="s-input" id="cfg-api-key" type="password" placeholder="${escHtml(keyPlaceholder)}" autocomplete="new-password" style="flex:1">
+          <button class="s-btn" style="white-space:nowrap;padding:6px 10px;font-size:.78rem"
+            onclick="(()=>{const i=document.getElementById('cfg-api-key');i.type=i.type==='password'?'text':'password'})()">显示</button>
+        </div>
+        <div style="font-size:.74rem;color:var(--text2);margin:-4px 0 6px">留空则不修改已有密钥</div>
+        <label class="s-form-label">Temperature <span id="cfg-temp-val">${Number(cfg.temperature || 0.1).toFixed(2)}</span></label>
+        <input type="range" class="s-range" id="cfg-temperature" min="0" max="2" step="0.01" value="${cfg.temperature || 0.1}"
+          oninput="document.getElementById('cfg-temp-val').textContent=Number(this.value).toFixed(2)">
+        <label class="s-form-label">最大轮次 (max_turns)</label>
+        <input class="s-input" id="cfg-max-turns" type="number" min="1" max="100" value="${cfg.max_turns || 30}">
+        <button class="s-btn s-btn-primary" onclick="saveConfig()">保存配置</button>
+        <div id="cfg-msg" style="font-size:.76rem;padding:2px 0;color:var(--text2)"></div>
+      </div>
+    `;
+  } catch (e) {
+    body.innerHTML = '<div class="s-empty">加载失败</div>';
+  }
+}
+
+async function saveConfig() {
+  const model      = document.getElementById("cfg-model")?.value.trim();
+  const baseUrl    = document.getElementById("cfg-base-url")?.value.trim();
+  const apiKey     = document.getElementById("cfg-api-key")?.value.trim();
+  const temperature = parseFloat(document.getElementById("cfg-temperature")?.value || "0.1");
+  const maxTurns   = parseInt(document.getElementById("cfg-max-turns")?.value || "30", 10);
+  const msgEl      = document.getElementById("cfg-msg");
+  const payload = { model, base_url: baseUrl, temperature, max_turns: maxTurns };
+  if (apiKey) payload.api_key = apiKey;  // only send if non-empty
+  try {
+    const res = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (msgEl) msgEl.textContent = "已保存（重启后生效）";
+    } else {
+      if (msgEl) msgEl.textContent = "保存失败";
+    }
+  } catch (e) {
+    if (msgEl) msgEl.textContent = "请求失败: " + e.message;
+  }
 }
 
 function getDefaultExamples(name) {
@@ -887,7 +1705,7 @@ function submitCreateSkill() {
   const when = document.getElementById("cs-when").value.trim();
   if (!name || !desc) { showToast("请填写技能名称和功能描述"); return; }
   document.getElementById("create-skill-modal").classList.remove("open");
-  closeSkillsPanel();
+  closeCurrentPanel();
   const parts = [`请帮我创建一个新技能：\n名称：${name}\n描述：${desc}`];
   if (when) parts.push(`适用场景：${when}`);
   const inp = document.getElementById("input");
@@ -897,10 +1715,6 @@ function submitCreateSkill() {
   showToast("技能描述已填入，点击发送创建");
 }
 
-function closeSkillModal(e) {
-  if (e && e.target !== document.getElementById("skill-modal")) return;
-  document.getElementById("skill-modal").classList.remove("open");
-}
 
 // ── Prior messages ────────────────────────────────────────────────────────────
 function buildPrior() {
@@ -921,6 +1735,7 @@ function buildPrior() {
 
 // ── New chat ──────────────────────────────────────────────────────────────────
 document.getElementById("new-chat-btn").onclick = () => {
+  closeCurrentPanel();
   const key = createAndSwitchNew();
   updateTokenDisplay();
   setStatus("待命");
@@ -961,3 +1776,4 @@ function scrollBottom() { const w = document.getElementById("messages-wrap"); re
 createAndSwitchNew(); // start with one empty session
 connect();
 loadSessions();
+loadSystemPanels();

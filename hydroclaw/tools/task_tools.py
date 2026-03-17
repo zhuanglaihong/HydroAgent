@@ -12,6 +12,14 @@ from pathlib import Path
 from hydroclaw.utils.task_state import TaskState
 
 
+_ZH = {
+    "create_task_list":  ("创建任务列表",  "为批量实验创建多步骤任务计划，自动跳过已完成任务"),
+    "get_pending_tasks": ("获取待办任务",  "获取下一个待执行的任务及整体进度概览"),
+    "add_task":          ("动态添加任务",  "根据中间结果动态向任务列表追加新任务"),
+    "update_task":       ("更新任务状态",  "将任务标记为已完成或失败，记录 NSE/KGE 等指标"),
+}
+
+
 def _state(workspace: Path | None) -> TaskState:
     ws = workspace or Path(".")
     return TaskState(ws / "task_state.json")
@@ -231,3 +239,10 @@ def update_task(
         "progress": s.summary(),
         "message":  "Task updated. Call get_pending_tasks() for the next task.",
     }
+
+
+# ── Chinese UI metadata ────────────────────────────────────────────────────────
+for _fn in (create_task_list, get_pending_tasks, add_task, update_task):
+    _n, _d = _ZH[_fn.__name__]
+    _fn.__zh_name__ = _n
+    _fn.__zh_desc__ = _d

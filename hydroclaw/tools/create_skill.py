@@ -6,6 +6,7 @@ Description: Meta-tool - LLM generates a new Skill package (skill.md + tool .py)
 """
 
 import ast
+import inspect
 import logging
 import re
 import subprocess
@@ -95,6 +96,24 @@ def create_skill(
     """
     if _llm is None:
         return {"error": "LLM client required for skill creation", "success": False}
+
+    # Semantic deduplication: warn if a similar tool already exists.
+    # Skip check when caller explicitly confirms they want a duplicate.
+    _confirmed_duplicate = "confirm_duplicate=True" in description or "confirm_duplicate" in description
+    similar = [] if _confirmed_duplicate else _find_similar_tools(skill_name, description)
+    if similar:
+        names = [s["name"] for s in similar]
+        return {
+            "warning": "similar_tool_exists",
+            "message": (
+                f"Found {len(similar)} existing tool(s) with similar functionality: {names}. "
+                "Consider using one of these instead of creating a duplicate. "
+                "If you truly need a new skill, call create_skill again with "
+                "confirm_duplicate=True (add it to description) to proceed anyway."
+            ),
+            "similar_tools": similar,
+            "success": False,
+        }
 
     # Validate skill_name
     if not skill_name.replace("_", "").isalnum() or skill_name.startswith("_"):
@@ -208,6 +227,8 @@ def create_skill(
     # Write files
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "__init__.py").write_text("", encoding="utf-8")
+    # Mark as dynamically generated so tool registry assigns PRIORITY_DYNAMIC (5)
+    (skill_dir / ".dynamic").write_text("", encoding="utf-8")
     tool_file = skill_dir / f"{skill_name}.py"
     tool_file.write_text(tool_code, encoding="utf-8")
     (skill_dir / "skill.md").write_text(skill_md_content, encoding="utf-8")
@@ -270,6 +291,69 @@ def create_skill(
         "total_tools": len(tools),
         "success": True,
     }
+
+
+def _find_similar_tools(skill_name: str, description: str,
+                        threshold: float = 0.5) -> list[dict]:
+    """Return existing tools that appear to overlap with the requested functionality.
+
+    Uses *query recall* (|intersection| / |query|) rather than Jaccard, because
+    the candidate docstrings are much longer than the query — Jaccard penalises
+    length asymmetry too harshly.  Recall answers: "how much of what the user
+    asked for is already covered by this tool?"
+
+    Threshold 0.5 means at least half the meaningful query words appear in the
+    candidate tool's description.
+
+    Returns list of {"name": str, "similarity": float, "source": str}, sorted
+    descending. Empty list means no duplicates found.
+    """
+    try:
+        from hydroclaw.tools import discover_tools, _TOOL_META
+    except ImportError:
+        return []
+
+    query_words = _word_bag(skill_name + " " + description)
+    if not query_words:
+        return []
+
+    results = []
+    tools = discover_tools()
+    for name, fn in tools.items():
+        if name == skill_name:
+            continue
+        doc = inspect.getdoc(fn) or ""
+        hint = getattr(fn, "__agent_hint__", "") or ""
+        candidate_words = _word_bag(name + " " + doc + " " + hint)
+        sim = _query_recall(query_words, candidate_words)
+        if sim >= threshold:
+            meta = _TOOL_META.get(name, {})
+            results.append({
+                "name": name,
+                "similarity": round(sim, 3),
+                "source": meta.get("source", "unknown"),
+            })
+
+    results.sort(key=lambda x: -x["similarity"])
+    return results[:5]
+
+
+def _word_bag(text: str) -> set[str]:
+    """Tokenise text into a lowercase word set, filtering stop words."""
+    import re
+    _STOP = {"a", "an", "the", "to", "of", "for", "in", "on", "at", "by",
+             "is", "are", "and", "or", "not", "with", "from", "this", "that",
+             "be", "do", "use", "used", "using", "call", "calls", "return",
+             "returns", "it", "its", "if", "when", "then", "as", "into"}
+    tokens = re.findall(r"[a-z][a-z0-9_]{1,}", text.lower())
+    return {t for t in tokens if t not in _STOP and len(t) > 2}
+
+
+def _query_recall(query: set, candidate: set) -> float:
+    """Fraction of query words that appear in candidate."""
+    if not query:
+        return 0.0
+    return len(query & candidate) / len(query)
 
 
 def _validate_imports(code: str) -> list[str]:

@@ -90,13 +90,16 @@ class SkillRegistry:
         return matched
 
     def list_all(self) -> list[dict]:
-        """Return [{id, name, description, when_to_use}, ...] for all skills."""
+        """Return full skill metadata for all skills (used by web UI panel)."""
         return [
             {
                 "id": dir_name,
                 "name": s["name"],
                 "description": s["description"],
                 "when_to_use": s["when_to_use"],
+                "keywords": s.get("keywords", []),
+                "tools": s.get("tools", []),
+                "content": s.get("content", "")[:800],
             }
             for dir_name, s in self.skills.items()
         ]

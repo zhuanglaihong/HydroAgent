@@ -1,10 +1,9 @@
 """
 Author: HydroClaw Team
 Date: 2026-03-06
-Description: Model simulation tool - run model with given parameters.
+Description: Model simulation tool - routes to the appropriate PackageAdapter.
 """
 
-import json
 import logging
 from pathlib import Path
 
@@ -28,32 +27,16 @@ def run_simulation(
     Returns:
         {"metrics": {...}, "simulation_dir": "...", "success": bool}
     """
-    try:
-        from hydromodel import evaluate as hm_evaluate
-        from hydromodel.configs.config_manager import load_config_from_calibration
-    except ImportError as e:
-        return {"error": f"hydromodel not available: {e}", "success": False}
+    from hydroclaw.adapters import get_adapter
 
-    logger.info(f"Running simulation from: {calibration_dir}")
+    adapter = get_adapter("camels_us", "")
+    return adapter.execute("simulate",
+        workspace=_workspace or Path("."),
+        calibration_dir=calibration_dir,
+        sim_period=sim_period,
+        params=params,
+    )
 
-    try:
-        config = load_config_from_calibration(calibration_dir)
-        period = sim_period or config.get("data_cfgs", {}).get("test_period")
 
-        result = hm_evaluate(
-            config,
-            param_dir=calibration_dir,
-            eval_period=period,
-            eval_output_dir=None,
-        )
-
-        return {
-            "simulation_dir": calibration_dir,
-            "sim_period": period,
-            "raw_result": str(type(result)),
-            "success": True,
-        }
-
-    except Exception as e:
-        logger.error(f"Simulation failed: {e}", exc_info=True)
-        return {"error": f"Simulation failed: {e}", "success": False}
+run_simulation.__zh_name__ = "径流模拟"
+run_simulation.__zh_desc__ = "使用率定参数对指定时段进行径流模拟，输出预测流量序列"

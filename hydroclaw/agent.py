@@ -366,9 +366,15 @@ class HydroClaw:
             basin_profiles = basin_profiles[:self._MAX_PROFILE_CHARS] + "\n...(profile truncated)"
             logger.warning("Basin profiles truncated to %d chars", self._MAX_PROFILE_CHARS)
 
+        # Adapter skill docs (hydromodel usage, supported models, workflow)
+        from hydroclaw.adapters import get_all_skill_docs
+        adapter_docs = get_all_skill_docs()
+
         system_content = system
         if available_skills:
             system_content += "\n\n" + available_skills
+        if adapter_docs:
+            system_content += "\n\n## Package Adapter Skills\n" + "\n---\n".join(adapter_docs)
         if domain_knowledge:
             system_content += "\n\n## Domain Knowledge\n" + domain_knowledge
         if basin_profiles:
@@ -582,6 +588,12 @@ class HydroClaw:
                     f"Registry refreshed: {len(self.tools)} tools, "
                     f"{len(self.skill_registry.skills)} skills"
                 )
+
+            # If a new adapter was created, reload the adapter registry
+            if name == "create_adapter" and isinstance(result, dict) and result.get("success"):
+                from hydroclaw.adapters import reload_adapters
+                reload_adapters()
+                self.ui.dev_log("Adapter registry reloaded after create_adapter.")
 
             # Update skill lifecycle state for generated skills
             if self.skill_states.is_generated(name):

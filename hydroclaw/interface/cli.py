@@ -34,8 +34,7 @@ Examples:
     )
     parser.add_argument("query", nargs="?", help="Query to run (omit for interactive mode)")
     parser.add_argument("--dev",    action="store_true", help="Developer mode: show full execution details and logs")
-    parser.add_argument("--server", action="store_true", help="Launch FastAPI web server (recommended)")
-    parser.add_argument("--web",    action="store_true", help="Launch legacy Streamlit web UI")
+    parser.add_argument("--server", action="store_true", help="Launch FastAPI web server")
     parser.add_argument("--port",   type=int, default=7860, help="Port for web server (default: 7860)")
     parser.add_argument("--config", "-c", default=None, help="Path to config.json")
     parser.add_argument("--workspace", "-w", default=None, help="Working directory for results")
@@ -43,14 +42,8 @@ Examples:
 
     args = parser.parse_args()
 
-    # FastAPI server mode
     if args.server:
         _launch_server(args.port, args.workspace)
-        return
-
-    # Legacy Streamlit web UI
-    if args.web:
-        _launch_web_ui(args.port if args.port != 7860 else 8501)
         return
 
     mode = "dev" if args.dev else "user"
@@ -154,34 +147,6 @@ def _setup_server_logging(ws_path: Path):
 
     print(f"Logging -> {log_path}")
 
-
-def _launch_web_ui(port: int = 8501):
-    """Launch Streamlit web UI in a subprocess and open browser."""
-    import subprocess
-    import webbrowser
-
-    web_app = Path(__file__).parent / "web_app.py"
-    url     = f"http://localhost:{port}"
-
-    print(f"Launching HydroClaw Web UI -> {url}")
-    print("Press Ctrl+C to stop the server.\n")
-
-    # Open browser after a short delay (let Streamlit start first)
-    def _open():
-        import time
-        time.sleep(2)
-        webbrowser.open(url)
-
-    import threading
-    threading.Thread(target=_open, daemon=True).start()
-
-    subprocess.run(
-        [sys.executable, "-m", "streamlit", "run", str(web_app),
-         "--server.port", str(port),
-         "--server.headless", "true",
-         "--theme.base", "dark"],
-        check=False,
-    )
 
 
 def _print_banner(ui, agent):

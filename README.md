@@ -93,24 +93,14 @@ python -m hydroclaw -w results/exp1    # 指定工作目录
 
 **Ctrl+C**：中断正在运行的任务，可用 `/resume` 继续。
 
-#### Web UI 模式
+#### Web 服务模式
 
 ```bash
-pip install streamlit          # 首次使用需安装
-python -m hydroclaw --web      # 启动浏览器界面（默认端口 8501）
-python -m hydroclaw --web --port 8080  # 自定义端口
+python -m hydroclaw --server          # 启动 FastAPI Web 服务（默认端口 7860）
+python -m hydroclaw --server --port 8080  # 自定义端口
 ```
 
-浏览器将自动打开 `http://localhost:8501`，提供：
-
-- **对话界面**：自然语言提问，实时显示工具调用过程和思考步骤
-- **右侧执行面板**：展示每次提问的工具执行状态，可点击查看参数和结果详情
-- **历史对话**：侧边栏显示历史会话，可一键加载
-- **可用功能**：折叠展示所有 Skill，点击查看详细说明
-- **停止控制**：执行面板右上角 **停止** 按钮，随时终止当前任务
-- **Token 监控**：侧边栏实时显示 Token 用量，超过 100 万时提示是否继续
-
-详见 [docs/usage.md](docs/usage.md#web-ui-模式) · [docs/getting-started.md](docs/getting-started.md)
+浏览器将自动打开 `http://localhost:7860`，提供对话界面、工具调用可视化和数据集管理。
 
 ---
 
@@ -250,7 +240,8 @@ HydroAgent/
 │   ├── interface/                # 用户界面层
 │   │   ├── cli.py                # CLI 入口 + 交互 REPL
 │   │   ├── ui.py                 # Rich 终端 UI（user / dev 两种模式）
-│   │   └── web_app.py            # Streamlit Web UI
+│   │   ├── server.py             # FastAPI + WebSocket 服务
+│   │   └── static/               # Web 前端静态文件
 │   ├── tools/                    # 工具集（自动注册）
 │   ├── skills/                   # Skill 包（工作流指引 + 工具实现）
 │   ├── knowledge/                # 结构化领域知识（参数物理含义、率定经验）

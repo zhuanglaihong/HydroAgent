@@ -30,7 +30,8 @@ hydroclaw/
 ├── interface/            # 用户界面层（终端 + Web）
 │   ├── cli.py            # CLI 入口 + 交互 REPL
 │   ├── ui.py             # Rich 终端 UI（user / dev 两种模式）
-│   └── web_app.py        # Streamlit Web UI
+│   ├── server.py         # FastAPI + WebSocket 服务
+│   └── static/           # Web 前端静态文件
 ├── tools/                # 工具集（自动发现）
 │   ├── __init__.py           # 自动注册 + schema 生成
 │   ├── calibrate.py          # 标准率定（SCE-UA/GA/scipy）

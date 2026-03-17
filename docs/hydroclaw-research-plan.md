@@ -143,7 +143,25 @@ HydroClaw 的层次：
 
    **可扩展性意义**：第三方开发者为 HydroClaw 贡献新水文工具包时，只需在工具函数上挂 `__agent_hint__`，`discover_tools()` 即可自动将正确调用方式带给 Agent，无需修改任何核心代码或提示词。这是实现"水文工具包生态"的基础。
 
-8. **观测驱动的 Agent 设计（Observation-Driven Agent Design）**
+8. **包生态自扩展（Package Ecosystem Self-Extension）**【思考点，待确认是否写入论文】
+
+   当前水文 Agentic 系统均假设工具集静态固定，若用户需要使用未集成的水文包，只能手动修改源码。HydroClaw 提出了两个层次的自扩展机制：
+
+   **层次 A：运行时动态生成 Skill**（已实现，创新点3）
+   - `create_skill` 让 LLM 在运行时为任意 Python 包生成工具函数，无需重启
+   - 已在实验中验证（Exp3-B）
+
+   **层次 B：包级别自动适配**（Phase 8，工程探索）
+   - `install_package`：在用户明确授权下安装新包，Agent 不自主决定
+   - `register_package`：通过 PyPI API + importlib 探测 + LLM 分析，自动生成适配器骨架乃至可用实现
+   - 授权约束设计：Agent 发现缺少包时，先通过 `ask_user` 请求用户允许安装，不允许自主决策。这一约束本身体现了"Human-in-the-loop"的安全设计原则——对于影响环境的不可逆操作，始终需要人类确认。
+
+   **设计讨论点**（可作为 Discussion 章节内容）：
+   - **Skill vs 多 Agent vs 包生态**：三种扩展路径的权衡——多 Agent 协调复杂（GeoLLM-Squad），Skill 包扩展快但依赖现有包，包生态自扩展打通了"新包→新能力"的全链路
+   - **工具冲突管理作为系统可靠性问题**：随着工具数量增长，同名覆盖和同功能重复都会降低 Agent 行为可预测性；优先级元数据 + 语义去重是工程上保证可靠性的必要手段
+   - **"安装即使用"的摩擦消除**：传统水文软件需要用户自行安装配置包；`register_package` 将这一步纳入 Agent 工作流，水文学者只需告诉 Agent 包名，其余自动完成
+
+9. **观测驱动的 Agent 设计（Observation-Driven Agent Design）**
    这是 HydroClaw v3 的核心架构升级，也是与同类工作最本质的区别。
 
    **核心洞察**：LLM 的智能能否充分发挥，取决于它能"看到"什么。大多数 Agentic 系统将工具设计为黑盒——成功返回摘要，失败返回错误码——LLM 只能执行预设路径，无法基于真实世界状态做推理。
@@ -517,6 +535,35 @@ v3 中 LLM 通过 `read_file` 直接看到参数值，自主做出"触边界"的
 - [ ] Related Work 初稿
 - [ ] System Design 章节（随开发同步更新）
 - [ ] 实验结果整理与可视化（plot_paper_figures.py）
+
+**Phase 8：生态扩展基础设施**（2026-03，工程完整性）
+
+目标：让 Agent 能够在用户允许下自主接入新水文包，并妥善管理不断增长的工具集。
+
+*Step 1：包安装工具（`install_package`）*
+- [ ] 新建 `hydroclaw/tools/install_package.py`
+- 核心约束：**Agent 绝不自主安装**，须用户明确允许；内部通过 `ask_user` 请求授权
+- 用 `sys.executable -m pip install` 命中当前 venv，无需硬编码路径
+- 错误分级处理：包名不存在 / 版本冲突 / 权限不足 / 网络超时，每类返回可推理的 diagnosis
+- `__agent_hint__`：重点标注"ONLY call when user has EXPLICITLY approved"，防止 Agent 自作主张
+
+*Step 2：工具注册优先级元数据（改 `tools/__init__.py`）*
+- [ ] 新增 `_TOOL_META: dict[str, dict]`，记录每个工具的 `source`、`priority`、`registered_at`
+- 优先级层级（高→低）：adapter 路由函数(30) > tools/ 核心工具(20) > skills/ 工作流工具(10) > 动态生成 skill(5)
+- 同名冲突：保留高优先级，低优先级记 warning；相同优先级保留后注册者（符合"更新覆盖"直觉）
+- 新增 `list_tools()` 工具函数：Agent 可查询当前所有工具的名称、来源、优先级，支持冲突诊断
+
+*Step 3：README 解析自动注册（`register_package`）*
+- [ ] 新建 `hydroclaw/tools/register_package.py`
+- 流程：fetch PyPI JSON API → `importlib` 探测公开 API 签名 → LLM 分析生成 adapter 实现 → `create_adapter()` → `reload_adapters()`
+- 与 `create_adapter` 的区别：`create_adapter` 只生成骨架（stub），`register_package` 尝试生成可用实现（LLM 看到真实 API 后生成 calibrate/evaluate 方法体）
+- LLM 生成代码加 `# AUTO-GENERATED` 注释；方法体失败时 fallback 到 `raise NotImplementedError`，而非静默崩溃
+- 需要 `_llm` 注入；整个流程在一次 `register_package` 调用内完成，返回 `{"adapter_file": ..., "auto_implemented": [...], "stubs_remaining": [...], "success": bool}`
+
+*Step 4：`create_skill` 语义去重检查*
+- [ ] 在 `create_skill` 调用前，对现有工具 description 做词袋相似度检查（无需向量库，5-50 个工具规模足够）
+- 相似度 > 0.6 时，返回警告 + 候选工具列表，让 Agent 决定是否继续创建
+- 防止批量任务中因同一需求被多次触发 `create_skill` 而产生大量同功能重复工具
 
 ---
 

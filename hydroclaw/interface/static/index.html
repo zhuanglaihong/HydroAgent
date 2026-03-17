@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=20">
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 </head>
 <body data-theme="light">
@@ -23,18 +23,62 @@
     <button id="sidebar-collapse-btn" title="折叠侧边栏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
   </div>
   <div id="sidebar-body">
-    <div id="token-row-top">
-      <div class="token-row">
-        <span class="token-label">Token 用量</span>
-        <span class="token-val" id="token-display">0</span>
+    <!-- Scrollable top: token + history -->
+    <div id="sidebar-scroll">
+      <div id="token-row-top">
+        <div class="token-row">
+          <span class="token-label">Token 用量</span>
+          <span class="token-val" id="token-display">0</span>
+        </div>
+        <div id="token-bar-wrap"><div id="token-bar" style="width:0%"></div></div>
       </div>
-      <div id="token-bar-wrap"><div id="token-bar" style="width:0%"></div></div>
+
+      <!-- History section -->
+      <div class="s-section">
+        <div class="s-label">历史对话</div>
+        <div id="session-list"></div>
+      </div>
     </div>
-    <div class="s-section">
-      <div class="s-label">历史对话</div>
-      <div id="session-list"></div>
+
+    <!-- Fixed bottom: system + config (never scroll away) -->
+    <div id="sidebar-fixed">
+      <div class="s-label">系统</div>
+      <div class="s-nav-item" onclick="openPagePanel('skills')">
+        <span class="s-nav-label">技能</span>
+        <span class="s-count" id="sd-skills-count"></span>
+        <span class="s-nav-arrow">›</span>
+      </div>
+      <div class="s-nav-item" onclick="openPagePanel('tools')">
+        <span class="s-nav-label">工具</span>
+        <span class="s-count" id="sd-tools-count"></span>
+        <span class="s-nav-arrow">›</span>
+      </div>
+      <div class="s-nav-item" onclick="openPagePanel('packages')">
+        <span class="s-nav-label">水文包</span>
+        <span class="s-count" id="sd-packages-count"></span>
+        <span class="s-nav-arrow">›</span>
+      </div>
+      <div class="s-nav-item" onclick="openPagePanel('knowledge')">
+        <span class="s-nav-label">知识库</span>
+        <span class="s-count" id="sd-knowledge-count"></span>
+        <span class="s-nav-arrow">›</span>
+      </div>
+      <div class="s-nav-item" onclick="openPagePanel('memory')">
+        <span class="s-nav-label">记忆</span>
+        <span class="s-count" id="sd-memory-count"></span>
+        <span class="s-nav-arrow">›</span>
+      </div>
+
+      <div class="s-label">配置</div>
+      <div class="s-nav-item" onclick="openPagePanel('datasets')">
+        <span class="s-nav-label">数据集</span>
+        <span class="s-nav-arrow">›</span>
+      </div>
+      <div class="s-nav-item" onclick="openPagePanel('config')">
+        <span class="s-nav-label">模型配置</span>
+        <span class="s-nav-arrow">›</span>
+      </div>
     </div>
-    <div class="s-label-link" onclick="openSkillsPanel()">技能 <span>›</span></div>
   </div>
   <div id="sidebar-footer">
     <button id="new-chat-btn">+ 新对话</button>
@@ -42,6 +86,7 @@
 </aside>
 
 <main id="main">
+  <!-- Persistent header (always visible across chat/panel views) -->
   <div id="chat-header">
     <div id="chat-title">HydroClaw — 水文模型智能率定</div>
     <div id="header-right">
@@ -50,25 +95,36 @@
       <button id="theme-btn">深色</button>
     </div>
   </div>
-  <div id="messages-wrap"></div>
-  <div id="ask-user-bar" style="display:none">
-    <div id="ask-user-q"></div>
-    <div id="ask-user-form">
-      <input type="text" id="ask-user-input" placeholder="请输入回答...">
-      <button id="ask-user-submit">提交</button>
+  <!-- Chat view (default) -->
+  <div id="chat-view">
+    <div id="messages-wrap"></div>
+    <div id="ask-user-bar" style="display:none">
+      <div id="ask-user-q"></div>
+      <div id="ask-user-form">
+        <input type="text" id="ask-user-input" placeholder="请输入回答...">
+        <button id="ask-user-submit">提交</button>
+      </div>
+    </div>
+    <div id="input-area">
+      <div id="status-row">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">待命</span>
+        <span id="elapsed-timer" style="display:none"></span>
+        <button id="stop-btn" onclick="sendStop()">停止</button>
+      </div>
+      <div id="input-row">
+        <textarea id="input" rows="2" placeholder="输入问题（例：率定GR4J模型，流域12025000）"></textarea>
+        <button id="send-btn" onclick="sendQuery()">发送</button>
+      </div>
     </div>
   </div>
-  <div id="input-area">
-    <div id="status-row">
-      <span class="status-dot" id="status-dot"></span>
-      <span id="status-text">待命</span>
-      <span id="elapsed-timer" style="display:none"></span>
-      <button id="stop-btn" onclick="sendStop()">停止</button>
+  <!-- Panel view (replaces chat when a sidebar item is clicked) -->
+  <div id="panel-view">
+    <div id="panel-view-header">
+      <div id="panel-view-title"></div>
+      <div id="panel-view-subtitle"></div>
     </div>
-    <div id="input-row">
-      <textarea id="input" rows="2" placeholder="输入问题（例：率定GR4J模型，流域12025000）"></textarea>
-      <button id="send-btn" onclick="sendQuery()">发送</button>
-    </div>
+    <div id="panel-view-body"></div>
   </div>
 </main>
 
@@ -82,32 +138,6 @@
   </div>
 </aside>
 
-<div id="skills-panel" style="display:none">
-  <div id="skills-panel-inner">
-    <div id="skills-panel-header">
-      <div id="skills-panel-title">技能</div>
-      <button id="skills-panel-close" onclick="closeSkillsPanel()">✕</button>
-    </div>
-    <div id="skills-panel-subtitle">为您的智能体提供预封装且可重复的最佳实践与工具</div>
-    <div id="skills-search-row">
-      <input type="text" id="skills-search" placeholder="搜索技能..." oninput="filterSkillCards()">
-      <button id="skills-add-btn" onclick="openCreateSkill()">+ 添加</button>
-    </div>
-    <div id="skills-grid"></div>
-  </div>
-</div>
-
-<div id="skill-modal" onclick="closeSkillModal(event)">
-  <div id="skill-modal-box">
-    <div id="skill-modal-title"></div>
-    <div id="skill-modal-desc"></div>
-    <div id="skill-modal-body"></div>
-    <div id="skill-modal-footer">
-      <button class="modal-btn modal-btn-secondary" onclick="closeSkillModal()">关闭</button>
-      <button class="modal-btn modal-btn-primary" id="skill-use-btn">使用此技能</button>
-    </div>
-  </div>
-</div>
 
 <div id="create-skill-modal" onclick="closeCreateSkillModal(event)">
   <div id="create-skill-box">
@@ -132,6 +162,6 @@
 <div id="toast"></div>
 <div id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src="" alt=""></div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=20"></script>
 </body>
 </html>

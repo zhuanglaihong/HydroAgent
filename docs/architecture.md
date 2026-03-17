@@ -11,6 +11,197 @@ HydroClaw 的核心原则：**让 LLM 做决策，代码只做执行。**
 HydroClaw： LLM 推理 -> Tool -> LLM 推理 -> Tool -> LLM 推理 -> 最终回答
 ```
 
+---
+
+## 五层架构（大脑-脊椎-四肢模型）
+
+HydroClaw 的完整架构可以用人体神经运动系统来类比：
+
+```
+┌─────────────────────────────────────────────────────┐
+│  【大脑】Agent Core (LLM ReAct Loop)                 │
+│   - 推理、规划、决策："下一步做什么？"                │
+│   - 不关心任何包的 API 细节                          │
+│   - 由 Skill / 领域知识 / 记忆 塑造决策模式          │
+└──────────────────────────┬──────────────────────────┘
+                           │ 意图（调用哪个工具、传什么参数）
+┌──────────────────────────▼──────────────────────────┐
+│  【小脑/脑干】Skill（技能说明书）                     │
+│   - 程序记忆：告诉大脑"面对率定任务应该怎么思考"     │
+│   - 注入 system prompt，影响决策模式而不直接执行     │
+│   - 不是四肢，是让大脑运作更好的经验积累             │
+└──────────────────────────┬──────────────────────────┘
+                           │ 工具调用（Function Calling）
+┌──────────────────────────▼──────────────────────────┐
+│  【脊椎/中枢】PackageAdapter（适配器层）              │
+│   - 双向翻译："率定 gr4j" -> build_cfg() + hm_calibrate()
+│   - 处理错误、重试、进度监控（神经反射）             │
+│   - 屏蔽包差异，大脑不需要知道底层用哪个包           │
+│   - 热插拔：新包只需实现 4 个方法，无需改大脑代码    │
+└──────────────────────────┬──────────────────────────┘
+                           │ 包调用
+┌──────────────────────────▼──────────────────────────┐
+│  【神经末梢】Tool（工具函数）                         │
+│   - 大脑可以命令的动作接口                           │
+│   - 薄路由：接收意图 -> 找对应适配器 -> 执行         │
+│   - 公开函数自动生成 Function Calling Schema         │
+└──────────────────────────┬──────────────────────────┘
+                           │ Python API 调用
+┌──────────────────────────▼──────────────────────────┐
+│  【肌肉】Package（功能包）                            │
+│   - hydromodel、hydrodataset 等已发布的包            │
+│   - pip 安装，做真正的数值计算                        │
+│   - 完全不知道 Agent 的存在                          │
+└─────────────────────────────────────────────────────┘
+```
+
+### 各层职责边界
+
+| 层级 | 代表模块 | 核心问题 | 知道 Agent 的存在？ |
+|------|----------|----------|-------------------|
+| 大脑 | `agent.py` (ReAct Loop) | "下一步做什么？" | 是（就是 Agent 本身） |
+| 小脑 | `skills/*/skill.md` | "这类任务该怎么思考？" | 间接（只是文本指引） |
+| 脊椎 | `adapters/*/adapter.py` | "如何把意图翻译成包调用？" | 是（接收 `_cfg`, `_ui`） |
+| 神经末梢 | `skills/*/xxx.py`, `tools/*.py` | "哪个适配器来处理？" | 部分（薄路由） |
+| 肌肉 | `hydromodel`, `hydrodataset` | "执行计算" | 否 |
+
+### Skill 不是"四肢"，是"经验"
+
+Skill 有两种形态，容易混淆：
+
+- **`skill.md`**（指引文档）：注入 system prompt，影响 LLM 的决策方式。这是"小脑程序记忆"——LLM 读了它，面对同类任务就知道该怎么思考和行动。
+- **`skill.py`**（工具实现）：注册为可调用的 Tool，这部分才是真正的"动作"。
+
+所以一个完整的 Skill = 经验（.md 指引大脑） + 动作（.py 被大脑调用）。
+
+---
+
+## 知识注入机制：Prompt Stuffing vs RAG
+
+### 当前实现：关键词匹配 + 直接注入（Prompt Stuffing）
+
+HydroClaw 目前**不使用向量数据库或语义检索（RAG）**，而是关键词触发的静态文档注入：
+
+```
+用户查询包含 "率定/calibrat"
+  -> 读取 knowledge/calibration_guide.md 全文 -> 直接追加到 system prompt
+  -> 读取 skills/calibration/skill.md 全文  -> 直接追加到 system prompt
+```
+
+这是 **Prompt Stuffing**，本质是"把相关文档整段塞进上下文"。
+
+| 维度 | 当前方案（Prompt Stuffing） | RAG（向量检索） |
+|------|---------------------------|----------------|
+| 实现复杂度 | 极低（读文件 + 字符串拼接） | 中（需向量库 + embedding 模型） |
+| 适用规模 | 知识文档 < 10 个，单文档 < 2000 字 | 文档 > 50 个，或单文档很长 |
+| 检索精度 | 关键词匹配，粗粒度 | 语义相似度，细粒度 |
+| 上下文占用 | 整文档注入，占用较多 | 只取最相关片段，节省 token |
+| 当前瓶颈 | 知识文档较少，暂时够用 | 暂不必要 |
+
+**何时应升级为 RAG**：当 `knowledge/` 目录下文档超过 10 个，或某个文档超过 3000 字，直接注入会明显消耗 token 时，考虑引入向量检索，只注入最相关的 N 个片段。
+
+---
+
+### 记忆增长与上下文控制
+
+**三种信息的增长特征不同**：
+
+| 信息类型 | 增长速度 | 当前上限 | 风险 |
+|----------|----------|---------|------|
+| `MEMORY.md`（跨会话通用知识） | 慢（手动 + 偶尔自动写入） | 4,000 字符截断 | 低 |
+| `basin_profiles/<id>.json`（流域档案） | 中（每次率定成功写一条） | 3,000 字符截断 | 中（流域多时叠加） |
+| `messages[]`（对话历史） | **快**（每轮 +2 条） | 触发 `_maybe_compress_history()` | **高**（长任务主要风险） |
+
+**当前对话历史控制机制**（`agent.py`）：
+```python
+# 超过 60,000 估算 token 时压缩
+def _maybe_compress_history(messages):
+    # 保留：[system, 原始查询, 最近 4 条]
+    # 压缩：中间历史 -> 一段 LLM 生成的摘要
+```
+
+**已知局限**：这是"一次性压缩"策略，压缩后摘要本身也会继续增长。长达 30+ 轮的批量任务中，仍可能出现上下文超限。更完整的方案是分层记忆（工作记忆 + 短期记忆 + 长期档案），但当前实现暂时够用。
+
+---
+
+## PackageAdapter 解耦架构
+
+### 动机
+
+在早期版本中，工具函数直接 `import hydromodel`，技能说明硬编码 hydromodel 的调用方式。新增任何水文包都需要修改核心代码。
+
+PackageAdapter 层的引入解决了这个问题：**核心 Agent 只负责推理/决策，水文包操作通过适配器接入，动态加载，无需修改核心代码。**
+
+### 目录结构
+
+```
+hydroclaw/adapters/
+├── __init__.py               # 自动扫描 + get_adapter() + get_all_skill_docs()
+├── base.py                   # PackageAdapter 抽象接口
+├── hydromodel/
+│   ├── adapter.py            # HydromodelAdapter（移入全部 hydromodel 耦合逻辑）
+│   └── skills/
+│       └── hydromodel.md     # hydromodel 调用方式说明（注入 system prompt）
+└── generic/
+    └── adapter.py            # GenericAdapter（兜底，返回结构化引导）
+```
+
+### 适配器接口
+
+每个适配器必须实现 4 个方法：
+
+```python
+class PackageAdapter(ABC):
+    name: str = ""
+    priority: int = 0  # 数字越大优先级越高
+
+    def can_handle(self, data_source: str, model_name: str) -> bool: ...
+    def calibrate(self, workspace: Path, **kw) -> dict: ...
+    def evaluate(self, workspace: Path, **kw) -> dict: ...
+    def visualize(self, workspace: Path, **kw) -> dict: ...
+    def simulate(self, workspace: Path, **kw) -> dict: ...
+```
+
+### 路由逻辑
+
+```
+calibrate_model(model_name="gr4j", data_source="camels_us")
+    -> get_adapter("camels_us", "gr4j")
+    -> 遍历已加载适配器（按 priority 降序）
+    -> HydromodelAdapter.can_handle() -> True (priority=10)
+    -> HydromodelAdapter.calibrate(...)
+```
+
+当所有已加载适配器都不能处理时（`_adapters` 为空，即 hydromodel 安装失败），回退到 `GenericAdapter`，返回结构化引导而非抛异常，LLM 可以读懂并用 `generate_code` 另辟蹊径。
+
+### 热插拔新包
+
+用 `create_adapter` 元工具，LLM 可以为新水文包动态生成骨架：
+
+```python
+create_adapter("xaj_model", "XAJ rainfall-runoff model", supported_models=["xaj_v2"])
+# 生成 hydroclaw/adapters/xaj_model/adapter.py (骨架)
+# 生成 hydroclaw/adapters/xaj_model/skills/skill.md
+# 自动调用 reload_adapters()，立即生效，无需重启
+```
+
+开发者填写 4 个方法后，Agent 即可驱动新包，全程无需修改 agent.py 或 tools/ 中的任何文件。
+
+### Adapter Skill Docs 注入
+
+每个适配器的 `skills/*.md` 在 `_build_context()` 中自动注入 system prompt：
+
+```
+system prompt
+  = system.md
+  + 匹配的 Skill 说明书
+  + [NEW] Package Adapter Skills (hydromodel.md, ...)  <- 各包的调用方式
+  + 领域知识
+  + 流域档案记忆
+```
+
+---
+
 ## Agentic Loop
 
 ### 核心循环
