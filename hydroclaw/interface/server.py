@@ -251,6 +251,13 @@ def create_app(workspace: str = ".") -> FastAPI:
                 "operations": p.get("operations", []),
             })
 
+        # Reload external plugins so they appear without restart
+        try:
+            from hydroclaw.adapters import reload_adapters
+            reload_adapters(workspace=ws_path)
+        except Exception:
+            pass
+
         # Enrich with adapter operations and add any adapter-only entries
         try:
             from hydroclaw.adapters import _adapters
@@ -261,15 +268,23 @@ def create_app(workspace: str = ".") -> FastAPI:
                 a = adapter_by_name.get(p["name"])
                 if a:
                     p["operations"] = a.supported_operations()
-            # Add adapters not represented in CORE_HYDRO
+                    p["zh_operations"] = dict(getattr(a, "zh_operations", {}) or {})
+            # Add adapters not in CORE_HYDRO
             for a in _adapters:
                 if a.name not in core_names:
+                    zh_label = getattr(a, "zh_label", "") or ""
+                    zh_ops   = dict(getattr(a, "zh_operations", {}) or {})
                     packages.append({
-                        "name": a.name, "label": a.name, "pip_name": a.name,
-                        "role": "adapter", "description": getattr(a, "description", ""),
-                        "detail": "", "installed": True, "version": "",
+                        "name": a.name,
+                        "label": zh_label or getattr(a, "description", "") or a.name,
+                        "pip_name": a.name,
+                        "role": "adapter",
+                        "description": getattr(a, "description", ""),
+                        "detail": f"外部插件 · priority={a.priority}",
+                        "installed": True, "version": "",
                         "source": "adapter", "priority": a.priority,
                         "operations": a.supported_operations(),
+                        "zh_operations": zh_ops,
                     })
         except Exception:
             pass
@@ -306,6 +321,72 @@ def create_app(workspace: str = ".") -> FastAPI:
         return {"status": _install_status.get(package, "unknown")}
 
     _install_status: dict = {}
+
+    # ── Plugin management (/api/plugins) ─────────────────────────────────────
+
+    @app.get("/api/plugins")
+    async def api_plugins_list():
+        """List all registered external plugins (local_dir and single_file types)."""
+        from hydroclaw.utils.plugin_registry import PluginRegistry
+        from hydroclaw.adapters import _adapters
+        registry = PluginRegistry(ws_path)
+        plugins = registry.list_plugins()
+        loaded_names = {a.name for a in _adapters}
+        result = []
+        for p in plugins:
+            result.append({
+                **p,
+                "loaded": p["name"] in loaded_names,
+            })
+        return result
+
+    @app.post("/api/plugins")
+    async def api_plugins_add(body: dict):
+        """Register a new local package or .py file as a plugin."""
+        path = (body.get("path") or "").strip()
+        name = (body.get("name") or None)
+        description = body.get("description") or ""
+        if not path:
+            return JSONResponse({"ok": False, "error": "path is required"}, status_code=400)
+        from hydroclaw.tools.add_local_package import add_local_package
+        result = add_local_package(
+            path=path, name=name, description=description,
+            _workspace=str(ws_path),
+        )
+        if result.get("success"):
+            return {"ok": True, **result}
+        return JSONResponse({"ok": False, "error": result.get("error")}, status_code=400)
+
+    @app.patch("/api/plugins/{name}")
+    async def api_plugins_patch(name: str, body: dict):
+        """Enable or disable a registered plugin."""
+        from hydroclaw.utils.plugin_registry import PluginRegistry
+        registry = PluginRegistry(ws_path)
+        enabled = body.get("enabled")
+        if enabled is None:
+            return JSONResponse({"ok": False, "error": "enabled field required"}, status_code=400)
+        ok = registry.enable(name) if enabled else registry.disable(name)
+        if not ok:
+            return JSONResponse({"ok": False, "error": f"Plugin '{name}' not found"}, status_code=404)
+        return {"ok": True, "name": name, "enabled": enabled}
+
+    @app.delete("/api/plugins/{name}")
+    async def api_plugins_delete(name: str):
+        """Remove a plugin from the registry."""
+        from hydroclaw.utils.plugin_registry import PluginRegistry
+        registry = PluginRegistry(ws_path)
+        ok = registry.remove(name)
+        if not ok:
+            return JSONResponse({"ok": False, "error": f"Plugin '{name}' not found"}, status_code=404)
+        return {"ok": True, "name": name}
+
+    @app.post("/api/plugins/{name}/reload")
+    async def api_plugins_reload(name: str):
+        """Hot-reload all adapters (picks up changes to a specific plugin)."""
+        from hydroclaw.adapters import reload_adapters, _adapters
+        reload_adapters(ws_path)
+        loaded = [a.name for a in _adapters]
+        return {"ok": True, "loaded_adapters": loaded, "plugin_loaded": name in loaded}
 
     @app.get("/api/knowledge")
     async def api_knowledge():
@@ -363,13 +444,17 @@ def create_app(workspace: str = ".") -> FastAPI:
             for f in sorted(profiles_dir.glob("*.json")):
                 try:
                     data = json.loads(f.read_text(encoding="utf-8"))
+                    # Summarise the most recent calibration record for the badge
+                    records = data.get("records", [])
+                    latest = records[-1] if records else {}
                     basin_profiles.append({
                         "basin_id": f.stem,
-                        "model": data.get("model", ""),
-                        "nse": data.get("best_nse", data.get("nse")),
+                        "model": latest.get("model", data.get("model", "")),
+                        "nse": latest.get("train_nse", data.get("best_nse", data.get("nse"))),
+                        "detail": data,   # full JSON for the expandable view
                     })
                 except Exception:
-                    basin_profiles.append({"basin_id": f.stem, "model": "", "nse": None})
+                    basin_profiles.append({"basin_id": f.stem, "model": "", "nse": None, "detail": {}})
 
         return {"memory_text": memory_text, "basin_profiles": basin_profiles}
 

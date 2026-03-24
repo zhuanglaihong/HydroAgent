@@ -27,6 +27,7 @@ class LLMResponse:
     """Parsed LLM response."""
     text: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    thinking: str | None = None   # reasoning/thinking content (reasoning models only)
 
     def is_text(self) -> bool:
         return len(self.tool_calls) == 0 and self.text is not None
@@ -67,18 +68,85 @@ class TokenTracker:
         }
 
 
+# ── Model profile detection ────────────────────────────────────────────────────
+# Reasoning models (CoT baked-in, best at temperature=0):
+_REASONING_KEYWORDS = ("r1", "r2", "r3", "qwq", "o1", "o3", "o4", "thinking", "reason")
+# Dialogue/chat models (benefit from slight creativity, temperature ~0.3):
+_DIALOGUE_KEYWORDS = ("v3", "v3.1", "gpt-4o", "gpt-4", "qwen", "claude", "gemini", "llama")
+
+
+def model_profile(model_name: str) -> dict:
+    """Detect model capabilities and return recommended inference parameters.
+
+    Returns:
+        {"type": "reasoning"|"dialogue"|"unknown",
+         "temperature": float,    -- recommended default temperature
+         "is_reasoning": bool}    -- True = model does explicit chain-of-thought
+    """
+    name = model_name.lower()
+    if any(kw in name for kw in _REASONING_KEYWORDS):
+        return {"type": "reasoning", "temperature": 0.0, "is_reasoning": True}
+    if any(kw in name for kw in _DIALOGUE_KEYWORDS):
+        return {"type": "dialogue", "temperature": 0.3, "is_reasoning": False}
+    return {"type": "unknown", "temperature": 0.1, "is_reasoning": False}
+
+
+def detect_reasoning_style(model_name: str) -> str | None:
+    """Detect the thinking/reasoning API style for a model.
+
+    Three styles are recognized:
+      "deepseek_r1"      -- DeepSeek-R1/R2/R3: model embeds <think>...</think> in
+                            text content; just parse and strip it, no extra API params.
+      "qwen_thinking"    -- QwQ / Qwen3-thinking: pass extra_body={"enable_thinking": True}
+                            via Dashscope OpenAI-compat endpoint; read reasoning_content field.
+      "openai_reasoning" -- OpenAI o1/o3/o4: use reasoning_effort param, omit temperature.
+
+    Returns None for standard dialogue models.
+    """
+    name = model_name.lower()
+    # DeepSeek reasoning series: deepseek-r1, deepseek-r2, deepseek-r1-distill-*, etc.
+    if "deepseek" in name and any(f"-r{d}" in name or f"_r{d}" in name for d in "123"):
+        return "deepseek_r1"
+    # QwQ (Qwen with thinking): qwq-32b, qwq-plus, etc.
+    if "qwq" in name:
+        return "qwen_thinking"
+    # OpenAI o-series: o1-mini, o1-preview, o3-mini, o4-mini, o1, o3, o4, etc.
+    if any(f"-o{d}" in name or name.startswith(f"o{d}") for d in "134"):
+        return "openai_reasoning"
+    return None
+
+
 class LLMClient:
     """Unified LLM client supporting function calling and prompt-based fallback.
 
     Mode A: Native function calling (OpenAI, Qwen with tools support)
     Mode B: Prompt-based fallback (Ollama, models without tools support)
+
+    Temperature is auto-set based on model type if not explicitly provided in config:
+      - Reasoning models (DeepSeek-R1, QwQ, o1, ...): temperature=0.0
+      - Dialogue models (DeepSeek-V3, Qwen, GPT-4o, ...): temperature=0.3
+      - Unknown models: temperature=0.1 (conservative default)
+    Set "temperature" explicitly in config to override this behavior.
     """
 
     def __init__(self, config: dict):
         self.model = config.get("model", "deepseek-v3.1")
         self.base_url = config.get("base_url")
         self.api_key = config.get("api_key")
-        self.temperature = config.get("temperature", 0.1)
+
+        # Auto-set temperature from model profile unless explicitly configured
+        _profile = model_profile(self.model)
+        self._model_type = _profile["type"]
+        self._is_reasoning_model = _profile["is_reasoning"]
+        if "temperature" in config:
+            self.temperature = config["temperature"]
+        else:
+            self.temperature = _profile["temperature"]
+            logger.info(
+                "[llm] model_profile('%s') -> type=%s, temperature=%.1f",
+                self.model, self._model_type, self.temperature,
+            )
+
         self.max_tokens = config.get("max_tokens", 20000)
         self.timeout = config.get("timeout", 120)
         self.max_retries = config.get("max_retries", 1)
@@ -90,6 +158,22 @@ class LLMClient:
         self._rate_limit_retries: int = config.get("rate_limit_retries", 3)
         self._rate_limit_delay: float = config.get("rate_limit_delay", 30.0)
         self._last_call_time: float = 0.0
+
+        # Reasoning style: how to invoke and parse thinking for this model
+        # Can be overridden in config via "reasoning_style": "deepseek_r1"|"qwen_thinking"|"openai_reasoning"|"none"
+        style_cfg = config.get("reasoning_style")
+        if style_cfg == "none":
+            self._reasoning_style: str | None = None
+        elif style_cfg:
+            self._reasoning_style = style_cfg
+        else:
+            self._reasoning_style = detect_reasoning_style(self.model)
+
+        if self._reasoning_style:
+            logger.info(
+                "[llm] reasoning_style='%s' for model '%s'",
+                self._reasoning_style, self.model,
+            )
 
         # Auto-detect or use config
         self._supports_fc = config.get("supports_function_calling")
@@ -191,35 +275,91 @@ class LLMClient:
                     continue
                 raise
 
+    def _reasoning_extra_kwargs(self) -> dict:
+        """Return extra API kwargs needed to activate the model's native thinking mode.
+
+        deepseek_r1      -- no extra kwargs (thinking appears as <think> tags in content)
+        qwen_thinking    -- extra_body={"enable_thinking": True}  (Dashscope endpoint)
+        openai_reasoning -- reasoning_effort="high"  (temperature must be omitted)
+        """
+        if self._reasoning_style == "qwen_thinking":
+            return {"extra_body": {"enable_thinking": True}}
+        if self._reasoning_style == "openai_reasoning":
+            return {"reasoning_effort": "high"}
+        return {}
+
+    def _extract_thinking(self, text: str) -> tuple[str | None, str]:
+        """Strip <think>...</think> block from text.
+
+        Returns:
+            (thinking_content, clean_text)  -- thinking is None if no block found.
+        """
+        match = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
+        if match:
+            thinking = match.group(1).strip() or None
+            clean = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            return thinking, clean
+        return None, text
+
     def _chat_text(self, messages: list[dict], temperature: float) -> LLMResponse:
         """Simple text chat without tools."""
-        response = self._create_completion(
+        extra = self._reasoning_extra_kwargs()
+        kwargs: dict = dict(
             model=self.model,
             messages=messages,
-            temperature=temperature,
             max_tokens=self.max_tokens,
             timeout=self.timeout,
         )
+        # o1/o3/o4 do not accept temperature
+        if self._reasoning_style != "openai_reasoning":
+            kwargs["temperature"] = temperature
+        kwargs.update(extra)
+
+        response = self._create_completion(**kwargs)
         self._track_tokens(response)
-        text = response.choices[0].message.content or ""
-        return LLMResponse(text=text)
+
+        msg = response.choices[0].message
+        text = msg.content or ""
+        thinking: str | None = None
+
+        if self._reasoning_style == "qwen_thinking":
+            # Dashscope returns thinking in reasoning_content field
+            thinking = getattr(msg, "reasoning_content", None) or None
+        elif self._reasoning_style == "deepseek_r1":
+            thinking, text = self._extract_thinking(text)
+
+        return LLMResponse(text=text, thinking=thinking)
 
     def _chat_with_tools(
         self, messages: list[dict], tools: list[dict], temperature: float
     ) -> LLMResponse:
         """Chat using native function calling."""
         try:
-            response = self._create_completion(
+            extra = self._reasoning_extra_kwargs()
+            kwargs: dict = dict(
                 model=self.model,
                 messages=messages,
                 tools=tools,
-                temperature=temperature,
                 max_tokens=self.max_tokens,
                 timeout=self.timeout,
             )
+            if self._reasoning_style != "openai_reasoning":
+                kwargs["temperature"] = temperature
+            kwargs.update(extra)
+
+            response = self._create_completion(**kwargs)
             self._track_tokens(response)
 
             msg = response.choices[0].message
+
+            # Extract thinking content
+            thinking: str | None = None
+            raw_text: str | None = msg.content
+
+            if self._reasoning_style == "qwen_thinking":
+                thinking = getattr(msg, "reasoning_content", None) or None
+            elif self._reasoning_style == "deepseek_r1" and raw_text:
+                thinking, raw_text = self._extract_thinking(raw_text)
 
             # Check for tool calls
             if msg.tool_calls:
@@ -234,9 +374,9 @@ class LLMClient:
                         arguments=args,
                         id=tc.id or "",
                     ))
-                return LLMResponse(text=msg.content, tool_calls=calls)
+                return LLMResponse(text=raw_text, tool_calls=calls, thinking=thinking)
 
-            return LLMResponse(text=msg.content or "")
+            return LLMResponse(text=raw_text or "", thinking=thinking)
 
         except Exception as e:
             error_msg = str(e).lower()

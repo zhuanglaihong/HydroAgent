@@ -39,6 +39,10 @@ Examples:
     parser.add_argument("--config", "-c", default=None, help="Path to config.json")
     parser.add_argument("--workspace", "-w", default=None, help="Working directory for results")
     parser.add_argument("--log-file", default=None, help="Log file path (dev mode default: logs/)")
+    parser.add_argument(
+        "--plugin-add", metavar="PATH",
+        help="Register a local package directory or .py file as a plugin before starting",
+    )
 
     args = parser.parse_args()
 
@@ -60,6 +64,10 @@ Examples:
     # ── 首次启动配置向导 ──────────────────────────────────────────────
     # 在创建 Agent（会触发 LLM 初始化）之前检测配置是否完整
     _maybe_run_setup_wizard(ui, args.config)
+
+    # Register a plugin before agent init if --plugin-add was given
+    if args.plugin_add:
+        _cli_plugin_add(args.plugin_add, workspace=workspace, ui=ui)
 
     # Import agent here to avoid slow startup for --help
     from hydroclaw.agent import HydroClaw
@@ -199,6 +207,10 @@ def _interactive_loop(ui, agent):
                 _print_help(ui)
                 continue
 
+            if cmd == "/plugin":
+                _handle_plugin_cmd(query, agent, ui)
+                continue
+
             ui.console.print(f"[dim]未知命令 {cmd}，输入 /help 查看可用命令。[/dim]")
             continue
 
@@ -286,14 +298,20 @@ def _print_help(ui):
     """Print available slash commands."""
     from rich.table import Table
     table = Table(box=None, show_header=False, padding=(0, 2))
-    table.add_column("cmd",  style="bold cyan", width=16)
+    table.add_column("cmd",  style="bold cyan", width=24)
     table.add_column("desc")
     cmds = [
-        ("/tasks",  "显示当前任务列表和进度"),
-        ("/pause",  "请求在当前任务完成后暂停（任务状态自动保存）"),
-        ("/resume", "恢复上次未完成的批量任务"),
-        ("/help",   "显示此帮助"),
-        ("/quit",   "安全退出（有未完成任务时提示确认）"),
+        ("/tasks",              "显示当前任务列表和进度"),
+        ("/pause",              "请求在当前任务完成后暂停（任务状态自动保存）"),
+        ("/resume",             "恢复上次未完成的批量任务"),
+        ("/plugin list",        "列出所有已注册插件（内置 + 外部）"),
+        ("/plugin add <path>",  "注册本地包目录或 .py 文件为插件"),
+        ("/plugin enable <n>",  "启用已禁用的插件"),
+        ("/plugin disable <n>", "临时禁用插件"),
+        ("/plugin remove <n>",  "从注册表删除插件"),
+        ("/plugin reload",      "手动热重载所有适配器"),
+        ("/help",               "显示此帮助"),
+        ("/quit",               "安全退出（有未完成任务时提示确认）"),
     ]
     for cmd, desc in cmds:
         table.add_row(cmd, desc)
@@ -301,6 +319,93 @@ def _print_help(ui):
     ui.console.print(table)
     ui.console.print("[dim]  普通文本直接发送给 AI。Ctrl+C 中断当前运行中的任务。[/dim]")
     ui.console.print()
+
+
+def _handle_plugin_cmd(query: str, agent, ui) -> None:
+    """Handle /plugin subcommands."""
+    parts = query.split()
+    sub = parts[1].lower() if len(parts) > 1 else ""
+
+    from hydroclaw.utils.plugin_registry import PluginRegistry
+    registry = PluginRegistry(agent.workspace)
+
+    if sub == "list" or sub == "":
+        plugins = registry.list_plugins()
+        from hydroclaw.adapters import _adapters
+        from rich.table import Table
+        table = Table(title="Registered Plugins", box=None, show_header=True)
+        table.add_column("Name", style="bold cyan", width=18)
+        table.add_column("Type", width=12)
+        table.add_column("Loaded", width=8)
+        table.add_column("Enabled", width=8)
+        table.add_column("Path / Description")
+        loaded_names = {a.name for a in _adapters}
+        for p in plugins:
+            loaded = "[green]Y[/green]" if p["name"] in loaded_names else "[dim]N[/dim]"
+            enabled = "[green]Y[/green]" if p.get("enabled", True) else "[red]N[/red]"
+            table.add_row(p["name"], p.get("type", "?"), loaded, enabled,
+                          p.get("path") or p.get("description") or "")
+        ui.console.print(table)
+        ui.console.print(f"[dim]  Built-in adapters: {', '.join(a.name for a in _adapters)}[/dim]")
+        return
+
+    if sub == "add":
+        path = parts[2] if len(parts) > 2 else ""
+        if not path:
+            ui.console.print("[red]用法: /plugin add <path>[/red]")
+            return
+        _cli_plugin_add(path, workspace=agent.workspace, ui=ui)
+        return
+
+    if sub in ("enable", "disable"):
+        name = parts[2] if len(parts) > 2 else ""
+        if not name:
+            ui.console.print(f"[red]用法: /plugin {sub} <name>[/red]")
+            return
+        ok = registry.enable(name) if sub == "enable" else registry.disable(name)
+        if ok:
+            ui.console.print(f"[green]Plugin '{name}' {sub}d.[/green]")
+        else:
+            ui.console.print(f"[red]Plugin '{name}' not found.[/red]")
+        return
+
+    if sub == "remove":
+        name = parts[2] if len(parts) > 2 else ""
+        if not name:
+            ui.console.print("[red]用法: /plugin remove <name>[/red]")
+            return
+        ok = registry.remove(name)
+        ui.console.print(
+            f"[green]Plugin '{name}' removed.[/green]" if ok
+            else f"[red]Plugin '{name}' not found.[/red]"
+        )
+        return
+
+    if sub == "reload":
+        from hydroclaw.adapters import reload_adapters
+        reload_adapters(agent.workspace)
+        from hydroclaw.adapters import _adapters
+        ui.console.print(
+            f"[green]Adapters reloaded. Loaded: {', '.join(a.name for a in _adapters)}[/green]"
+        )
+        return
+
+    ui.console.print(f"[dim]未知 /plugin 子命令 '{sub}'。输入 /help 查看用法。[/dim]")
+
+
+def _cli_plugin_add(path: str, workspace: Path, ui) -> None:
+    """Register a plugin from the CLI (--plugin-add or /plugin add)."""
+    from hydroclaw.tools.add_local_package import add_local_package
+    result = add_local_package(path, _workspace=str(workspace))
+    if result.get("success"):
+        ui.console.print(
+            f"[green]Plugin '{result['plugin_name']}' registered.[/green] "
+            f"Adapter: {result.get('adapter_path', 'N/A')}"
+        )
+        for step in result.get("next_steps", []):
+            ui.console.print(f"  [dim]{step}[/dim]")
+    else:
+        ui.console.print(f"[red]Failed to register plugin: {result.get('error')}[/red]")
 
 
 def _setup_logging(dev: bool, log_file: str | None, console=None):

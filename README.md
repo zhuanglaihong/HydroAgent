@@ -27,6 +27,8 @@ HydroClaw 是一个 LLM 驱动的水文模型率定智能体，采用**单一 Ag
 - **双模式率定** — 传统算法（SCE-UA/GA）+ LLM 智能率定（LLM 调整参数范围，SCE-UA 优化）
 - **跨会话记忆** — 流域档案自动积累，下次率定同一流域时先验注入，越用越准
 - **动态 Skill 扩展** — 运行时生成新 Skill，工具集可按需增长，无需修改任何注册代码
+- **通用包插件系统** — 任意本地包/单文件工具一行命令接入，CLI 和 Web API 统一管理
+- **推理型模型感知** — 自动检测 DeepSeek-R1 / QwQ / o1 等推理模型，激活原生 thinking 参数
 
 ---
 
@@ -38,7 +40,10 @@ HydroClaw 是一个 LLM 驱动的水文模型率定智能体，采用**单一 Ag
 git clone https://github.com/your-org/HydroAgent.git
 cd HydroAgent
 
-pip install uv && uv sync
+python -m venv .venv
+
+.venv\Scripts\python.exe -m pip install -r requirements.txt   # Windows
+.venv/bin/python -m pip install -r requirements.txt           # Linux/macOS
 
 .venv\Scripts\activate      # Windows
 source .venv/bin/activate   # Linux/macOS
@@ -88,10 +93,21 @@ python -m hydroclaw -w results/exp1    # 指定工作目录
 | `/tasks` | 显示当前批量任务列表和进度 |
 | `/pause` | 请求暂停（Agent 在当前步骤完成后停下，任务进度自动保存） |
 | `/resume` | 恢复上次未完成的批量任务，已完成任务自动跳过 |
+| `/plugin list` | 列出所有已注册插件（内置 + 外部） |
+| `/plugin add <path>` | 注册本地目录包或 .py 文件 |
+| `/plugin enable/disable <name>` | 启用/禁用插件（不删除注册条目） |
+| `/plugin remove <name>` | 从注册表删除插件 |
+| `/plugin reload` | 手动触发 reload_adapters() |
 | `/help` | 列出所有可用命令 |
 | `/quit` | 安全退出（有未完成任务时提示确认） |
 
 **Ctrl+C**：中断正在运行的任务，可用 `/resume` 继续。
+
+**CLI 参数**：
+
+```bash
+python -m hydroclaw --plugin-add D:/path/to/mypkg  # 注册插件后启动
+```
 
 #### Web 服务模式
 
@@ -144,6 +160,59 @@ python -m hydroclaw --server --port 8080  # 自定义端口
       v
   hydromodel (水文模型后端)
 ```
+
+### 通用包插件系统
+
+任意本地包或单 .py 文件可一行命令接入 Agent，无需修改 HydroClaw 核心代码：
+
+```
+# 本地目录包（未上传 pip）
+python -m hydroclaw "帮我注册本地包 D:/project/myhydro"
+> /plugin add D:/project/myhydro
+
+# 单 .py 文件（函数自动注册为工具）
+> /plugin add D:/scripts/fdc.py
+
+# Web API
+POST http://localhost:7860/api/plugins
+{"path": "D:/project/myhydro"}
+```
+
+**接入约定（本地目录包）**：在包根目录放 `hydroclaw_adapter.py`：
+
+```python
+from hydroclaw.adapters.base import PackageAdapter
+
+class Adapter(PackageAdapter):
+    name = "myhydro"
+    priority = 12   # 高于 hydromodel(10)
+
+    def can_handle(self, data_source, model_name):
+        return model_name == "myhydro"
+
+    def my_operation(self, workspace, **kw) -> dict:
+        import myhydro
+        ...
+```
+
+可选：放 `hydroclaw_adapter_skills/skill.md` 自定义工作流说明，否则自动生成。
+
+注册表采用**两层结构**：全局 `~/.hydroclaw/plugins.json` + 项目级 `<workspace>/.hydroclaw/plugins.json`（本地覆盖全局）。
+
+### 推理型模型感知
+
+HydroClaw 自动检测模型类型并激活对应的推理参数，无需手动配置：
+
+| 模型 | 检测规则 | 行为 |
+|------|---------|------|
+| DeepSeek-R1/R2/R3 | `deepseek` + `-rN` | 解析响应中的 `<think>...</think>` 标签 |
+| QwQ-32B / QwQ-Plus | `qwq` | 传 `extra_body={"enable_thinking": True}`，读 `reasoning_content` |
+| OpenAI o1/o3/o4 | `o1`/`o3`/`o4` | 传 `reasoning_effort="high"`，省略 temperature |
+| DeepSeek-V3 / Qwen / GPT-4o | 对话关键词 | temperature=0.3，标准调用 |
+
+`LLMResponse.thinking` 字段存储推理过程；dev 模式下以 Panel 形式展示完整推理链。
+
+可在 config 中强制覆盖：`"reasoning_style": "none"` 关闭推理激活。
 
 ### LLM 智能率定
 
@@ -232,24 +301,32 @@ You> 帮我做参数敏感性分析，用 SALib 包
 HydroAgent/
 ├── hydroclaw/                    # 核心包
 │   ├── agent.py                  # Agentic Loop 核心（ReAct 模式）
-│   ├── llm.py                    # LLM 客户端（Function Calling + Prompt 降级）
+│   ├── llm.py                    # LLM 客户端（Function Calling + Prompt 降级 + 推理感知）
 │   ├── memory.py                 # 三层记忆（会话/MEMORY.md/流域档案）
 │   ├── config.py                 # 配置加载 + hydromodel 配置构建
 │   ├── skill_registry.py         # Skill 自动扫描与关键词匹配
 │   ├── skill_states.py           # Skill 生命周期状态管理
+│   ├── adapters/                 # PackageAdapter 插件架构
+│   │   ├── __init__.py           # reload_adapters()：内置 + 外部插件统一扫描
+│   │   ├── base.py               # PackageAdapter 基类
+│   │   ├── hydromodel/           # 内置：hydromodel 适配器（GR4J/XAJ/...）
+│   │   └── hydrodatasource/      # 内置：数据源适配器
 │   ├── interface/                # 用户界面层
-│   │   ├── cli.py                # CLI 入口 + 交互 REPL
+│   │   ├── cli.py                # CLI 入口 + 交互 REPL（含 /plugin 命令）
 │   │   ├── ui.py                 # Rich 终端 UI（user / dev 两种模式）
-│   │   ├── server.py             # FastAPI + WebSocket 服务
+│   │   ├── server.py             # FastAPI + WebSocket 服务（含 /api/plugins 路由）
 │   │   └── static/               # Web 前端静态文件
 │   ├── tools/                    # 工具集（自动注册）
+│   │   ├── add_local_package.py  # 元工具：注册本地目录包
+│   │   └── add_local_tool.py     # 元工具：注册单文件 .py 工具
 │   ├── skills/                   # Skill 包（工作流指引 + 工具实现）
 │   ├── knowledge/                # 结构化领域知识（参数物理含义、率定经验）
 │   └── utils/                    # 辅助模块
+│       ├── plugin_registry.py    # 插件注册表（全局 + 本地两层）
 │       ├── error_kb.py           # 错误知识库（自动积累）
 │       ├── task_state.py         # 批量任务状态持久化
 │       ├── setup_wizard.py       # 首次启动配置向导
-│       ├── context_utils.py      # Token 估算与上下文截断
+│       ├── context_utils.py      # Token 估算、截断（语义截断）
 │       └── basin_validator.py    # 流域数据验证工具
 ├── configs/
 │   ├── model_config.py           # 算法参数（轮次、目标函数等）
@@ -267,13 +344,14 @@ HydroAgent/
 |------|------|
 | [getting-started.md](docs/getting-started.md) | 安装、配置、首次运行、FAQ |
 | [usage.md](docs/usage.md) | 所有使用场景示例 |
-| [architecture.md](docs/architecture.md) | Agentic Loop、三层知识注入、工具发现机制 |
+| [architecture.md](docs/architecture.md) | Agentic Loop、五层架构（大脑-脊椎-四肢）、工具发现机制 |
+| [integration-plan.md](docs/integration-plan.md) | 通用包插件系统 + Agent 智能升级完整设计文档 |
 | [skills.md](docs/skills.md) | Skill 工具 API 参考（calibrate、evaluate、llm_calibrate 等） |
-| [tools.md](docs/tools.md) | 独立工具参考（validate、simulate、create_skill） |
+| [tools.md](docs/tools.md) | 独立工具参考（validate、simulate、create_skill、add_local_package 等） |
 | [memory.md](docs/memory.md) | 跨会话记忆、流域档案机制 |
 | [llm-calibration.md](docs/llm-calibration.md) | LLM 智能率定原理与参数边界诊断 |
-| [configuration.md](docs/configuration.md) | 配置层级、所有配置项详解 |
-| [development.md](docs/development.md) | 项目结构、添加 Skill/工具、代码规范 |
+| [configuration.md](docs/configuration.md) | 配置层级、所有配置项详解（含 reasoning_style、prompt_mode） |
+| [development.md](docs/development.md) | 项目结构、添加 Skill/工具/外部包适配器、代码规范 |
 
 ---
 
@@ -281,11 +359,13 @@ HydroAgent/
 
 | 类别 | 组件 |
 |------|------|
-| LLM | DeepSeek / Qwen / GPT（OpenAI 兼容接口） |
-| 水文建模 | [hydromodel](https://github.com/OuyangWenyu/hydromodel) |
+| LLM | DeepSeek-R1/V3 / QwQ / Qwen / GPT-4o（OpenAI 兼容接口） |
+| 推理感知 | DeepSeek-R1 `<think>` 解析 / QwQ `enable_thinking` / o1 `reasoning_effort` |
+| 水文建模 | [hydromodel](https://github.com/OuyangWenyu/hydromodel)（GR4J / XAJ / SACSMA） |
 | 数据集 | CAMELS-US（671 流域） |
 | 终端 UI | [Rich](https://github.com/Textualize/rich) |
-| 运行环境 | Python 3.11+，uv 包管理 |
+| Web 服务 | FastAPI + WebSocket |
+| 运行环境 | Python 3.11+ |
 
 ---
 

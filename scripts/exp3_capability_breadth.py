@@ -5,7 +5,8 @@ Experiment 3 - Agent 能力广度验证
 
   Section A: 自然语言鲁棒性
     6 个代表性场景，覆盖标准率定/智能率定/代码分析/残缺信息/隐含意图/批量规划，
-    验证 Agent 对多样化中英文查询的工具选择准确率。
+    每个场景独立重复 N_REPEATS_A=3 次（新鲜 agent + 独立工作空间）。
+    报告工具匹配率（mean±std）和决策一致性率（相邻重复工具序列相同的比例）。
 
   Section B: 动态 Skill 生成（元能力）
     3 个场景，每个请求一个默认 Skill 集不存在的能力，验证运行时生成 + 立即注册。
@@ -17,7 +18,7 @@ Experiment 3 - Agent 能力广度验证
     Phase C3 (断点恢复): 预写半完成状态 -> Agent 跳过已完成任务
 
 评估指标：
-  A: 工具序列匹配率、首个工具准确率
+  A: 工具序列匹配率（mean across repeats）、首个工具准确率、决策一致性率
   B: create_skill 调用率、skill.md/tool.py 生成率、语法合法率、注册成功率
   C: 规划工具使用率、任务完成率、自适应触发率、恢复正确率
 
@@ -72,6 +73,10 @@ matplotlib.use("Agg")
 logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("results/paper/exp3")
+
+# Section A: repeat each NL scenario this many times to compute consistency rate.
+# Uses fresh agent + workspace per repeat; natural SCE-UA variance provides diversity.
+N_REPEATS_A = 3
 
 # ── Section A: NL 鲁棒性场景 ────────────────────────────────────────────────
 # 从原 12 个场景选 6 个，覆盖所有类别，避免冗余
@@ -263,81 +268,138 @@ def _patch_tool_tracker(agent):
 
 # ── Section A ────────────────────────────────────────────────────────────────
 
+def _consistency_rate(tool_seqs: list[list]) -> float:
+    """Fraction of consecutive repeat-pairs with identical tool sequences.
+
+    E.g., 3 repeats -> 2 pairs -> if 1 pair matches -> 0.5.
+    Returns 1.0 for a single repeat (degenerate case).
+    """
+    if len(tool_seqs) <= 1:
+        return 1.0
+    matches = sum(
+        1 for a, b in zip(tool_seqs, tool_seqs[1:]) if a == b
+    )
+    return matches / (len(tool_seqs) - 1)
+
+
 def run_section_a(workspace: Path, resume: bool = False) -> dict:
-    """NL 查询鲁棒性：6 个代表性场景，full_knowledge 条件。"""
+    """NL 查询鲁棒性：6 个代表性场景，full_knowledge 条件，每个场景重复 N_REPEATS_A 次。
+
+    Each repeat uses a fresh agent and isolated workspace to prevent cross-repeat
+    memory/session accumulation.  The consistency_rate measures how often the agent
+    chooses the *same* tool sequence across independent repetitions of the same query —
+    a proxy for decision stability under LLM sampling variance.
+    """
     from hydroclaw.agent import HydroClaw
 
     logger.info("\n" + "=" * 60)
-    logger.info("Section A: Natural Language Robustness (6 scenarios)")
+    logger.info(
+        f"Section A: Natural Language Robustness ({len(NL_SCENARIOS)} scenarios x {N_REPEATS_A} repeats)"
+    )
     logger.info("=" * 60)
 
     ckpts = _load_checkpoints() if resume else {}
-    results = []
+    scenario_records = []   # one dict per scenario (aggregated across repeats)
 
     for sc in NL_SCENARIOS:
         sid = sc["id"]
+        repeats = []
 
-        # Resume: skip already-done scenarios
-        if resume and sid in ckpts:
-            logger.info(f"  {sid}: [SKIPPED - loaded from checkpoint]")
-            results.append(ckpts[sid])
-            continue
+        logger.info(f"\n  {sid}: {sc['description']}")
 
-        logger.info(f"  {sid}: {sc['description']}")
+        for ri in range(N_REPEATS_A):
+            ck_key = f"{sid}_r{ri + 1}"
 
-        record = {
+            # Resume: skip completed repeats
+            if resume and ck_key in ckpts:
+                logger.info(f"    repeat {ri+1}/{N_REPEATS_A}: [SKIPPED - from checkpoint]")
+                repeats.append(ckpts[ck_key])
+                continue
+
+            logger.info(f"    repeat {ri+1}/{N_REPEATS_A} ...")
+            rep_workspace = workspace / f"{sid}_r{ri+1}"
+            rep_workspace.mkdir(parents=True, exist_ok=True)
+
+            rep = {
+                "scenario_id": sid, "repeat": ri + 1,
+                "actual_tools": [], "first_tool_correct": False,
+                "tool_match": False, "success": False,
+                "total_tokens": 0, "wall_time_s": 0.0, "error": None,
+            }
+
+            agent = HydroClaw(workspace=rep_workspace)
+            t0 = time.time()
+            try:
+                response = agent.run(sc["query"])
+                rep["wall_time_s"] = round(time.time() - t0, 2)
+                rep["actual_tools"] = [e["tool"] for e in agent.memory._log]
+                rep["total_tokens"] = agent.llm.tokens.summary().get("total_tokens", 0)
+                rep["success"] = True
+                rep["tool_match"] = _check_tool_match(sc["expected_tools"], rep["actual_tools"])
+                if sc["expected_first"] and rep["actual_tools"]:
+                    first_meaningful = _first_meaningful_tool(rep["actual_tools"])
+                    rep["first_tool_correct"] = (first_meaningful == sc["expected_first"])
+                    rep["first_meaningful_tool"] = first_meaningful
+                elif not sc["expected_first"]:
+                    rep["first_tool_correct"] = True
+            except Exception as e:
+                rep["wall_time_s"] = round(time.time() - t0, 2)
+                rep["error"] = str(e)
+                logger.error(f"      repeat {ri+1} failed: {e}")
+
+            _save_checkpoint(ck_key, rep)
+            repeats.append(rep)
+            logger.info(
+                f"      match={rep['tool_match']}  first_ok={rep['first_tool_correct']}  "
+                f"tokens={rep['total_tokens']}  tools={rep['actual_tools']}"
+            )
+
+        # Aggregate repeats for this scenario
+        n_rep = len(repeats)
+        tool_seqs = [r["actual_tools"] for r in repeats]
+        tool_match_rate = sum(1 for r in repeats if r["tool_match"]) / n_rep if n_rep else 0
+        first_tool_rate = sum(1 for r in repeats if r["first_tool_correct"]) / n_rep if n_rep else 0
+        cr = _consistency_rate(tool_seqs)
+        avg_tokens = sum(r["total_tokens"] for r in repeats) / n_rep if n_rep else 0
+        avg_time = sum(r["wall_time_s"] for r in repeats) / n_rep if n_rep else 0
+
+        agg = {
             "id": sid, "category": sc["category"],
             "description": sc["description"], "query": sc["query"],
             "expected_tools": sc["expected_tools"],
             "expected_first": sc["expected_first"],
-            "actual_tools": [], "first_tool_correct": False,
-            "tool_match": False, "success": False,
-            "response_preview": "", "time_s": 0, "error": None,
+            "repeats": repeats,
+            "n_repeats": n_rep,
+            "tool_match_rate": round(tool_match_rate, 4),
+            "first_tool_rate": round(first_tool_rate, 4),
+            "consistency_rate": round(cr, 4),
+            "avg_total_tokens": round(avg_tokens, 1),
+            "avg_wall_time_s": round(avg_time, 2),
         }
-
-        # Fresh agent per scenario: prevents memory/session accumulation
-        # from earlier scenarios inflating the context for later ones.
-        agent = HydroClaw(workspace=workspace)
-        t0 = time.time()
-        try:
-            response = agent.run(sc["query"])
-            record["time_s"] = round(time.time() - t0, 2)
-            record["actual_tools"] = [e["tool"] for e in agent.memory._log]
-            record["response_preview"] = (response or "")[:400]
-            record["success"] = True
-            record["tool_match"] = _check_tool_match(sc["expected_tools"], record["actual_tools"])
-            if sc["expected_first"] and record["actual_tools"]:
-                # P3: skip leading read_file (skill.md preamble) when checking first tool
-                first_meaningful = _first_meaningful_tool(record["actual_tools"])
-                record["first_tool_correct"] = (first_meaningful == sc["expected_first"])
-                record["first_meaningful_tool"] = first_meaningful
-            elif not sc["expected_first"]:
-                record["first_tool_correct"] = True   # no constraint
-        except Exception as e:
-            record["time_s"] = round(time.time() - t0, 2)
-            record["error"] = str(e)
-            logger.error(f"    {sid} failed: {e}")
-
-        _save_checkpoint(sid, record)
-        results.append(record)
+        scenario_records.append(agg)
         logger.info(
-            f"    match={record['tool_match']}  first_ok={record['first_tool_correct']}  "
-            f"actual={record['actual_tools']}"
+            f"  {sid} summary: match_rate={tool_match_rate*100:.0f}%  "
+            f"first_ok={first_tool_rate*100:.0f}%  consistency={cr*100:.0f}%"
         )
 
-    n = len(results)
-    n_match = sum(1 for r in results if r["tool_match"])
-    n_first = sum(1 for r in results if r["first_tool_correct"])
+    n_sc = len(scenario_records)
+    overall_match = sum(r["tool_match_rate"] for r in scenario_records) / n_sc if n_sc else 0
+    overall_first = sum(r["first_tool_rate"] for r in scenario_records) / n_sc if n_sc else 0
+    overall_consistency = sum(r["consistency_rate"] for r in scenario_records) / n_sc if n_sc else 0
 
     return {
         "section": "A",
         "title": "Natural Language Robustness",
-        "n_scenarios": n,
-        "results": results,
+        "n_scenarios": n_sc,
+        "n_repeats_per_scenario": N_REPEATS_A,
+        "results": scenario_records,
         "stats": {
-            "tool_match_rate": n_match / n if n else 0,
-            "first_tool_rate": n_first / n if n else 0,
-            "n_match": n_match, "n_first": n_first,
+            "tool_match_rate": round(overall_match, 4),
+            "first_tool_rate": round(overall_first, 4),
+            "consistency_rate": round(overall_consistency, 4),
+            # Legacy fields for backward compatibility with print_summary
+            "n_match": sum(1 for r in scenario_records if r["tool_match_rate"] >= 1.0),
+            "n_first": sum(1 for r in scenario_records if r["first_tool_rate"] >= 1.0),
         },
     }
 
@@ -676,18 +738,31 @@ def print_summary(results: dict):
     if "A" in sections:
         sa = sections["A"]
         stats_a = sa["stats"]
-        print(f"\n  [Section A] NL Robustness  ({sa['n_scenarios']} scenarios)")
+        n_rep = sa.get("n_repeats_per_scenario", 1)
+        print(f"\n  [Section A] NL Robustness  ({sa['n_scenarios']} scenarios x {n_rep} repeats)")
         print(f"    Tool match rate : {stats_a['tool_match_rate']*100:.0f}%  "
-              f"({stats_a['n_match']}/{sa['n_scenarios']})")
+              f"(mean across scenarios)")
         print(f"    First tool rate : {stats_a['first_tool_rate']*100:.0f}%  "
-              f"({stats_a['n_first']}/{sa['n_scenarios']})")
-        header = f"{'ID':<5} {'Category':<22} {'Match':>6} {'First':>6} {'Tools (actual)'}"
+              f"(mean across scenarios)")
+        print(f"    Consistency     : {stats_a['consistency_rate']*100:.0f}%  "
+              f"(same tool seq across repeats, mean across scenarios)")
+        header = (f"{'ID':<5} {'Category':<22} {'Match%':>7} {'First%':>7} "
+                  f"{'Consist%':>9} {'Tokens':>7}")
         print(f"\n    {header}")
-        print(f"    {'-'*70}")
+        print(f"    {'-'*60}")
         for r in sa["results"]:
-            mk = ("Y" if r["tool_match"] else "N") if r["success"] else "ERR"
-            fk = ("Y" if r["first_tool_correct"] else "N") if r["success"] else "ERR"
-            print(f"    {r['id']:<5} {r['category']:<22} {mk:>6} {fk:>6}  {r['actual_tools']}")
+            # Single-repeat result (old format) or multi-repeat (new format)
+            if "repeats" in r:
+                mk = f"{r['tool_match_rate']*100:.0f}%"
+                fk = f"{r['first_tool_rate']*100:.0f}%"
+                ck = f"{r['consistency_rate']*100:.0f}%"
+                tk = f"{int(r['avg_total_tokens'])}"
+            else:
+                mk = ("100%" if r.get("tool_match") else "0%") if r.get("success") else "ERR"
+                fk = ("100%" if r.get("first_tool_correct") else "0%") if r.get("success") else "ERR"
+                ck = "N/A"
+                tk = "N/A"
+            print(f"    {r['id']:<5} {r['category']:<22} {mk:>7} {fk:>7} {ck:>9} {tk:>7}")
 
     # Section B
     if "B" in sections:

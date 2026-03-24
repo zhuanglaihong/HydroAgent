@@ -19,15 +19,20 @@ logger = logging.getLogger(__name__)
 _adapters: list[PackageAdapter] = []
 
 
-def reload_adapters():
-    """Re-scan adapters/ and load all adapter.py files.
+def reload_adapters(workspace: "Path | None" = None):
+    """Re-scan adapters/ and load all adapter.py files, then load external plugins.
 
-    Called once at module import. Also call this after create_adapter generates
-    a new adapter skeleton so it takes effect without restarting the process.
+    Called once at module import. Also call this after create_adapter or
+    add_local_package generates new adapters so they take effect without restart.
+
+    Args:
+        workspace: Optional path to the current workspace.  Used to locate the
+                   local plugin registry (<workspace>/.hydroclaw/plugins.json).
     """
     global _adapters
     _adapters.clear()
 
+    # ── 1. Built-in adapters (hydroclaw/adapters/*/adapter.py) ───────────────
     adapters_dir = Path(__file__).parent
     for adapter_py in sorted(adapters_dir.glob("*/adapter.py")):
         pkg_name = adapter_py.parent.name
@@ -48,8 +53,72 @@ def reload_adapters():
         except Exception as e:
             logger.warning("[adapters] load failed: %s -- %s", pkg_name, e)
 
+    # ── 2. External plugins from plugin registry ──────────────────────────────
+    try:
+        from hydroclaw.utils.plugin_registry import PluginRegistry
+        registry = PluginRegistry(workspace)
+        for plugin in registry.list_plugins():
+            if not plugin.get("enabled", True):
+                continue
+            if plugin.get("type") in ("local_dir", "single_file"):
+                _load_external_adapter(plugin)
+    except Exception as exc:
+        logger.debug("[adapters] plugin registry scan skipped: %s", exc)
+
     _adapters.sort(key=lambda a: (-a.priority, a.name))
     logger.info("[adapters] total loaded: %d", len(_adapters))
+
+
+def _load_external_adapter(plugin: dict) -> None:
+    """Load a PackageAdapter from an external plugin entry.
+
+    Adds the plugin's directory to sys.path so the underlying package can be
+    imported, then loads the Adapter class from the declared adapter_path.
+    """
+    import importlib.util
+
+    name = plugin.get("name", "<unknown>")
+    adapter_path_str = plugin.get("adapter_path", "")
+    if not adapter_path_str:
+        logger.debug("[adapters] external plugin '%s' has no adapter_path, skipping", name)
+        return
+
+    adapter_path = Path(adapter_path_str)
+    if not adapter_path.exists():
+        logger.warning("[adapters] external adapter not found: %s", adapter_path)
+        return
+
+    # Add the plugin's root directory to sys.path (idempotent)
+    pkg_dir = str(adapter_path.parent)
+    if pkg_dir not in sys.path:
+        sys.path.insert(0, pkg_dir)
+
+    # Also add the declared package path for packages in a sub-directory
+    pkg_path_str = plugin.get("path", "")
+    if pkg_path_str:
+        pkg_root = str(Path(pkg_path_str))
+        if pkg_root not in sys.path:
+            sys.path.insert(0, pkg_root)
+
+    mod_key = f"_hydroclaw_plugin_{name}_adapter"
+    try:
+        spec = importlib.util.spec_from_file_location(mod_key, adapter_path)
+        if spec is None or spec.loader is None:
+            logger.warning("[adapters] cannot load spec for external plugin: %s", adapter_path)
+            return
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_key] = mod
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        cls = getattr(mod, "Adapter", None)
+        if cls and issubclass(cls, PackageAdapter) and cls is not PackageAdapter:
+            _adapters.append(cls())
+            logger.info(
+                "[adapters] external plugin loaded: %s (priority=%d)", name, cls.priority
+            )
+        else:
+            logger.warning("[adapters] no valid Adapter class in external plugin: %s", adapter_path)
+    except Exception as exc:
+        logger.warning("[adapters] failed to load external plugin '%s': %s", name, exc)
 
 
 def get_adapter(data_source: str, model_name: str) -> PackageAdapter:

@@ -30,15 +30,19 @@ _TOOLS: dict[str, Callable] = {}
 _TOOL_META: dict[str, dict] = {}
 
 
-def discover_tools() -> dict[str, Callable]:
+def discover_tools(workspace: "Path | None" = None) -> dict[str, Callable]:
     """Scan tool modules in tools/ and skills/*/ and register public functions.
 
     Priority order (high -> low):
       1. tools/*.py          — PRIORITY_TOOLS (20)
       2. skills/*/*.py       — PRIORITY_SKILLS (10)
+      3. external single_file plugins from PluginRegistry — PRIORITY_DYNAMIC (5)
 
     Dynamic skills created at runtime (create_skill) have a marker file
     '.dynamic' in their directory and are registered at PRIORITY_DYNAMIC (5).
+
+    Args:
+        workspace: Optional path used to locate the local plugin registry.
     """
     if _TOOLS:
         return _TOOLS
@@ -62,8 +66,58 @@ def discover_tools() -> dict[str, Callable]:
             )
             _scan_dir(skill_dir, f"hydroclaw.skills.{skill_dir.name}", priority)
 
+    # 3. External single_file plugins from PluginRegistry
+    try:
+        from hydroclaw.utils.plugin_registry import PluginRegistry
+        registry = PluginRegistry(workspace)
+        for plugin in registry.list_plugins():
+            if not plugin.get("enabled", True):
+                continue
+            if plugin.get("type") == "single_file":
+                _load_single_file_plugin(plugin)
+    except Exception as exc:
+        logger.debug("[tools] external plugin scan skipped: %s", exc)
+
     logger.info("Discovered %d tools: %s", len(_TOOLS), list(_TOOLS.keys()))
     return _TOOLS
+
+
+def _load_single_file_plugin(plugin: dict) -> None:
+    """Load public functions from a single .py file as PRIORITY_DYNAMIC tools."""
+    import importlib.util
+    import sys
+
+    name = plugin.get("name", "<unknown>")
+    file_path = Path(plugin.get("path", ""))
+    if not file_path.exists():
+        logger.warning("[tools] single_file plugin '%s' not found: %s", name, file_path)
+        return
+
+    # Add the file's directory to sys.path so relative imports inside it work
+    pkg_dir = str(file_path.parent)
+    if pkg_dir not in sys.path:
+        sys.path.insert(0, pkg_dir)
+
+    mod_key = f"_hydroclaw_plugin_{name}_tool"
+    try:
+        spec = importlib.util.spec_from_file_location(mod_key, file_path)
+        if spec is None or spec.loader is None:
+            return
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_key] = mod
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        count = 0
+        for fn_name, obj in inspect.getmembers(mod, inspect.isfunction):
+            if fn_name.startswith("_"):
+                continue
+            if obj.__module__ != mod.__name__:
+                continue
+            _register_tool(fn_name, obj, source=str(file_path), priority=PRIORITY_DYNAMIC)
+            count += 1
+        if count:
+            logger.info("[tools] single_file plugin '%s' registered %d function(s)", name, count)
+    except Exception as exc:
+        logger.warning("[tools] failed to load single_file plugin '%s': %s", name, exc)
 
 
 def _scan_dir(dir_path: Path, module_prefix: str, priority: int):

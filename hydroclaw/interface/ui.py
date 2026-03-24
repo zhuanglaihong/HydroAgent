@@ -266,9 +266,23 @@ class ConsoleUI:
             self.console.print(f"  [dim]LLM responded in {time.time()-t:.2f}s[/dim]")
 
     def on_thought(self, text: str, turn: int):
-        """Called when LLM emits reasoning text before tool calls."""
-        if self.mode == "dev" and text:
-            self.dev_log(f"[Turn {turn}] Thought: {text[:120]}...")
+        """Called when LLM emits reasoning/thinking content."""
+        if not text:
+            return
+        if self.mode == "dev":
+            # Show full thinking in a dim panel (collapsible visually)
+            preview = text if len(text) <= 800 else text[:800] + f"\n... ({len(text)} chars total)"
+            self.console.print(
+                Panel(
+                    preview,
+                    title=f"[dim]Turn {turn} | Thinking[/dim]",
+                    border_style="dim",
+                    expand=False,
+                )
+            )
+        else:
+            # user mode: show a one-line hint that the model is reasoning
+            self.console.print(f"  [dim italic]( 推理中... {len(text)} chars )[/dim italic]")
 
     # ── Tool calls ───────────────────────────────────────────────────
 

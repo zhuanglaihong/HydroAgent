@@ -1,6 +1,6 @@
 # HydroClaw 研究调研与规划文档
 
-> 状态：主动开发中 | 日期：2026-03-08
+> 状态：主动开发中 | 日期：2026-03-19
 
 ---
 
@@ -30,20 +30,23 @@
 
 | 工作 | 来源 | 核心方法 | 与 HydroClaw 的关系 |
 |------|------|----------|---------------------|
-| **Large Language Models as Calibration Agents** (Zhu et al., 2026) | *Geophysical Research Letters* | 用 5 个 LLM（GPT-4o-mini, DeepSeek-R1/V3, Llama 等）直接提议 VIC 模型参数值，与 SCE-UA/NSGA-III 对比；**单一流域**（88个0.25°网格），VIC 分布式模型 | 最直接参照。核心发现：DeepSeek-R1 **NSE 与 SCE-UA 相同**（0.895 vs 0.895），但**收敛仅需 865 次迭代 vs SCE-UA 的 1269 次（快约 32%）**。方法局限：仅聚焦"LLM 作为参数提议器"替代单一优化步骤，未构建完整 Agent 工作流；只测试 1 个流域，泛化性未验证 |
+| **Large Language Models as Calibration Agents** (Zhu et al., 2026) | *Geophysical Research Letters* | 5 个 LLM 直接提议 VIC 模型参数值，与 SCE-UA/NSGA-III 对比；**单一流域**（88 个 0.25° 格网） | 最直接参照。DeepSeek-R1 NSE≈SCE-UA（0.895），**收敛快 32%**。局限：仅替代单一优化步骤，无完整工作流，单流域泛化性未验证 |
+| **AQUAH** (Yan et al., 2025) | *ICCVW 2025 SEA Workshop* | 首个端到端 NL 驱动水文 Agent（CREST 模型），自动完成数据获取→模型配置→模拟→PDF 报告，Vision-enabled LLM | **直接竞品**，但聚焦冷启动**模拟**（simulation setup），不做参数**率定**；无量化 NSE/KGE，采用专家主观评分（7/10）；无跨会话记忆；无动态能力扩展 |
+| **INDRA + CONFLUENCE** (Eythorsson et al., 2025) | *Hydrological Processes* | **5 专家 Agent 协作**（水文、水文地质、气象、数据科学、GIS），Claude API 驱动，集成 CONFLUENCE 模块化水文框架 | **架构对立面**：多 Agent Orchestrator 路线（与旧 HydroAgent 类似）。**无量化实验**（perspectives 类论文）。HydroClaw 用单一 Agentic Loop 实现同等能力，代码量压缩 5×，是对多 Agent 复杂性必要性的反驳 |
+| **Wang et al. 2025** | *Water Research* (Elsevier) | 3 种 Agent 策略（Knowledge/Modelling/Coding）对比，用于水分配网络率定与泵站优化，DeepSeek 驱动 | Coding Agent（迭代生成优化代码）最稳定，印证 HydroClaw "LLM 调控外部优化器"优于"LLM 直接提议参数值"的设计选择 |
 | **IWMS-LLM** (2025) | *Journal of Hydroinformatics* | 基于 LLM 的智能水资源管理系统 | 对话界面类似，但偏决策支持而非模型执行 |
 | **WaterGPT** (2024) | *Water (MDPI)* | 领域微调 LLM | 知识层面，未涉及工作流自动化 |
 | **HydroLLM** (2025) | *Environmental Data Science* | 水文领域 LLM 知识评测基准 | 评估基准，非执行框架 |
-| **水分布网络 LLM 优化** (2025) | *ScienceDirect* | LLM 驱动水力模型率定与泵站优化 | 工程应用类似，领域不同 |
 
-**核心空白**：现有工作要么停留在"LLM 作为知识问答"，要么是"LLM 替代单一优化步骤"，**没有将 LLM 嵌入完整水文建模工作流、且具备动态扩展能力的 Agentic 系统**。
+**核心空白**：现有工作要么停留在"LLM 作为知识问答/单步替代"（Zhu, WaterGPT），要么是无量化验证的多 Agent 系统展望（INDRA），要么聚焦模拟而非率定（AQUAH）。**没有将 LLM 嵌入完整水文率定工作流、以单一 Agentic Loop 实现、具备动态扩展能力、并有量化实证的系统。**
 
-### 2.2 地球科学 Agent（领域拓展参考）
+### 2.2 地球科学 Agent 与实验评估方法（领域拓展参考）
 
 | 工作 | 方法要点 | 对 HydroClaw 的启示 |
 |------|----------|---------------------|
-| **GeoLLM-Squad** (Lee et al., 2025) | 遥感工作流多 Agent（AutoGen） | 多 Agent 范式，但协调复杂 |
-| **GeoEvolve** (2025, arXiv) | 代码进化器 + RAG + Agentic Controller | 迭代优化 + 知识检索的组合 |
+| **GeoLLM-Squad** (Lee et al., 2025) | 遥感工作流 5 域多 Agent（AutoGen），2000 个合成 prompt，GPT-4o-mini + Qwen，正确率/误差/Token 成本三维评估 | **实验设计参照**：Correctness Rate（工具调用序列正确率）+ 消融（±工具选择、±工作流记忆）+ Token 成本，HydroClaw exp3/exp4 可参考此评估框架 |
+| **SUMMA-CAMELS** (Farahani et al., HESS 2025) | 627 流域大样本率定，ML emulator vs 单站，5 折空间交叉验证，normalized KGE' 主指标 | **水文率定实验标准**：KGE' 优于 NSE（理论依据）；数据分割规范（率定期/验证期选择）；5 个流域的合理性辩护方式 |
+| **GeoEvolve** (2025, arXiv) | 代码进化器 + RAG + Agentic Controller | 迭代优化 + 知识检索的组合；RAG vs Prompt Stuffing 的设计对比参照 |
 | **PANGAEA GPT** (2025) | 地球科学 MAS + 大规模数据库 | 数据集成方式 |
 
 ### 2.3 通用 Agentic 架构趋势
@@ -63,18 +66,27 @@
 
 ```
 现有工作层次：
-  LLM 知识问答           ←─── WaterGPT, HydroLLM
-  LLM 替代单一优化步骤   ←─── Zhu et al. 2026
-  LLM 辅助决策           ←─── IWMS-LLM
+  LLM 知识问答              ←─── WaterGPT, HydroLLM
+  LLM 替代单一优化步骤      ←─── Zhu et al. 2026（单流域，无工作流）
+  LLM 辅助决策              ←─── IWMS-LLM
+  NL 驱动模拟（无率定）     ←─── AQUAH（无量化指标，无动态扩展）
+  多 Agent 系统展望         ←─── INDRA（多 Agent 复杂架构，无量化实验）
 
-HydroClaw 的层次：
+HydroClaw 的层次（填补所有空白）：
   自然语言
     → 意图理解
     → Skill 选择（工具 + 领域知识 + 执行策略）
+    → PackageAdapter 路由（解耦，热插拔）
     → 工具执行（可动态扩展）
+    → 跨会话记忆积累
     → 结果分析 + 报告输出
-  ↑ 完整端到端 Agentic 工作流 + 动态扩展能力（现有工作均未覆盖）
+  ↑ 完整端到端率定-评估-分析 Agentic 工作流
+    + 单一 Agentic Loop（对比 INDRA 的多 Agent 复杂性）
+    + 量化实证（对比 AQUAH 的主观评分 / INDRA 的无实验）
+    + 动态能力扩展（现有所有工作均未覆盖）
 ```
+
+**关于 INDRA 的定位说明**：INDRA 采用 5 个专家 Agent + Orchestrator 的多 Agent 架构，与 HydroAgent（旧版）的设计路线高度相似，代表了"用复杂系统应对复杂问题"的思路。HydroClaw 的贡献之一正是证明这一复杂性是不必要的——单一 Agentic Loop + 结构化知识注入 + PackageAdapter 可以实现同等能力，代码量仅约 1/5，且有量化验证。INDRA 是 perspectives 类论文（无实验），HydroClaw 是实证系统。两者不竞争，INDRA 反而为 HydroClaw 的简洁性论点提供了对照。
 
 ### 3.2 核心创新点（论文角度）
 
@@ -161,7 +173,32 @@ HydroClaw 的层次：
    - **工具冲突管理作为系统可靠性问题**：随着工具数量增长，同名覆盖和同功能重复都会降低 Agent 行为可预测性；优先级元数据 + 语义去重是工程上保证可靠性的必要手段
    - **"安装即使用"的摩擦消除**：传统水文软件需要用户自行安装配置包；`register_package` 将这一步纳入 Agent 工作流，水文学者只需告诉 Agent 包名，其余自动完成
 
-9. **观测驱动的 Agent 设计（Observation-Driven Agent Design）**
+9. **PackageAdapter 插件架构（Plugin-Based Hydrology Package Ecosystem）**
+
+   现有水文 Agentic 系统均假设工具集与特定计算包静态绑定。HydroClaw 引入 **PackageAdapter 层**将 Agent 核心与水文计算包完全解耦，并以"五层大脑-脊椎-四肢"模型形式化这一设计：
+
+   ```
+   [大脑]  agent.py (ReAct Loop)      推理/决策，不关心包 API
+   [小脑]  skills/*/skill.md          程序记忆，塑造决策模式
+   [脊椎]  adapters/*/adapter.py      双向翻译：意图 -> 包调用
+   [末梢]  skills/*/xxx.py + tools/   薄路由，找适配器
+   [肌肉]  hydromodel / hydrodataset  数值计算，不知 Agent 存在
+   ```
+
+   **三项关键机制：**
+
+   - **优先级路由 + 优雅降级**：`get_adapter(data_source, model_name)` 按 priority 降序匹配第一个 `can_handle=True` 的适配器（hydrodatasource=15, hydromodel=10, generic=0）；若无专用适配器，GenericAdapter 返回结构化引导而非报错，LLM 可读懂并通过 `generate_code` 另辟蹊径。
+
+   - **灵活接口（supported_operations + execute dispatch）**：适配器不再被强制实现固定的 4 个方法（calibrate/evaluate/visualize/simulate），而是声明自己支持的操作集合并统一路由。hydrodatasource 可暴露 `list_basins / read_data / convert_to_nc`，hydromodel 暴露 `calibrate / evaluate / simulate`——接口与操作集完全解耦。
+
+   - **热插拔（Hot-swap via create_adapter）**：元工具 `create_adapter(name, desc)` 生成适配器骨架 + `adapters/<name>/skills/skill.md`，随后自动调用 `reload_adapters()`——新包即时生效，无需重启 Agent。
+
+   **工具优先级元数据体系**（与适配器层配合）：
+   `tools/__init__.py` 为每个工具记录来源和优先级（核心工具=20，Skill工具=10，动态生成=5），同名冲突时保留高优先级者并记录 warning。`list_tools()` 工具让 Agent 可自查当前工具集，支持冲突诊断。
+
+   **论文价值**：PackageAdapter 层是"工具调用层"（创新点7）的系统级实现——`__agent_hint__` 解决单个工具的调用正确性问题，PackageAdapter 解决整包接入与生态扩展问题。两者共同构成 HydroClaw 可持续扩展的工程基础。
+
+10. **观测驱动的 Agent 设计（Observation-Driven Agent Design）**
    这是 HydroClaw v3 的核心架构升级，也是与同类工作最本质的区别。
 
    **核心洞察**：LLM 的智能能否充分发挥，取决于它能"看到"什么。大多数 Agentic 系统将工具设计为黑盒——成功返回摘要，失败返回错误码——LLM 只能执行预设路径，无法基于真实世界状态做推理。
@@ -221,7 +258,8 @@ HydroClaw 的层次：
 | 维度 | 旧 HydroAgent | HydroClaw v2 | HydroClaw v3（当前） |
 |------|--------------|-----------|---------------------|
 | 执行主体 | 5个 Agent + Orchestrator 状态机 | 1个 Agentic Loop | 同左，+观测层 |
-| 扩展方式 | 新增 Agent（改核心代码） | 新增 Skill 包（不改核心） | 同左 |
+| 包集成方式 | 硬耦合（直接 import hydromodel） | 同左 | PackageAdapter 插件层（解耦，热插拔） |
+| 扩展方式 | 新增 Agent（改核心代码） | 新增 Skill 包（不改核心） | 新增适配器 + 新增 Skill 包（均不改核心） |
 | 工具调用知识 | 无（硬编码在子 Agent 逻辑里）| 散落在 system.md 提示词里 | 工具自描述（`__agent_hint__`），与代码同步维护 |
 | 工具返回 | 摘要（pass/fail） | 摘要（pass/fail） | 诊断性返回（带现场信息） |
 | Agent 视野 | 只看工具摘要 | 只看工具摘要 | 可用 read_file/inspect_dir 主动观测 |
@@ -244,21 +282,36 @@ v3 的设计原则（观测思维）：
   v3 = 实验室仪器（显示读数，研究员基于读数判断下一步操作）
 ```
 
-### 4.2 目录结构（目标状态）
+### 4.2 目录结构（当前实现状态，v2.5）
 
 ```
 hydroclaw/
-├── agent.py               # Agentic Loop 核心
-├── llm.py                 # LLM 客户端
-├── memory.py              # 记忆系统
+├── agent.py               # Agentic Loop 核心（ReAct 模式）
+├── llm.py                 # LLM 客户端（Function Calling + Prompt 降级）
+├── memory.py              # 三层记忆（会话/MEMORY.md/流域档案）
 ├── config.py              # 配置管理
 │
-├── skills/                # Skill 包（工具 + 说明书 自包含）
+├── adapters/              # ★ v2.5 新增：PackageAdapter 插件层
+│   ├── __init__.py        # 自动扫描发现 + get_adapter() + get_all_skill_docs()
+│   ├── base.py            # PackageAdapter 抽象接口（supported_operations + execute）
+│   ├── hydromodel/
+│   │   ├── adapter.py     # HydromodelAdapter（priority=10，负责率定/评估/可视化）
+│   │   └── skills/
+│   │       └── hydromodel.md   # hydromodel 调用方式（注入 system prompt）
+│   ├── hydrodatasource/
+│   │   ├── adapter.py     # HydrodatasourceAdapter（priority=15，负责自定义数据集）
+│   │   └── skills/
+│   │       └── hydrodatasource.md
+│   └── generic/
+│       └── adapter.py     # GenericAdapter（priority=0，兜底，返回结构化引导）
+│
+├── skills/                # Skill 包（工作流说明书 + 工具实现，双层含义）
+│   ├── system.md          # 系统基础 prompt（每次都注入）
 │   ├── calibration/
-│   │   ├── skill.md       # 说明书：标准率定流程、参数说明、注意事项
-│   │   └── calibrate.py   # 工具代码
+│   │   ├── skill.md       # 工作流指引（关键词匹配时注入）
+│   │   └── calibrate.py   # calibrate_model() 工具（priority=10）
 │   ├── llm_calibration/
-│   │   ├── skill.md       # 说明书：智能率定流程、何时使用、边界扩展策略
+│   │   ├── skill.md
 │   │   └── llm_calibrate.py
 │   ├── evaluation/
 │   │   ├── skill.md
@@ -266,24 +319,44 @@ hydroclaw/
 │   ├── visualization/
 │   │   ├── skill.md
 │   │   └── visualize.py
-│   ├── analysis/          # 代码生成 + 执行
-│   │   ├── skill.md
-│   │   ├── generate_code.py
-│   │   └── run_code.py
-│   └── [用户自定义 Skill]  # 通过 create_skill 生成，可随意扩展
+│   ├── hydrodatasource/   # 自定义数据集工具（Skill 级别，priority=10）
+│   │   └── dataset_tools.py  # list_basins / read_dataset / convert_dataset_to_nc
+│   ├── hydrodataset/      # 公开数据集工具
+│   │   └── hydrodataset_tools.py  # list_camels_basins / check_camels_data
+│   └── [动态生成 Skill]   # create_skill 生成，立即注册（priority=5）
 │       ├── skill.md
-│       └── my_tool.py
+│       └── tool.py
 │
-├── tools/                 # 核心基础工具（不属于特定 Skill）
-│   ├── __init__.py        # 统一自动发现（扫描 skills/ + tools/）
-│   ├── validate.py        # 数据验证
-│   ├── simulate.py        # 模型模拟
-│   ├── observe.py         # 观测工具：read_file / inspect_dir ★ v3 新增
-│   └── create_skill.py    # 元工具：运行时生成新 Skill 包 ★
+├── tools/                 # 核心基础工具（优先级=20，最高）
+│   ├── __init__.py        # 工具发现引擎（扫描 tools/ + skills/，记录优先级元数据）
+│   ├── validate.py        # validate_basin()
+│   ├── simulate.py        # run_simulation()
+│   ├── observe.py         # read_file() / inspect_dir()  ★ 观测工具
+│   ├── task_tools.py      # create_task_list / get_pending_tasks / update_task / add_task
+│   ├── create_skill.py    # 元工具：动态生成 Skill 包
+│   ├── create_adapter.py  # 元工具：动态生成 PackageAdapter 骨架 ★ v2.5
+│   ├── install_package.py # 受控包安装（需用户授权）
+│   └── register_package.py# LLM 分析 PyPI API 自动生成适配器实现
 │
-└── knowledge/             # 领域知识库（独立于 Skill，供 LLM 推理用）
-    ├── model_parameters.md  # 参数物理含义、典型范围
-    └── calibration_guide.md # 率定策略、诊断经验
+└── knowledge/             # 领域知识库（按关键词注入，独立于 Skill）
+    ├── model_parameters.md  # 参数物理含义、典型范围（GR4J/GR5J/GR6J/HBV/LSTM）
+    └── calibration_guide.md # 率定策略、诊断经验、边界效应识别
+```
+
+**两种 Skill 的区分（容易混淆的设计决策）**：
+
+| 类型 | 位置 | 注入时机 | 作用 |
+|------|------|---------|------|
+| 工作流 Skill | `skills/*/skill.md` | 关键词匹配时注入 | 告诉 LLM "这类任务该怎么做"（程序记忆） |
+| 适配器 Skill | `adapters/*/skills/*.md` | 每次对话都注入 | 告诉 LLM "这个包的 API 怎么调"（包文档） |
+
+**知识注入顺序**（system prompt 构建）：
+```
+system.md
++ 匹配的工作流 Skill 说明书       <- Skill 层（按查询关键词筛选）
++ 适配器包文档（hydromodel.md 等）<- Adapter 层（全量注入）
++ 领域知识（calibration_guide.md）<- Knowledge 层（按关键词筛选）
++ 流域档案（basin_profiles/）     <- Memory 层（按 basin_id 筛选）
 ```
 
 ### 4.3 运行时信息流（v3 观测驱动版）
@@ -342,6 +415,31 @@ v3 中 LLM 通过 `read_file` 直接看到参数值，自主做出"触边界"的
 - 扫描 `hydroclaw/skills/*/` 下所有 `*.py`（Skill 工具）
 - 所有公开函数自动注册为 LLM 可调用工具
 
+### 4.5 知识检索策略：Prompt Stuffing vs RAG
+
+HydroClaw 当前**不使用向量数据库或语义检索（RAG）**，而采用关键词触发的静态文档注入（Prompt Stuffing）。这是一个有意识的工程决策，值得在论文方法论部分说明：
+
+| 维度 | Prompt Stuffing（当前方案） | RAG（向量检索） |
+|------|---------------------------|----------------|
+| 实现复杂度 | 极低（读文件 + 字符串拼接） | 中（需向量库 + embedding 模型） |
+| 适用规模 | 知识文档 < 10 个，单文档 < 2000 字 | 文档 > 50 个，或单文档很长 |
+| 检索精度 | 关键词匹配，粗粒度 | 语义相似度，细粒度 |
+| 上下文占用 | 整文档注入，占用较多 | 只取最相关片段，节省 token |
+
+**当前为何够用**：HydroClaw 的知识文档数量少（< 10 个）、单文档紧凑（< 2000 字），Skill 匹配精度够用。**升级条件**：`knowledge/` 目录超过 10 个文档，或某文档超过 3000 字时，引入向量检索。
+
+**论文价值**：这一决策本身体现"轻量 Agentic 系统"的设计哲学——在规模允许范围内选择最简实现，不过度工程化。与以 RAG 为核心贡献的工作（如 GeoEvolve）形成互补定位。
+
+### 4.6 上下文长度控制
+
+长批量任务（20+ 轮次）的上下文爆炸是 Agentic 系统的工程难题。HydroClaw 的处理策略：
+
+- **工具结果截断**：`context_utils.py` 的 `truncate_tool_result()`，字段级 8K + 整体 16K 上限，防止 run_code stdout 等大输出填满上下文
+- **历史压缩**：`_maybe_compress_history()`，对话历史超过 60,000 估算 token 时，保留 [system + 原始查询 + 最近 4 条]，中间历史由 LLM 压缩为摘要
+- **任务状态外化**：`task_state.json` 持久化任务列表到磁盘，`get_pending_tasks()` 每轮只返回摘要，避免任务列表累积在 messages 中
+
+**当前局限**：历史压缩是"一次性"策略，压缩后摘要本身也会继续增长；30+ 轮的极端长任务中仍可能超限。分层记忆（工作记忆 + 短期摘要 + 长期档案）是未来方向。
+
 ---
 
 ## 五、论文写作规划
@@ -370,19 +468,33 @@ v3 中 LLM 通过 `read_file` 直接看到参数值，自主做出"触边界"的
    2.3 Tool Use & Skill Systems（Function Calling, OpenClaw Skill 范式）
 
 3. HydroClaw System Design
-   3.1 整体架构与设计哲学（自动化 vs 观测驱动）
+   3.1 整体架构与设计哲学
+       3.1.1 从多 Agent 状态机到单 Agentic Loop：架构演进对比
+       3.1.2 五层大脑-脊椎-四肢模型（Agent 核心 / Skill 说明书 / PackageAdapter / 工具路由 / 功能包）
+       3.1.3 设计原则：让 LLM 做决策，代码只做执行
    3.2 Agentic Loop（ReAct 模式）
-   3.3 Skill 包系统（工具 + 说明书自包含，动态扩展）
-   3.4 四层知识体系（工具调用层 / Skill说明书 / 领域知识库 / 跨会话记忆）
-       3.4.1 各层职责划分与独立演进原则
-       3.4.2 工具自描述协议（__agent_hint__ 机制）
-       3.4.3 与 MCP 的设计同源性及扩展路径
-   3.5 LLM 智能参数范围调整机制
-   3.6 观测驱动的 Agent 设计
-       3.6.1 观测工具（read_file / inspect_dir）
-       3.6.2 诊断性工具返回值设计
-       3.6.3 目标导向的 Skill 说明书（vs 步骤序列）
-       3.6.4 与现有 Agentic 框架的对比（工具黑盒 vs 仪器读数）
+       3.2.1 无状态机的核心循环（LLM 决定何时结束）
+       3.2.2 Agent 自驱动任务规划（create_task_list / get_pending_tasks 内化编排）
+   3.3 PackageAdapter 插件架构（水文包生态解耦）
+       3.3.1 动机：打破 Agent 与计算包的硬耦合
+       3.3.2 适配器接口设计（supported_operations + execute dispatch vs 固定方法集）
+       3.3.3 优先级路由与优雅降级（GenericAdapter 结构化引导）
+       3.3.4 热插拔：create_adapter + reload_adapters() 无重启生效
+       3.3.5 工具优先级元数据体系（priority=20/10/5，同名冲突解决策略）
+   3.4 Skill 包系统（工具 + 说明书自包含，动态扩展）
+       3.4.1 双层 Skill 概念（工作流说明书 vs 适配器包文档）
+       3.4.2 关键词匹配注入 vs 全量注入的设计权衡
+       3.4.3 动态 Skill 生成（create_skill 元能力）
+   3.5 四层知识体系（工具调用层 / Skill说明书 / 领域知识库 / 跨会话记忆）
+       3.5.1 各层职责划分与独立演进原则
+       3.5.2 工具自描述协议（__agent_hint__ 机制与 MCP 的设计同源性）
+       3.5.3 知识注入顺序与上下文控制（Prompt Stuffing vs RAG 的选择依据）
+   3.6 LLM 智能参数范围调整机制
+   3.7 观测驱动的 Agent 设计
+       3.7.1 观测工具（read_file / inspect_dir）
+       3.7.2 诊断性工具返回值设计
+       3.7.3 目标导向的 Skill 说明书（vs 步骤序列）
+       3.7.4 与现有 Agentic 框架的对比（工具黑盒 vs 仪器读数）
 
 4. Experiments
    4.1 实验设置（流域、模型、LLM后端）
@@ -405,8 +517,14 @@ v3 中 LLM 通过 `read_file` 直接看到参数值，自主做出"触边界"的
    5.2 与 Zhu et al. 2026 的定位对比
         Zhu：1流域，LLM替代优化器，NSE持平，快32%
         HydroClaw：3流域，LLM辅助调控，同样验证"LLM不提升NSE上限但加速收敛"；额外贡献是完整Agentic工作流
-   5.3 Skill 系统 vs 多 Agent 系统的权衡
-   5.4 局限性与未来方向
+   5.3 单一 Agentic Loop vs 多 Agent 系统（以 INDRA 为对照）
+        INDRA：5 专家 Agent + Orchestrator，无量化验证，多 Agent 协调复杂
+        HydroClaw：单一 Loop + PackageAdapter + Skill，同等能力，代码量 1/5，有量化实证
+        结论：水文领域的 Agent 复杂性需求可由单 Loop + 结构化知识注入满足，不需要多 Agent 状态机
+   5.4 与 AQUAH 的差异化：模拟 vs 率定，主观评分 vs 量化指标
+        AQUAH：冷启动模拟，专家主观评分，无跨会话记忆，无动态扩展
+        HydroClaw：率定-评估-分析闭环，量化 KGE/NSE，跨会话流域档案，create_skill 动态扩展
+   5.5 局限性与未来方向（多流域扩展、RAG 升级、分布式模型支持）
 
 6. Conclusion
 ```
@@ -414,12 +532,51 @@ v3 中 LLM 通过 `read_file` 直接看到参数值，自主做出"触边界"的
 ### 5.3 核心论证逻辑
 
 **论文核心论点**：
-> "将 LLM 嵌入水文建模工作流的关键不在于让 LLM 替代优化算法，而在于构建一个以 Skill 包为扩展单元的 Agentic 框架——LLM 作为智能协调者，通过自包含的 Skill（工具能力 + 领域知识）驱动完整工作流，并在工具不足时动态生成新 Skill。"
+> "将 LLM 嵌入水文建模工作流的关键不在于让 LLM 替代优化算法，而在于构建五层插件化 Agentic 框架——以 PackageAdapter 解耦水文计算包、以 Skill 包封装领域工作流知识、以工具自描述协议确保调用正确性、以观测驱动设计赋予 Agent 自主诊断能力——LLM 作为智能协调者，通过四层结构化知识驱动完整工作流，并在能力不足时动态扩展自身。"
 
 与现有工作的关系：
-- vs Zhu et al. 2026：LLM **调控搜索空间**（范围调整）而非替代搜索算法 → 互补
+- vs Zhu et al. 2026：LLM **调控搜索空间**（范围调整）而非替代搜索算法 → 互补；HydroClaw 额外提供完整 Agentic 工作流
 - vs WaterGPT/HydroLLM：不是训练专用模型，而是让通用 LLM 通过结构化知识注入获得领域能力 → 更轻量
-- vs GeoLLM-Squad：单 Agentic Loop 而非多 Agent，Skill 包替代子 Agent → 更简洁可控
+- vs GeoLLM-Squad：单 Agentic Loop + PackageAdapter 插件层，而非多 Agent 状态机 → 同等扩展能力，更简洁可控
+- vs OpenClaw：引入 PackageAdapter 层对接领域计算包，并将 Skill 从"预安装"升级为"按需生成" → 更适合科学计算场景
+
+**架构演进的核心数据点**（可作为 System Design 章节的量化对比）：
+
+| 指标 | HydroAgent（旧） | HydroClaw |
+|------|-----------------|-----------|
+| 代码量 | ~27,000 行 | ~5,000 行 |
+| 核心组件数 | 5 Agent + 1 Orchestrator | 1 Agentic Loop |
+| 工作流编排代码 | 960 行 if-else 路由 | 0 行（LLM 推理） |
+| 新增水文包所需改动 | 改 Agent + 注册 + 路由（数十处） | 实现 1 个适配器类（~100行） |
+| 新增工作流能力 | 改子 Agent + 重新部署 | create_skill（运行时，~30s） |
+
+### 5.4 实验设计改进建议（基于文献对比）
+
+对比 Zhu 2026（GRL）、GeoLLM-Squad 2025、SUMMA-CAMELS 2025 等文献的实验规范，HydroClaw 当前实验设计需要以下改进：
+
+#### P0 级（审稿必须满足）
+
+| 问题 | 现状 | 改进方向 | 文献依据 |
+|------|------|---------|---------|
+| 缺乏统计显著性 | Exp1/Exp2 每组单次运行 | 每组至少 3 次不同随机种子，报告 mean ± std | GeoLLM-Squad（多次评估），SCE-UA 本身有随机性 |
+| NSE vs KGE 主指标 | NSE 为主，KGE 辅助 | 改为 **KGE 为主，NSE 辅助**，引用 Knoben et al. 2019 说明理由 | SUMMA-CAMELS：KGE' 对均值偏差更敏感，比 NSE 更均衡 |
+| 训练/验证期未文档化 | 脚本中未显式记录 | 论文实验设置部分加一个"流域数据时段表" | SUMMA-CAMELS 明确记录 1982-1989 / 2003-2009 |
+
+#### P1 级（强化论文说服力）
+
+| 问题 | 现状 | 改进方向 | 文献依据 |
+|------|------|---------|---------|
+| Exp2 只测 1 个 LLM | Method C 用单一 LLM | 加第 2 个 LLM 对比（推理型 DeepSeek-R1 vs 对话型 Qwen/GPT-4o），加一列结论 | Zhu 2026 测 5 个 LLM，推理型优势明显 |
+| 缺效率指标 | 只有 eval_ratio | 所有实验加 `total_tokens`（已有计数）+ `wall_time_sec` | GeoLLM-Squad 报告 Token Cost 作为独立维度 |
+| 缺 AQUAH 对比 | Related Work 未提 | 加入 Related Work，说明率定 vs 模拟、量化 vs 主观评分的差异 | AQUAH (ICCVW 2025)，最新直接竞品 |
+
+#### P2 级（锦上添花）
+
+| 问题 | 现状 | 改进方向 | 文献依据 |
+|------|------|---------|---------|
+| 缺失败类型分类 | 只记录成功/失败 | 从日志中提取失败类型（工具序列错误/参数错误/上下文超限）并列表 | Wang et al. 2025 专门分析 LLM 失败模式 |
+| 缺参数敏感性分析 | boundary_hits 已记录但未分析 | 从 boundary_hits 提取"LLM 最常调整哪些参数"，与水文专家认知对比 | Zhu 2026 用 SHAP+XGBoost 做参数重要性（轻量版同样有效） |
+| 场景重复性不足 | Exp3 Section A 6 场景各跑 1 次 | 每场景重复 3 次，报告工具序列一致性（consistency rate） | AgentBench：重复性是 agentic 评估的基本要求 |
 
 ---
 
@@ -536,54 +693,76 @@ v3 中 LLM 通过 `read_file` 直接看到参数值，自主做出"触边界"的
 - [ ] System Design 章节（随开发同步更新）
 - [ ] 实验结果整理与可视化（plot_paper_figures.py）
 
-**Phase 8：生态扩展基础设施**（2026-03，工程完整性）
+**Phase 8：生态扩展基础设施** ✅ 已完成（2026-03-19）
 
 目标：让 Agent 能够在用户允许下自主接入新水文包，并妥善管理不断增长的工具集。
 
-*Step 1：包安装工具（`install_package`）*
-- [ ] 新建 `hydroclaw/tools/install_package.py`
-- 核心约束：**Agent 绝不自主安装**，须用户明确允许；内部通过 `ask_user` 请求授权
-- 用 `sys.executable -m pip install` 命中当前 venv，无需硬编码路径
-- 错误分级处理：包名不存在 / 版本冲突 / 权限不足 / 网络超时，每类返回可推理的 diagnosis
-- `__agent_hint__`：重点标注"ONLY call when user has EXPLICITLY approved"，防止 Agent 自作主张
+*Step 1：PackageAdapter 框架* ✅
+- [x] `hydroclaw/adapters/base.py`：PackageAdapter 抽象接口（supported_operations + execute dispatch）
+- [x] `hydroclaw/adapters/__init__.py`：自动扫描 + get_adapter() 路由 + reload_adapters() 热重载
+- [x] HydromodelAdapter（priority=10）、HydrodatasourceAdapter（priority=15）、GenericAdapter（priority=0）
+- [x] `hydroclaw/tools/create_adapter.py`：元工具，动态生成适配器骨架 + 自动 reload
 
-*Step 2：工具注册优先级元数据（改 `tools/__init__.py`）*
-- [ ] 新增 `_TOOL_META: dict[str, dict]`，记录每个工具的 `source`、`priority`、`registered_at`
-- 优先级层级（高→低）：adapter 路由函数(30) > tools/ 核心工具(20) > skills/ 工作流工具(10) > 动态生成 skill(5)
-- 同名冲突：保留高优先级，低优先级记 warning；相同优先级保留后注册者（符合"更新覆盖"直觉）
-- 新增 `list_tools()` 工具函数：Agent 可查询当前所有工具的名称、来源、优先级，支持冲突诊断
+*Step 2：工具注册优先级元数据* ✅
+- [x] `tools/__init__.py`：PRIORITY_TOOLS=20, PRIORITY_SKILLS=10, PRIORITY_DYNAMIC=5
+- [x] 同名冲突：保留高优先级，低优先级记 warning；`list_tools()` 工具可查询工具集状态
 
-*Step 3：README 解析自动注册（`register_package`）*
-- [ ] 新建 `hydroclaw/tools/register_package.py`
-- 流程：fetch PyPI JSON API → `importlib` 探测公开 API 签名 → LLM 分析生成 adapter 实现 → `create_adapter()` → `reload_adapters()`
-- 与 `create_adapter` 的区别：`create_adapter` 只生成骨架（stub），`register_package` 尝试生成可用实现（LLM 看到真实 API 后生成 calibrate/evaluate 方法体）
-- LLM 生成代码加 `# AUTO-GENERATED` 注释；方法体失败时 fallback 到 `raise NotImplementedError`，而非静默崩溃
-- 需要 `_llm` 注入；整个流程在一次 `register_package` 调用内完成，返回 `{"adapter_file": ..., "auto_implemented": [...], "stubs_remaining": [...], "success": bool}`
+*Step 3：包安装与自动注册工具* ✅
+- [x] `hydroclaw/tools/install_package.py`：受控包安装（需用户授权，__agent_hint__ 防止自主安装）
+- [x] `hydroclaw/tools/register_package.py`：fetch PyPI JSON API → importlib 探测 → LLM 分析 → create_adapter() → reload_adapters()
+- [x] `create_adapter` 生成骨架（stub）；`register_package` 尝试生成可用实现，失败 fallback 到 NotImplementedError
 
-*Step 4：`create_skill` 语义去重检查*
-- [ ] 在 `create_skill` 调用前，对现有工具 description 做词袋相似度检查（无需向量库，5-50 个工具规模足够）
-- 相似度 > 0.6 时，返回警告 + 候选工具列表，让 Agent 决定是否继续创建
-- 防止批量任务中因同一需求被多次触发 `create_skill` 而产生大量同功能重复工具
+*Step 4：hydrodatasource 接入* ✅
+- [x] `hydroclaw/skills/hydrodatasource/dataset_tools.py`：list_basins / read_dataset / convert_dataset_to_nc（priority=10）
+- [x] `hydroclaw/skills/hydrodataset/hydrodataset_tools.py`：list_camels_basins / check_camels_data
+- [x] Web UI 数据集管理：公开数据集状态展示、自定义数据集 NC 缓存（含多时间尺度支持）
 
 ---
 
 ## 七、参考文献（已识别）
 
-1. Zhu et al. (2026). *Large Language Models as Calibration Agents in Hydrological Modeling: Feasibility and Limitations*. GRL. https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2025GL120043
+### 水文领域 LLM / Agentic 系统（核心）
 
-2. IWMS-LLM (2025). *An intelligent water resources management system based on large language models*. Journal of Hydroinformatics. https://iwaponline.com/jh/article/27/11/1685/110111/
+1. Zhu et al. (2026). *Large Language Models as Calibration Agents in Hydrological Modeling: Feasibility and Limitations*. Geophysical Research Letters. https://doi.org/10.1029/2025GL120043
 
-3. WaterGPT (2024). *Training a Large Language Model to Become a Hydrology Expert*. Water. https://www.mdpi.com/2073-4441/16/21/3075
+2. Yan et al. (2025). *AQUAH: Automatic Quantification and Unified Agent in Hydrology*. ICCV 2025 SEA Workshop. https://arxiv.org/abs/2508.02936
+   — 首个端到端 NL 驱动水文 Agent（模拟方向），HydroClaw 的直接竞品（率定方向）
 
-4. HydroLLM (2025). *Toward HydroLLM: a benchmark dataset for hydrology-specific knowledge assessment*. Environmental Data Science. https://www.cambridge.org/core/journals/environmental-data-science/article/toward-hydrollm/585BFB32C8F14A7C8E8D93F1E0E08020
+3. Eythorsson et al. (2025). *Toward Automated Scientific Discovery in Hydrology: The Opportunities and Dangers of AI Augmented Research Frameworks*. Hydrological Processes. https://doi.org/10.1002/hyp.70065
+   — INDRA 多 Agent 系统（5 专家 Agent），perspectives 类，无量化实验，与 HydroClaw 单 Loop 形成架构对比
 
-5. Lee et al. (2025). GeoLLM-Squad. *Accelerating earth science discovery via multi-agent LLM systems*. Frontiers in AI. https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1674927/full
+4. Wang, Fu, Savic (2025). *Leveraging Large Language Models for Automating Water Distribution Network Optimization*. Water Research. https://doi.org/10.1016/j.watres.2025.124536
+   — 3 种 Agent 策略对比；Coding Agent 最优，印证"LLM 调控外部优化器"设计
 
-6. GeoEvolve (2025). *Automating Geospatial Model Discovery via Multi-Agent Large Language Models*. arXiv. https://arxiv.org/html/2509.21593v1
+5. IWMS-LLM (2025). *An intelligent water resources management system based on large language models*. Journal of Hydroinformatics. https://iwaponline.com/jh/article/27/11/1685/110111/
 
-7. AI-driven multi-agent water resource planning (2025). Journal of Hydroinformatics. https://iwaponline.com/jh/article/27/7/1217/108550/
+6. WaterGPT (2024). *Training a Large Language Model to Become a Hydrology Expert*. Water (MDPI). https://www.mdpi.com/2073-4441/16/21/3075
 
-8. Water distribution network optimization with LLM (2025). ScienceDirect. https://www.sciencedirect.com/science/article/pii/S004313542501440X
+7. HydroLLM (2025). *Toward HydroLLM: a benchmark dataset for hydrology-specific knowledge assessment*. Environmental Data Science. https://www.cambridge.org/core/journals/environmental-data-science/article/toward-hydrollm/585BFB32C8F14A7C8E8D93F1E0E08020
+
+### 大样本水文率定（实验设计规范参照）
+
+8. Farahani et al. (2025). *Calibrating a Large-Domain Land/Hydrology Process Model in the Age of AI: the SUMMA CAMELS Emulator Experiments*. Hydrology and Earth System Sciences, 29(18), 4515-4537. https://doi.org/10.5194/hess-29-4515-2025
+   — 627 流域，5 折交叉验证，normalized KGE' 主指标，水文率定实验设计的黄金标准
+
+9. Knoben et al. (2019). *Inherent benchmark or not? Comparing Nash–Sutcliffe and Kling–Gupta efficiency scores*. Hydrology and Earth System Sciences, 23, 4323-4331.
+   — KGE 优于 NSE 的理论依据（必引）
+
+### 地球科学 Agentic 系统
+
+10. Lee et al. (2025). GeoLLM-Squad. *Accelerating earth science discovery via multi-agent LLM systems*. Frontiers in AI. https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1674927/full
+    — 实验设计参照：Correctness Rate + Token Cost + 消融实验框架
+
+11. GeoEvolve (2025). *Automating Geospatial Model Discovery via Multi-Agent Large Language Models*. arXiv. https://arxiv.org/html/2509.21593v1
+
+### Agentic 系统评估方法论
+
+12. Liu et al. (2023). *AgentBench: Evaluating LLMs as Agents*. ICLR 2024. https://arxiv.org/abs/2308.03688
+    — 工具调用序列正确率的评估框架参照
+
+### 其他水文 / LLM 相关
+
+13. AI-driven multi-agent water resource planning (2025). Journal of Hydroinformatics. https://iwaponline.com/jh/article/27/7/1217/108550/
 
 ---
 

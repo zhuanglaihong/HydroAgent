@@ -18,10 +18,19 @@ from hydroclaw.memory import Memory
 from hydroclaw.skill_registry import SkillRegistry
 from hydroclaw.skill_states import SkillStateManager
 from hydroclaw.tools import discover_tools, get_tool_schemas
-from hydroclaw.utils.context_utils import estimate_tokens, truncate_tool_result
+from hydroclaw.utils.context_utils import estimate_tokens, truncate_tool_result, semantic_truncate
 from hydroclaw.interface.ui import ConsoleUI
 
 logger = logging.getLogger(__name__)
+
+
+def _deep_merge(base: dict, override: dict) -> None:
+    """Recursively merge *override* into *base* in-place."""
+    for k, v in override.items():
+        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
 
 
 class HydroClaw:
@@ -36,8 +45,12 @@ class HydroClaw:
         config_path: str | Path | None = None,
         workspace: Path | None = None,
         ui: ConsoleUI | None = None,
+        config_override: dict | None = None,
+        prompt_mode: str = "full",
     ):
         self.cfg = load_config(config_path)
+        if config_override:
+            _deep_merge(self.cfg, config_override)
         self.llm = LLMClient(self.cfg["llm"])
         self.memory = Memory(workspace or Path("."))
         self.tools = discover_tools()
@@ -47,6 +60,10 @@ class HydroClaw:
         self.ui = ui or ConsoleUI(mode="user")
         self._pause_requested = False   # set by request_pause(); checked between turns
         self._stop_requested  = False   # set by request_stop(); stops after current tool
+        # Prompt mode: "full" injects domain knowledge + memory + basin profiles.
+        # "minimal" keeps only core system prompt + skills + adapter docs — faster
+        # and cheaper for sub-agent / batch scenarios where domain context isn't needed.
+        self._prompt_mode = prompt_mode
 
         skills_dir = Path(__file__).parent / "skills"
         self.skill_registry = SkillRegistry(skills_dir)
@@ -163,9 +180,13 @@ class HydroClaw:
             with self.ui.thinking(turn + 1):
                 response = self.llm.chat(messages, tools=self.tool_schemas)
 
-            # Emit reasoning text (thought before tool calls) if available
-            if response.tool_calls and response.text and hasattr(self.ui, "on_thought"):
-                self.ui.on_thought(response.text, turn + 1)
+            # Emit reasoning/thinking content if present (reasoning models only).
+            # Only show text that accompanies tool calls if the model explicitly produced it
+            # (e.g. extended thinking or a dialogue model that writes reasoning inline).
+            # Do NOT synthesise fallback notes — an empty block is better than noise.
+            thought = response.thinking or (response.text if response.tool_calls else None)
+            if thought and hasattr(self.ui, "on_thought"):
+                self.ui.on_thought(thought, turn + 1)
 
             if response.is_text():
                 tok = self.llm.tokens.summary()
@@ -343,46 +364,62 @@ class HydroClaw:
     _MAX_SYSTEM_CHARS   = 20_000  # total system prompt cap — warn if exceeded
     _WARN_CONTEXT_TOKENS = 30_000 # warn if initial context already exceeds this
 
-    def _build_context(self, query: str, prior_messages: list[dict] | None = None) -> list[dict]:
-        """Build initial message context: system prompt + domain knowledge + skills + memory.
+    def _build_system_prompt(self, query: str) -> str:
+        """Compose the system prompt from modular sections.
 
-        P3 change: skill content is NO LONGER injected here. Only a skill list with
-        file paths is provided. The agent reads the relevant skill.md at runtime via
-        read_file, which makes skill selection an active decision rather than passive
-        information reception.
+        Prompt modes
+        ------------
+        full    -- all sections: core + skills + adapters + domain + basin + memory.
+                   Use for interactive sessions and single-basin tasks.
+        minimal -- core + skills + adapters only.
+                   Use for sub-agent calls, batch inner loops, or token-budget runs
+                   where domain context is already embedded in the task description.
         """
-        system = self._load_system_prompt()
-        domain_knowledge = self._load_domain_knowledge(query)
+        parts: list[str] = []
+
+        # ── Section 1: Core identity & instructions (always included) ──────────
+        parts.append(self._load_system_prompt())
+
+        # ── Section 2: Available skills index (always included) ─────────────────
         available_skills = self.skill_registry.available_skills_prompt(self.skill_states)
-        memory = self.memory.load_knowledge()
-        if len(memory) > self._MAX_MEMORY_CHARS:
-            memory = memory[:self._MAX_MEMORY_CHARS] + "\n...(memory truncated to avoid context overflow)"
-            logger.warning("Memory truncated to %d chars in _build_context", self._MAX_MEMORY_CHARS)
+        if available_skills:
+            parts.append(available_skills)
 
-        # Load basin profiles for any 8-digit basin IDs mentioned in the query
-        basin_ids_in_query = re.findall(r'\b\d{8}\b', query)
-        basin_profiles = self.memory.format_basin_profiles_for_context(basin_ids_in_query)
-        if len(basin_profiles) > self._MAX_PROFILE_CHARS:
-            basin_profiles = basin_profiles[:self._MAX_PROFILE_CHARS] + "\n...(profile truncated)"
-            logger.warning("Basin profiles truncated to %d chars", self._MAX_PROFILE_CHARS)
-
-        # Adapter skill docs (hydromodel usage, supported models, workflow)
+        # ── Section 3: Package adapter skill docs (always included) ─────────────
         from hydroclaw.adapters import get_all_skill_docs
         adapter_docs = get_all_skill_docs()
-
-        system_content = system
-        if available_skills:
-            system_content += "\n\n" + available_skills
         if adapter_docs:
-            system_content += "\n\n## Package Adapter Skills\n" + "\n---\n".join(adapter_docs)
-        if domain_knowledge:
-            system_content += "\n\n## Domain Knowledge\n" + domain_knowledge
-        if basin_profiles:
-            system_content += "\n\n" + basin_profiles
-        if memory:
-            system_content += "\n\n## Memory (from previous sessions)\n" + memory
+            parts.append("## Package Adapter Skills\n" + "\n---\n".join(adapter_docs))
 
-        # Sanity check: warn if system prompt is abnormally large
+        if self._prompt_mode == "minimal":
+            logger.info("[agent] prompt_mode=minimal: skipping domain/basin/memory sections")
+        else:
+            # ── Section 4: Domain knowledge (full mode only) ─────────────────────
+            domain_knowledge = self._load_domain_knowledge(query)
+            if domain_knowledge:
+                parts.append(
+                    "## Domain Knowledge\n"
+                    + semantic_truncate(domain_knowledge, self._MAX_MEMORY_CHARS, "domain knowledge")
+                )
+
+            # ── Section 5: Basin profiles (full mode only) ────────────────────────
+            basin_ids_in_query = re.findall(r'\b\d{8}\b', query)
+            basin_profiles = self.memory.format_basin_profiles_for_context(basin_ids_in_query)
+            if basin_profiles:
+                parts.append(
+                    semantic_truncate(basin_profiles, self._MAX_PROFILE_CHARS, "basin profiles")
+                )
+
+            # ── Section 6: Cross-session memory (full mode only) ──────────────────
+            memory = self.memory.load_knowledge()
+            if memory:
+                parts.append(
+                    "## Memory (from previous sessions)\n"
+                    + semantic_truncate(memory, self._MAX_MEMORY_CHARS, "memory")
+                )
+
+        system_content = "\n\n".join(p for p in parts if p)
+
         if len(system_content) > self._MAX_SYSTEM_CHARS:
             logger.error(
                 "System prompt is abnormally large: %d chars (~%d est. tokens). "
@@ -394,13 +431,16 @@ class HydroClaw:
                 f"(~{len(system_content)//3:,} est. tokens). May hit API limits."
             )
 
+        return system_content
+
+    def _build_context(self, query: str, prior_messages: list[dict] | None = None) -> list[dict]:
+        """Build initial message context from the modular system prompt + conversation history."""
+        system_content = self._build_system_prompt(query)
         messages = [{"role": "system", "content": system_content}]
-        # Inject recent web chat history so agent remembers previous results
         if prior_messages:
             messages.extend(prior_messages)
         messages.append({"role": "user", "content": query})
 
-        # Pre-flight token budget check
         est = estimate_tokens(messages)
         if est > self._WARN_CONTEXT_TOKENS:
             logger.warning(

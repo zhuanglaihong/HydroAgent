@@ -25,6 +25,9 @@ from pathlib import Path
 class PackageAdapter(ABC):
     name: str = ""
     priority: int = 0  # higher wins; equal priority sorted by name
+    description: str = ""          # one-line description shown in Web UI
+    zh_label: str = ""             # Chinese display name for Web UI (falls back to name)
+    zh_operations: dict = {}       # operation -> Chinese label, e.g. {"derive_formula": "推导产流公式"}
 
     # ── Required: routing ─────────────────────────────────────────────────────
 

@@ -3,23 +3,33 @@ Experiment 2 - LLM Calibration vs Standard vs Zhu et al. (Hybrid Agent+Script)
 ================================================================================
 Purpose: Validate HydroClaw's LLM parameter-range adjustment mechanism against
          standard SCE-UA and the Zhu et al. 2026 direct-proposal baseline.
-Method:  Three-arm comparison:
-  A. Standard SCE-UA (agent-driven)           <- baseline
-  B. Zhu et al. 2026 (scripted)              <- external reference (must be scripted
-                                                to faithfully reproduce the method)
-  C. HydroClaw LLM range adjustment (agent-driven) <- our method
 
-Note on Method B:  Zhu et al.'s "LLM as optimizer" approach requires precise
-  control over LLM prompt format, narrow parameter ranges (+-3%), and iteration
-  counting. This cannot be expressed as a free-form NL query without changing
-  the method semantics. Method B is intentionally kept as a scripted reference.
+Method - three arms:
+  A. Standard SCE-UA (agent-driven, N_SEEDS_A=3 runs -> mean+/-std)
+  B. Zhu et al. 2026 (scripted, single run)
+  C1. HydroClaw LLM range adjustment - primary LLM (agent-driven, single run)
+  C2. HydroClaw LLM range adjustment - alternative LLM (agent-driven, single run)
+      [Set C2_MODEL to enable; skip if None]
 
-Basins: Gallatin (semiarid/mountain) + Cowhouse (semiarid/flashy) + Fish River
-        (control). Semi-arid basins are chosen for clear boundary effects.
+Statistical design:
+  - Method A: 3 independent runs to establish SCE-UA variance (mean+/-std baseline)
+  - Method B: single scripted run (scipy-based, internal iterations cover variance)
+  - Method C1/C2: single run each (multi-round LLM iteration already provides variance
+    via NSE trajectory; adding 3 repeats would be prohibitively expensive)
+  - Primary metric: KGE; secondary: NSE
+  - Key comparison: C_kge APPROX= A_kge (automation equivalence, not superiority)
+    consistent with Zhu et al. 2026 finding (LLM value = convergence speed/automation)
+
+LLM comparison (C1 vs C2):
+  - Tests whether reasoning-type LLMs (e.g., DeepSeek-R1) outperform dialogue-type
+    LLMs (e.g., Qwen) in detecting parameter boundary effects
+  - Set C2_MODEL and optionally C2_BASE_URL to enable
+
+Basins: Fish River (humid_cold control), Smith River (mediterranean),
+        Gallatin River (semiarid_mountain, GR4J structural mismatch case)
 
 Paper:   Section 4.3 - LLM Calibration Comparison
 Reference: Zhu et al. 2026 (GRL), doi:10.1029/2025GL120043
-           NHRI 2025, doi:10.14042/j.cnki.32.1309.2025.05.009
 """
 
 import sys
@@ -29,10 +39,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import json
 import logging
 import re
+import statistics
 import time
 import tempfile
 from datetime import datetime
-from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
@@ -46,27 +56,25 @@ BASINS = [
     ("11532500", "Smith River, CA",     "mediterranean"),
     ("06043500", "Gallatin River, MT",  "semiarid_mountain"),
 ]
-# Design rationale (revised):
-# - GR4J (4 params): well-studied, established defaults, LLM has strong prior knowledge.
-#   GR5J was dropped because extra param didn't add experimental value once framing
-#   shifted from "who gets higher NSE" to "autonomous workflow demonstration".
-# - NSE_TARGET=0.80: above GR4J baseline for Fish (~0.789), forces Method C to run
-#   multiple LLM-guided rounds rather than stopping at round 1. Key: we want to see
-#   C autonomously detect "not there yet" and keep adjusting — not a trivial early stop.
-# - Gallatin (semiarid_mountain): GR4J NSE≈-0.12, structurally poor fit.
-#   Shows agent correctly escalates to llm_calibrate and persists, even when
-#   the model-basin mismatch limits achievable NSE regardless of calibration method.
-# - Core comparison metric: tool_sequence correctness and automation (0 human loops),
-#   NOT NSE superiority. C≈A in NSE is the EXPECTED and ACCEPTABLE outcome,
-#   consistent with Zhu et al. 2026 (DeepSeek-R1 NSE == SCE-UA NSE, 32% fewer evals).
 
 MODEL = "gr4j"
 ZHU_MAX_ITERS = 15
 LLM_MAX_ROUNDS = 5
 NSE_TARGET = 0.80
-# SCE-UA budget constants — used to compute total evaluations for efficiency comparison
-SCE_UA_REP_DEFAULT = 750   # A method: single run rep
-SCE_UA_NGS_DEFAULT = 200   # A method: ngs
+
+# Method A repetitions: 3 independent runs for mean+/-std baseline
+N_SEEDS_A = 3
+
+# Method C LLM comparison:
+#   C1 = primary LLM from config (loaded automatically)
+#   C2 = alternative LLM model name; set to None to skip
+#   Example: C2_MODEL = "deepseek-reasoner"
+C2_MODEL = None
+C2_BASE_URL = None  # set if C2 uses a different API endpoint
+
+# SCE-UA budget constants (for total evaluation count comparison)
+SCE_UA_REP_DEFAULT = 750
+SCE_UA_NGS_DEFAULT = 200
 OUTPUT_DIR = Path("results/paper/exp2")
 
 
@@ -84,27 +92,37 @@ def setup_logging():
     )
 
 
-# ── Log extraction helpers (shared with Exp1 pattern) ────────────────────────
+# ── Failure classification (shared with Exp1 pattern) ────────────────────────
+
+def _classify_failure(record: dict) -> str:
+    if record.get("success"):
+        return "none"
+    tools = set(record.get("tool_sequence", []))
+    err = str(record.get("error", "")).lower()
+    if "calibrate_model" not in tools and "llm_calibrate" not in tools:
+        return "WRONG_SKILL"
+    if "context" in err or "token" in err or "too long" in err:
+        return "CONTEXT_OVERFLOW"
+    if "calibration" in err or "optimizer" in err or "nan" in err:
+        return "CALIBRATION_ERR"
+    if "evaluation" in err or "metrics" in err or "yaml" in err:
+        return "EVALUATION_ERR"
+    return "AGENT_ERROR"
+
+
+# ── Log extraction helpers ────────────────────────────────────────────────────
 
 def _extract_from_log(memory_log: list[dict]) -> dict:
-    """Extract calibration_dir, best_params, tool_sequence from agent memory log.
-
-    Handles two cases:
-    - llm_calibrate succeeded: extract best_nse, rounds, nse_history directly
-    - llm_calibrate failed (timeout/error): agent may have fallen back to calibrate_model;
-      extract calibration_dir from the best successful calibrate_model call instead,
-      and record llm_calibrate_failed=True
-    """
     result = {
         "calibration_dir": "",
         "best_params": {},
         "tool_sequence": [],
         "llm_calibrate_best_nse": None,
+        "llm_calibrate_best_kge": None,
         "nse_history": [],
         "rounds": None,
         "llm_calibrate_failed": False,
     }
-    # Track all successful calibrate_model dirs to fall back to first if needed
     calibrate_model_dirs = []
 
     for entry in memory_log:
@@ -116,7 +134,6 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
 
         if tool == "llm_calibrate":
             if r.get("success"):
-                # llm_calibrate succeeded: take its data and clear any earlier failure flag
                 cal_dir = r.get("calibration_dir", "")
                 if cal_dir:
                     result["calibration_dir"] = str(cal_dir)
@@ -124,11 +141,10 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
                 result["llm_calibrate_best_nse"] = r.get("best_nse")
                 result["rounds"] = r.get("rounds")
                 result["nse_history"] = r.get("nse_history", [])
-                result["llm_calibrate_failed"] = False  # reset: earlier failure was retried
+                result["llm_calibrate_failed"] = False
             elif r.get("error"):
-                # llm_calibrate failed (wrong args, timeout, etc.)
                 result["llm_calibrate_failed"] = True
-                logger.warning(f"llm_calibrate failed in log: {r.get('error', '')[:100]}")
+                logger.warning(f"llm_calibrate failed: {r.get('error', '')[:100]}")
 
         elif tool == "calibrate_model" and r.get("success"):
             cal_dir = r.get("calibration_dir", "")
@@ -136,23 +152,18 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
                 calibrate_model_dirs.append(str(cal_dir))
             result["best_params"] = r.get("best_params", {})
 
-    # If calibration_dir still empty (no llm_calibrate, or all llm_calibrate failed),
-    # fall back to the last successful calibrate_model dir
     if not result["calibration_dir"] and calibrate_model_dirs:
         result["calibration_dir"] = calibrate_model_dirs[-1]
-        logger.info(f"Using calibrate_model fallback calibration_dir: {calibrate_model_dirs[-1]}")
 
     return result
 
 
 def _evaluate_from_disk(cal_dir: str, cfg: dict) -> tuple[dict, dict]:
-    """Read calibration config and evaluate train + test periods from disk."""
     from hydroclaw.skills.evaluation.evaluate import evaluate_model
     try:
         import yaml
         config_file = Path(cal_dir) / "calibration_config.yaml"
         if not config_file.exists():
-            logger.warning(f"calibration_config.yaml not found in {cal_dir}")
             return {}, {}
         with open(config_file, encoding="utf-8") as f:
             config = yaml.safe_load(f)
@@ -169,272 +180,6 @@ def _evaluate_from_disk(cal_dir: str, cfg: dict) -> tuple[dict, dict]:
     except Exception as e:
         logger.warning(f"Post-run evaluation failed for {cal_dir}: {e}")
         return {}, {}
-
-
-# ── Method B: Zhu et al. 2026 (scripted) ─────────────────────────────────────
-
-def _zhu_method(basin_id: str, model_name: str, llm, cfg: dict, output_dir: str) -> dict:
-    """Reproduce Zhu et al. 2026: LLM directly proposes parameter values, iteratively.
-
-    This is kept as a scripted method (not agent-driven) because:
-    1. The method requires tight control over LLM prompt format and temperature
-    2. The narrow range trick (+-3% span) must be applied programmatically
-    3. Expressing this as a natural language query would change method semantics
-
-    Implementation:
-    1. LLM proposes specific parameter values from physical knowledge + history
-    2. Values are converted to a +-3% range, passed to scipy calibration
-    3. Best NSE across ZHU_MAX_ITERS iterations is recorded
-    """
-    from hydroclaw.skills.calibration.calibrate import calibrate_model
-    from hydroclaw.skills.evaluation.evaluate import evaluate_model
-    from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
-    import yaml
-
-    param_ranges = DEFAULT_PARAM_RANGES.get(model_name, {})
-    history = []
-    best_nse = -999.0
-    best_result = {}
-
-    for iteration in range(ZHU_MAX_ITERS):
-        # LLM proposes parameter values
-        history_text = "\n".join(
-            f"  Iter {h['iter']}: proposed={h['proposed']}  NSE={h['nse']:.4f}"
-            for h in history[-5:]
-        ) if history else "(no previous iterations)"
-
-        prompt = (
-            f"You are calibrating a {model_name.upper()} hydrological model for basin {basin_id}.\n"
-            f"Parameter physical ranges: {json.dumps(param_ranges)}\n\n"
-            f"Previous iterations:\n{history_text}\n\n"
-            f"Based on the history and hydrological knowledge, propose specific parameter VALUES "
-            f"to maximize Nash-Sutcliffe Efficiency (NSE). "
-            f"Reply ONLY with a JSON object like: "
-            f'{{"{list(param_ranges.keys())[0]}": 250.0, ...}}'
-        )
-        messages = [
-            {"role": "system", "content": "Expert hydrologist. Reply with valid JSON only."},
-            {"role": "user", "content": prompt},
-        ]
-
-        try:
-            response = llm._chat_text(messages, temperature=0.2)
-            text = response.text or ""
-            match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
-            if not match:
-                logger.warning(f"Zhu iter {iteration}: no JSON found in LLM response: {text[:200]}")
-                continue
-            proposed = json.loads(match.group())
-        except Exception as e:
-            logger.warning(f"Zhu iter {iteration}: LLM parse error: {e}")
-            continue
-
-        # Log LLM's actual proposal to verify it's proposing diverse values
-        logger.info(f"  Zhu iter {iteration}: LLM proposed: {proposed}")
-
-        # Convert proposed values to narrow +-3% range
-        tight_ranges = {}
-        param_names = []
-        for k, v in proposed.items():
-            if k not in param_ranges:
-                continue
-            lo, hi = param_ranges[k]
-            margin = (hi - lo) * 0.03
-            r_lo = max(lo, float(v) - margin)
-            r_hi = min(hi, float(v) + margin)
-            if r_lo >= r_hi:
-                r_lo, r_hi = lo, hi
-            tight_ranges[k] = [r_lo, r_hi]
-            param_names.append(k)
-
-        if not tight_ranges:
-            continue
-
-        range_yaml = {
-            model_name: {
-                "param_name": param_names,
-                "param_range": tight_ranges,
-            }
-        }
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
-        ) as tf:
-            yaml.dump(range_yaml, tf, allow_unicode=True)
-            range_file = tf.name
-
-        # Use scipy method from config (default: SLSQP), keep iterations low (point evaluation)
-        scipy_method = cfg.get("algorithms", {}).get("scipy", {}).get("method", "SLSQP")
-        iter_dir = str(Path(output_dir) / f"iter_{iteration:02d}")
-        result = calibrate_model(
-            basin_ids=[basin_id],
-            model_name=model_name,
-            algorithm="scipy",
-            param_range_file=range_file,
-            output_dir=iter_dir,
-            algorithm_params={"method": scipy_method, "max_iterations": 30},
-            _cfg=cfg,
-        )
-
-        # calibrate_model does not return NSE - must call evaluate_model explicitly
-        nse = -999.0
-        if result.get("success") and result.get("calibration_dir"):
-            evl = evaluate_model(
-                calibration_dir=result["calibration_dir"],
-                eval_period=result.get("train_period"),
-                _cfg=cfg,
-            )
-            if evl.get("success"):
-                v = evl.get("metrics", {}).get("NSE", -999.0)
-                nse = v if isinstance(v, float) else -999.0
-
-        history.append({
-            "iter": iteration,
-            "proposed": proposed,           # LLM's original proposal (for history context)
-            "params": result.get("best_params", proposed),  # scipy result within narrow range
-            "nse": nse,
-        })
-
-        if nse > best_nse:
-            best_nse = nse
-            best_result = result
-
-        logger.info(f"  Zhu iter {iteration}: train NSE={nse:.4f}")
-
-        if isinstance(nse, float) and nse >= NSE_TARGET:
-            logger.info(f"  Zhu: target NSE reached at iter {iteration}")
-            break
-
-    return {
-        "success": bool(best_result.get("success")),
-        "best_nse": best_nse if best_nse > -998.0 else None,
-        "best_params": best_result.get("best_params", {}),
-        "calibration_dir": best_result.get("calibration_dir", ""),
-        "train_period": best_result.get("train_period"),
-        "test_period": best_result.get("test_period"),
-        "iterations": len(history),
-        "nse_history": [h["nse"] for h in history],
-        "proposed_history": [h["proposed"] for h in history],  # for diversity analysis
-        "method": "zhu_direct_propose",
-        "scipy_method": scipy_method,  # record which scipy method was used
-    }
-
-
-# ── Method A and C: Agent-driven runners ─────────────────────────────────────
-
-def _run_method_a(basin_id: str, cfg: dict) -> dict:
-    """Method A: Standard SCE-UA via HydroClaw agent.
-
-    Agent autonomously performs: validate_basin -> calibrate_model -> evaluate_model.
-    """
-    from hydroclaw.agent import HydroClaw
-    from hydroclaw.interface.ui import ConsoleUI
-
-    task_workspace = OUTPUT_DIR / f"A_{MODEL}_{basin_id}"
-    task_workspace.mkdir(parents=True, exist_ok=True)
-
-    query = (
-        f"请率定GR4J模型，流域{basin_id}，使用SCE-UA算法，"
-        f"输出目录保存在 {task_workspace}。"
-        f"完成后评估训练期和测试期NSE指标。"
-    )
-
-    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
-    t0 = time.time()
-    try:
-        agent.run(query)
-    except Exception as e:
-        logger.error(f"Method A agent error for {basin_id}: {e}", exc_info=True)
-        return {"success": False, "error": str(e), "calibration_time_s": round(time.time() - t0, 2)}
-
-    cal_time = round(time.time() - t0, 2)
-    log_info = _extract_from_log(agent.memory._log)
-
-    entry = {
-        "success": False,
-        "best_params": log_info["best_params"],
-        "tool_sequence": log_info["tool_sequence"],
-        "calibration_time_s": cal_time,
-        "train_metrics": {},
-        "test_metrics": {},
-        "boundary_hits": [],
-    }
-
-    cal_dir = log_info.get("calibration_dir", "")
-    if cal_dir and Path(cal_dir).exists():
-        train_m, test_m = _evaluate_from_disk(cal_dir, cfg)
-        entry["train_metrics"] = train_m
-        entry["test_metrics"] = test_m
-        entry["success"] = bool(train_m.get("NSE") is not None)
-
-    # Detect parameter boundary hits
-    if entry["best_params"]:
-        from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
-        entry["boundary_hits"] = _detect_boundaries(
-            entry["best_params"], MODEL, DEFAULT_PARAM_RANGES
-        )
-
-    return entry
-
-
-def _run_method_c(basin_id: str, cfg: dict, llm) -> dict:
-    """Method C: HydroClaw LLM range adjustment via agent.
-
-    Agent uses llm_calibrate tool with iterative range adjustment.
-    Query is phrased to trigger the llm_calibration skill.
-    """
-    from hydroclaw.agent import HydroClaw
-    from hydroclaw.interface.ui import ConsoleUI
-
-    task_workspace = OUTPUT_DIR / f"C_{MODEL}_{basin_id}"
-    task_workspace.mkdir(parents=True, exist_ok=True)
-
-    query = (
-        f"请用LLM智能率定GR4J模型，流域{basin_id}，目标NSE>={NSE_TARGET}，"
-        f"最多{LLM_MAX_ROUNDS}轮参数范围调整，使用SCE-UA算法，"
-        f"输出目录保存在 {task_workspace}。"
-        f"完成后评估训练期和测试期NSE。"
-    )
-
-    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
-    t0 = time.time()
-    try:
-        agent.run(query)
-    except Exception as e:
-        logger.error(f"Method C agent error for {basin_id}: {e}", exc_info=True)
-        return {"success": False, "error": str(e), "calibration_time_s": round(time.time() - t0, 2)}
-
-    cal_time = round(time.time() - t0, 2)
-    log_info = _extract_from_log(agent.memory._log)
-
-    entry = {
-        "success": False,
-        "best_nse": log_info.get("llm_calibrate_best_nse"),
-        "best_params": log_info["best_params"],
-        "rounds": log_info.get("rounds"),   # None if llm_calibrate failed
-        "tool_sequence": log_info["tool_sequence"],
-        "calibration_time_s": cal_time,
-        "test_metrics": {},
-        "nse_history": log_info.get("nse_history", []),  # from result_summary directly
-        "llm_calibrate_failed": log_info.get("llm_calibrate_failed", False),
-    }
-
-    # Record if agent didn't call llm_calibrate at all, or if it failed
-    if "llm_calibrate" not in log_info["tool_sequence"]:
-        entry["error"] = "Agent did not call llm_calibrate (wrong skill selected)"
-        logger.warning(f"Method C: agent did not call llm_calibrate for {basin_id}")
-    elif log_info.get("llm_calibrate_failed"):
-        entry["error"] = "llm_calibrate timed out; agent fell back to direct calibrate_model"
-        logger.warning(f"Method C: llm_calibrate failed for {basin_id}, using fallback calibration_dir")
-
-    cal_dir = log_info.get("calibration_dir", "")
-    if cal_dir and Path(cal_dir).exists():
-        _, test_m = _evaluate_from_disk(cal_dir, cfg)
-        entry["test_metrics"] = test_m
-        entry["success"] = bool(
-            entry.get("best_nse") is not None or test_m.get("NSE") is not None
-        )
-
-    return entry
 
 
 # ── Boundary detection ────────────────────────────────────────────────────────
@@ -458,6 +203,352 @@ def _detect_boundaries(best_params: dict, model_name: str, default_ranges: dict)
     return hits
 
 
+# ── Aggregation for Method A (N_SEEDS_A runs) ────────────────────────────────
+
+def _stats(vals: list) -> dict:
+    clean = [v for v in vals if isinstance(v, (int, float))]
+    if not clean:
+        return {"mean": None, "std": None, "n": 0}
+    mean = statistics.mean(clean)
+    std = statistics.stdev(clean) if len(clean) > 1 else 0.0
+    return {"mean": round(mean, 4), "std": round(std, 4), "n": len(clean)}
+
+
+def _aggregate_method_a(runs: list[dict]) -> dict:
+    success_runs = [r for r in runs if r["success"]]
+    return {
+        "n_runs": len(runs),
+        "n_success": len(success_runs),
+        # KGE primary
+        "kge_train": _stats([r["train_metrics"].get("KGE") for r in success_runs]),
+        "kge_test":  _stats([r["test_metrics"].get("KGE")  for r in success_runs]),
+        # NSE secondary
+        "nse_train": _stats([r["train_metrics"].get("NSE") for r in success_runs]),
+        "nse_test":  _stats([r["test_metrics"].get("NSE")  for r in success_runs]),
+        "wall_time_s_mean": round(statistics.mean(r["wall_time_s"] for r in runs), 1),
+        "total_tokens_sum": sum(r.get("total_tokens", 0) for r in runs),
+        "boundary_hits_any": [h for r in success_runs for h in r.get("boundary_hits", [])],
+        "failure_types": [_classify_failure(r) for r in runs if not r["success"]],
+        "tool_sequences": [r.get("tool_sequence", []) for r in runs],
+    }
+
+
+# ── Method B: Zhu et al. 2026 (scripted) ─────────────────────────────────────
+
+def _zhu_method(basin_id: str, model_name: str, llm, cfg: dict, output_dir: str) -> dict:
+    """Reproduce Zhu et al. 2026: LLM directly proposes parameter values, iteratively.
+
+    Scripted (not agent-driven) to faithfully reproduce the external method:
+    tight range (+-3% span) trick must be applied programmatically.
+    """
+    from hydroclaw.skills.calibration.calibrate import calibrate_model
+    from hydroclaw.skills.evaluation.evaluate import evaluate_model
+    from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
+    import yaml
+
+    param_ranges = DEFAULT_PARAM_RANGES.get(model_name, {})
+    history = []
+    best_nse = -999.0
+    best_kge = -999.0
+    best_result = {}
+
+    for iteration in range(ZHU_MAX_ITERS):
+        history_text = "\n".join(
+            f"  Iter {h['iter']}: proposed={h['proposed']}  NSE={h['nse']:.4f}  KGE={h.get('kge', 'N/A')}"
+            for h in history[-5:]
+        ) if history else "(no previous iterations)"
+
+        prompt = (
+            f"You are calibrating a {model_name.upper()} hydrological model for basin {basin_id}.\n"
+            f"Parameter physical ranges: {json.dumps(param_ranges)}\n\n"
+            f"Previous iterations:\n{history_text}\n\n"
+            f"Based on the history and hydrological knowledge, propose specific parameter VALUES "
+            f"to maximize Nash-Sutcliffe Efficiency (NSE). "
+            f"Reply ONLY with a JSON object like: "
+            f'{{"{list(param_ranges.keys())[0]}": 250.0, ...}}'
+        )
+        messages = [
+            {"role": "system", "content": "Expert hydrologist. Reply with valid JSON only."},
+            {"role": "user", "content": prompt},
+        ]
+
+        try:
+            response = llm._chat_text(messages, temperature=0.2)
+            text = response.text or ""
+            match = re.search(r"\{[^{}]+\}", text, re.DOTALL)
+            if not match:
+                logger.warning(f"Zhu iter {iteration}: no JSON found in response")
+                continue
+            proposed = json.loads(match.group())
+        except Exception as e:
+            logger.warning(f"Zhu iter {iteration}: LLM parse error: {e}")
+            continue
+
+        logger.info(f"  Zhu iter {iteration}: LLM proposed: {proposed}")
+
+        tight_ranges = {}
+        param_names = []
+        for k, v in proposed.items():
+            if k not in param_ranges:
+                continue
+            lo, hi = param_ranges[k]
+            margin = (hi - lo) * 0.03
+            r_lo = max(lo, float(v) - margin)
+            r_hi = min(hi, float(v) + margin)
+            if r_lo >= r_hi:
+                r_lo, r_hi = lo, hi
+            tight_ranges[k] = [r_lo, r_hi]
+            param_names.append(k)
+
+        if not tight_ranges:
+            continue
+
+        range_yaml = {model_name: {"param_name": param_names, "param_range": tight_ranges}}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+        ) as tf:
+            yaml.dump(range_yaml, tf, allow_unicode=True)
+            range_file = tf.name
+
+        scipy_method = cfg.get("algorithms", {}).get("scipy", {}).get("method", "SLSQP")
+        iter_dir = str(Path(output_dir) / f"iter_{iteration:02d}")
+        result = calibrate_model(
+            basin_ids=[basin_id],
+            model_name=model_name,
+            algorithm="scipy",
+            param_range_file=range_file,
+            output_dir=iter_dir,
+            algorithm_params={"method": scipy_method, "max_iterations": 30},
+            _cfg=cfg,
+        )
+
+        nse, kge = -999.0, -999.0
+        if result.get("success") and result.get("calibration_dir"):
+            evl = evaluate_model(
+                calibration_dir=result["calibration_dir"],
+                eval_period=result.get("train_period"),
+                _cfg=cfg,
+            )
+            if evl.get("success"):
+                m = evl.get("metrics", {})
+                v = m.get("NSE", -999.0)
+                nse = v if isinstance(v, float) else -999.0
+                v = m.get("KGE", -999.0)
+                kge = v if isinstance(v, float) else -999.0
+
+        history.append({
+            "iter": iteration,
+            "proposed": proposed,
+            "params": result.get("best_params", proposed),
+            "nse": nse,
+            "kge": kge,
+        })
+
+        if kge > best_kge:
+            best_kge = kge
+            best_result = result
+        if nse > best_nse:
+            best_nse = nse
+
+        logger.info(f"  Zhu iter {iteration}: train NSE={nse:.4f}  KGE={kge:.4f}")
+
+        if isinstance(nse, float) and nse >= NSE_TARGET:
+            logger.info(f"  Zhu: target NSE reached at iter {iteration}")
+            break
+
+    return {
+        "success": bool(best_result.get("success")),
+        "best_nse": best_nse if best_nse > -998.0 else None,
+        "best_kge": best_kge if best_kge > -998.0 else None,
+        "best_params": best_result.get("best_params", {}),
+        "calibration_dir": best_result.get("calibration_dir", ""),
+        "train_period": best_result.get("train_period"),
+        "iterations": len(history),
+        "nse_history": [h["nse"] for h in history],
+        "kge_history": [h["kge"] for h in history],
+        "proposed_history": [h["proposed"] for h in history],
+        "method": "zhu_direct_propose",
+    }
+
+
+# ── Method A: Standard SCE-UA (agent-driven, N_SEEDS_A runs) ─────────────────
+
+def _run_method_a_single(basin_id: str, run_idx: int, cfg: dict) -> dict:
+    """One independent run of Method A (standard SCE-UA via agent)."""
+    from hydroclaw.agent import HydroClaw
+    from hydroclaw.interface.ui import ConsoleUI
+    from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
+
+    task_workspace = OUTPUT_DIR / f"A_{MODEL}_{basin_id}" / f"run{run_idx+1}"
+    task_workspace.mkdir(parents=True, exist_ok=True)
+
+    query = (
+        f"请率定GR4J模型，流域{basin_id}，使用SCE-UA算法，"
+        f"输出目录保存在 {task_workspace}。"
+        f"完成后评估训练期和测试期的KGE和NSE指标。"
+    )
+
+    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
+    t0 = time.time()
+    try:
+        agent.run(query)
+    except Exception as e:
+        logger.error(f"Method A run{run_idx+1} error for {basin_id}: {e}", exc_info=True)
+        return {
+            "success": False, "error": str(e),
+            "wall_time_s": round(time.time() - t0, 2), "total_tokens": 0,
+            "train_metrics": {}, "test_metrics": {}, "tool_sequence": [],
+            "boundary_hits": [],
+        }
+
+    wall_time = round(time.time() - t0, 2)
+    try:
+        tok = agent.llm.tokens.summary()
+        total_tokens = tok.get("total_tokens", 0)
+    except Exception:
+        total_tokens = 0
+
+    log_info = _extract_from_log(agent.memory._log)
+    entry = {
+        "success": False,
+        "best_params": log_info["best_params"],
+        "tool_sequence": log_info["tool_sequence"],
+        "wall_time_s": wall_time,
+        "total_tokens": total_tokens,
+        "train_metrics": {},
+        "test_metrics": {},
+        "boundary_hits": [],
+        "error": None,
+    }
+
+    cal_dir = log_info.get("calibration_dir", "")
+    if cal_dir and Path(cal_dir).exists():
+        train_m, test_m = _evaluate_from_disk(cal_dir, cfg)
+        entry["train_metrics"] = train_m
+        entry["test_metrics"] = test_m
+        entry["success"] = bool(
+            train_m.get("KGE") is not None or train_m.get("NSE") is not None
+        )
+        if not entry["success"]:
+            entry["error"] = "Evaluation failed after calibration"
+    else:
+        entry["error"] = f"No valid calibration_dir (got: '{cal_dir}')"
+
+    if entry.get("best_params"):
+        entry["boundary_hits"] = _detect_boundaries(
+            entry["best_params"], MODEL, DEFAULT_PARAM_RANGES
+        )
+
+    return entry
+
+
+# ── Method C: HydroClaw LLM range adjustment (agent-driven) ──────────────────
+
+def _run_method_c(basin_id: str, cfg: dict, label: str,
+                  model_override: str | None = None,
+                  base_url_override: str | None = None) -> dict:
+    """Method C: LLM-guided range adjustment via HydroClaw agent.
+
+    label: "C1" or "C2" (for workspace naming)
+    model_override: if set, temporarily use this LLM model instead of config default
+    """
+    from hydroclaw.agent import HydroClaw
+    from hydroclaw.interface.ui import ConsoleUI
+
+    task_workspace = OUTPUT_DIR / f"{label}_{MODEL}_{basin_id}"
+    task_workspace.mkdir(parents=True, exist_ok=True)
+
+    # Optionally override LLM config for C2
+    import copy
+    run_cfg = copy.deepcopy(cfg)
+    if model_override:
+        run_cfg["llm"]["model"] = model_override
+        logger.info(f"  Method {label}: using model override = {model_override}")
+    if base_url_override:
+        run_cfg["llm"]["base_url"] = base_url_override
+
+    query = (
+        f"请用LLM智能率定GR4J模型，流域{basin_id}，目标NSE>={NSE_TARGET}，"
+        f"最多{LLM_MAX_ROUNDS}轮参数范围调整，使用SCE-UA算法，"
+        f"输出目录保存在 {task_workspace}。"
+        f"完成后评估训练期和测试期的KGE和NSE指标。"
+    )
+
+    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"), config_override=run_cfg)
+    t0 = time.time()
+    try:
+        agent.run(query)
+    except Exception as e:
+        logger.error(f"Method {label} error for {basin_id}: {e}", exc_info=True)
+        return {
+            "success": False, "error": str(e), "label": label,
+            "wall_time_s": round(time.time() - t0, 2), "total_tokens": 0,
+            "train_metrics": {}, "test_metrics": {}, "tool_sequence": [],
+            "nse_history": [], "rounds": None,
+        }
+
+    wall_time = round(time.time() - t0, 2)
+    try:
+        tok = agent.llm.tokens.summary()
+        total_tokens = tok.get("total_tokens", 0)
+    except Exception:
+        total_tokens = 0
+
+    log_info = _extract_from_log(agent.memory._log)
+    entry = {
+        "success": False,
+        "label": label,
+        "model_used": model_override or cfg.get("llm", {}).get("model", "unknown"),
+        "best_nse": log_info.get("llm_calibrate_best_nse"),
+        "best_params": log_info["best_params"],
+        "rounds": log_info.get("rounds"),
+        "tool_sequence": log_info["tool_sequence"],
+        "wall_time_s": wall_time,
+        "total_tokens": total_tokens,
+        "train_metrics": {},
+        "test_metrics": {},
+        "nse_history": log_info.get("nse_history", []),
+        "llm_calibrate_failed": log_info.get("llm_calibrate_failed", False),
+        "error": None,
+    }
+
+    if "llm_calibrate" not in log_info["tool_sequence"]:
+        entry["error"] = "Agent did not call llm_calibrate (wrong skill selected)"
+        entry["failure_type"] = "WRONG_SKILL"
+    elif log_info.get("llm_calibrate_failed"):
+        entry["error"] = "llm_calibrate failed; agent fell back to calibrate_model"
+
+    cal_dir = log_info.get("calibration_dir", "")
+    if cal_dir and Path(cal_dir).exists():
+        train_m, test_m = _evaluate_from_disk(cal_dir, cfg)
+        entry["train_metrics"] = train_m
+        entry["test_metrics"] = test_m
+        entry["success"] = bool(
+            entry.get("best_nse") is not None
+            or train_m.get("KGE") is not None
+        )
+        # Use KGE as primary final metric
+        if train_m.get("KGE") is not None:
+            entry["best_kge"] = train_m["KGE"]
+
+    if not entry.get("failure_type"):
+        entry["failure_type"] = _classify_failure(entry)
+
+    return entry
+
+
+# ── Evaluation budget estimate ────────────────────────────────────────────────
+
+def _estimate_c_total_evals(rounds: int) -> int:
+    """Estimate total SCE-UA function evaluations for Method C across all rounds."""
+    scales = [1.0, 0.75, 0.60, 0.50]
+    total = 0
+    for i in range(rounds or 0):
+        scale = scales[min(i, len(scales) - 1)]
+        total += int(SCE_UA_REP_DEFAULT * scale)
+    return total
+
+
 # ── Main experiment ───────────────────────────────────────────────────────────
 
 def run_experiment() -> dict:
@@ -469,17 +560,18 @@ def run_experiment() -> dict:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     logger.info(
-        f"LLM config: model={cfg['llm']['model']}, "
-        f"base_url={cfg['llm']['base_url']}, "
-        f"timeout={cfg['llm']['timeout']}s, "
-        f"max_retries={cfg['llm']['max_retries']}"
+        f"LLM: model={cfg['llm']['model']}, base_url={cfg['llm']['base_url']}"
     )
+    if C2_MODEL:
+        logger.info(f"C2 LLM: model={C2_MODEL}, base_url={C2_BASE_URL or '(same)'}")
+    else:
+        logger.info("C2 LLM: not configured (set C2_MODEL to enable)")
 
     results = []
 
     for basin_id, basin_name, climate_zone in BASINS:
         logger.info(f"\n{'='*60}")
-        logger.info(f"Basin: {basin_id} ({basin_name})")
+        logger.info(f"Basin: {basin_id} ({basin_name}, {climate_zone})")
         logger.info(f"{'='*60}")
 
         record = {
@@ -487,82 +579,97 @@ def run_experiment() -> dict:
             "basin_name": basin_name,
             "climate_zone": climate_zone,
             "model": MODEL,
-            "method_A": {},
+            "method_A_runs": [],    # N_SEEDS_A individual runs
+            "method_A_agg": {},     # mean+/-std aggregation
             "method_B": {},
-            "method_C": {},
+            "method_C1": {},
+            "method_C2": {},        # empty dict if C2_MODEL not set
         }
 
-        # Method A: Standard SCE-UA (agent-driven)
-        logger.info("[A] Standard SCE-UA (agent-driven)")
-        a_entry = _run_method_a(basin_id, cfg)
-        record["method_A"] = a_entry
-        logger.info(
-            f"  A: train NSE={a_entry.get('train_metrics', {}).get('NSE', 'N/A')}, "
-            f"test NSE={a_entry.get('test_metrics', {}).get('NSE', 'N/A')}, "
-            f"boundary_hits={len(a_entry.get('boundary_hits', []))}, "
-            f"tools={a_entry.get('tool_sequence', [])}"
-        )
+        # ── Method A: N_SEEDS_A independent runs ──
+        logger.info(f"[A] Standard SCE-UA (agent-driven, {N_SEEDS_A} independent runs)")
+        a_runs = []
+        for run_idx in range(N_SEEDS_A):
+            logger.info(f"  A run {run_idx+1}/{N_SEEDS_A}")
+            a_entry = _run_method_a_single(basin_id, run_idx, cfg)
+            a_runs.append(a_entry)
+            def _f(v): return f"{v:.4f}" if isinstance(v, (int, float)) else "N/A"
+            logger.info(
+                f"  A run{run_idx+1}: KGE={_f(a_entry['train_metrics'].get('KGE'))} "
+                f"NSE={_f(a_entry['train_metrics'].get('NSE'))} "
+                f"boundary_hits={len(a_entry.get('boundary_hits', []))}"
+            )
+        record["method_A_runs"] = a_runs
+        record["method_A_agg"] = _aggregate_method_a(a_runs)
 
-        # Method B: Zhu et al. (scripted - reproduces specific external method)
+        # ── Method B: Zhu et al. (scripted, single run) ──
         logger.info("[B] Zhu et al. 2026 direct parameter proposal (scripted)")
         b_dir = str(OUTPUT_DIR / f"B_{MODEL}_{basin_id}")
         t0 = time.time()
         b_entry = _zhu_method(basin_id, MODEL, llm, cfg, b_dir)
-        b_entry["calibration_time_s"] = round(time.time() - t0, 2)
-
-        # Evaluate train+test for Method B's best iteration
-        b_cal_dir = b_entry.get("calibration_dir", "")
-        if b_entry.get("success") and b_cal_dir and Path(b_cal_dir).exists():
-            b_tr, b_te = _evaluate_from_disk(b_cal_dir, cfg)
+        b_entry["wall_time_s"] = round(time.time() - t0, 2)
+        if b_entry.get("success") and b_entry.get("calibration_dir"):
+            b_tr, b_te = _evaluate_from_disk(b_entry["calibration_dir"], cfg)
             b_entry["train_metrics"] = b_tr
             b_entry["test_metrics"] = b_te
-            b_entry["best_nse"] = b_tr.get("NSE", b_entry.get("best_nse"))
-
         record["method_B"] = b_entry
         logger.info(
-            f"  B: train NSE={b_entry.get('best_nse', 'N/A')}, "
-            f"test NSE={b_entry.get('test_metrics', {}).get('NSE', 'N/A')}, "
-            f"iters={b_entry.get('iterations', 0)}"
+            f"  B: KGE={b_entry.get('best_kge', 'N/A')} "
+            f"NSE={b_entry.get('best_nse', 'N/A')} iters={b_entry.get('iterations', 0)}"
         )
 
-        # Method C: HydroClaw LLM range adjustment (agent-driven)
-        logger.info("[C] HydroClaw LLM range adjustment (agent-driven)")
-        c_entry = _run_method_c(basin_id, cfg, llm)
-        record["method_C"] = c_entry
+        # ── Method C1: HydroClaw LLM range adjustment (primary LLM) ──
+        logger.info("[C1] HydroClaw LLM range adjustment (primary LLM)")
+        c1_entry = _run_method_c(basin_id, cfg, "C1")
+        record["method_C1"] = c1_entry
+        def _f(v): return f"{v:.4f}" if isinstance(v, (int, float)) else "N/A"
         logger.info(
-            f"  C: train NSE={c_entry.get('best_nse', 'N/A')}, "
-            f"test NSE={c_entry.get('test_metrics', {}).get('NSE', 'N/A')}, "
-            f"rounds={c_entry.get('rounds', 0)}, "
-            f"tools={c_entry.get('tool_sequence', [])}"
+            f"  C1: KGE={_f(c1_entry.get('best_kge'))} "
+            f"NSE={_f(c1_entry.get('best_nse'))} "
+            f"rounds={c1_entry.get('rounds', 0)} model={c1_entry.get('model_used', '?')}"
         )
 
-        # Delta comparisons
-        nse_a = a_entry.get("train_metrics", {}).get("NSE")
-        nse_b = b_entry.get("best_nse")
-        nse_c = c_entry.get("best_nse")
-        record["delta_B_vs_A"] = (
-            round(nse_b - nse_a, 4)
-            if isinstance(nse_b, float) and isinstance(nse_a, float) else None
+        # ── Method C2: alternative LLM (optional) ──
+        if C2_MODEL:
+            logger.info(f"[C2] HydroClaw LLM range adjustment (alt LLM: {C2_MODEL})")
+            c2_entry = _run_method_c(
+                basin_id, cfg, "C2",
+                model_override=C2_MODEL,
+                base_url_override=C2_BASE_URL,
+            )
+            record["method_C2"] = c2_entry
+            logger.info(
+                f"  C2: KGE={_f(c2_entry.get('best_kge'))} "
+                f"NSE={_f(c2_entry.get('best_nse'))} "
+                f"rounds={c2_entry.get('rounds', 0)} model={c2_entry.get('model_used', '?')}"
+            )
+        else:
+            record["method_C2"] = {"skipped": True, "reason": "C2_MODEL not configured"}
+
+        # ── Delta: C1 vs A_mean, C2 vs A_mean ──
+        a_kge_mean = record["method_A_agg"]["kge_train"].get("mean")
+        c1_kge = c1_entry.get("train_metrics", {}).get("KGE")
+        c2_kge = record["method_C2"].get("train_metrics", {}).get("KGE") if C2_MODEL else None
+
+        record["delta_C1_vs_A_kge"] = (
+            round(c1_kge - a_kge_mean, 4)
+            if isinstance(c1_kge, float) and isinstance(a_kge_mean, float) else None
         )
-        record["delta_C_vs_A"] = (
-            round(nse_c - nse_a, 4)
-            if isinstance(nse_c, float) and isinstance(nse_a, float) else None
-        )
-        record["delta_C_vs_B"] = (
-            round(nse_c - nse_b, 4)
-            if isinstance(nse_c, float) and isinstance(nse_b, float) else None
+        record["delta_C2_vs_A_kge"] = (
+            round(c2_kge - a_kge_mean, 4)
+            if isinstance(c2_kge, float) and isinstance(a_kge_mean, float) else None
         )
 
         results.append(record)
 
     return {
         "experiment": "exp2_llm_calibration",
-        "mode": "hybrid (A+C agent-driven, B scripted)",
+        "mode": f"A(agent x{N_SEEDS_A}) + B(scripted x1) + C1(agent x1) + C2({'agent' if C2_MODEL else 'skipped'})",
         "timestamp": datetime.now().isoformat(),
         "model": MODEL,
-        "algorithm_A": "SCE_UA (agent-driven)",
-        "algorithm_B": f"Zhu_direct_propose (scripted, max {ZHU_MAX_ITERS} iters)",
-        "algorithm_C": f"HydroClaw_range_adjustment (agent-driven, max {LLM_MAX_ROUNDS} rounds)",
+        "primary_metric": "KGE (Knoben et al. 2019)",
+        "n_seeds_a": N_SEEDS_A,
+        "c2_model": C2_MODEL,
         "nse_target": NSE_TARGET,
         "results": results,
         "llm_token_usage": llm.tokens.summary(),
@@ -579,100 +686,142 @@ def save_results(results: dict):
     logger.info(f"Saved -> {f}")
 
 
-def _estimate_c_total_evals(rounds: int) -> int:
-    """Estimate total SCE-UA function evaluations for C method across all rounds.
-
-    Adaptive budget schedule: round 1=100%, 2=75%, 3=60%, 4+=50% of rep_default.
-    """
-    scales = [1.0, 0.75, 0.60, 0.50]
-    total = 0
-    for i in range(rounds or 0):
-        scale = scales[min(i, len(scales) - 1)]
-        total += int(SCE_UA_REP_DEFAULT * scale)
-    return total
+def _ms(d: dict) -> str:
+    """Format mean+/-std dict for display."""
+    if not isinstance(d, dict) or d.get("mean") is None:
+        return "    N/A"
+    return f"{d['mean']:.3f}+/-{d['std']:.3f}"
 
 
 def print_summary(results: dict):
     data = results["results"]
-    print(f"\n{'='*100}")
-    print(f"  Exp2: Autonomous LLM Calibration  ({results['mode']})")
-    print(f"{'='*100}")
-    print(f"  A = Standard SCE-UA (agent, 1 run)  |  B = Zhu et al. 2026 (scripted)")
-    print(f"  C = HydroClaw LLM-guided (agent, multi-round, autonomous)")
-    print(f"  Key metric: C achieves equivalent NSE to A with ZERO human intervention")
-    print(f"  (NSE superiority is NOT the goal — automation equivalence is)")
-    print()
+    print(f"\n{'='*110}")
+    print(f"  Exp2: LLM Calibration Comparison  ({results['mode']})")
+    print(f"  Primary metric: KGE | Secondary: NSE")
+    print(f"  A = SCE-UA standard ({N_SEEDS_A} runs, mean+/-std)  |  B = Zhu 2026 (scripted)")
+    print(f"  C1 = HydroClaw LLM-guided (primary LLM)  |  C2 = alt LLM ({'enabled' if C2_MODEL else 'not configured'})")
+    print(f"  Key insight: C_kge APPROX= A_kge (automation equivalence, not superiority)")
+    print(f"{'='*110}")
 
-    print("  [NSE Results - A/B/C should be comparable]")
-    header = (
+    def _f(v): return f"{v:.4f}" if isinstance(v, (int, float)) else "  N/A "
+
+    # KGE comparison table
+    print("\n  [KGE Results - primary metric]")
+    hdr = (
         f"{'Basin':<12} {'Zone':<20} "
-        f"{'A(tr)':>7} {'B(tr)':>7} {'C(tr)':>7} "
-        f"{'dC-A':>7} {'C_rn':>5} {'A_eval':>7} {'C_eval':>7} {'eval_ratio':>10}"
+        f"{'A_train':>16} {'B_train':>8} {'C1_train':>8} "
+        f"{'A_test':>12} {'C1_test':>8} "
+        f"{'dC1-A':>7} {'C1_rn':>6} {'eval_ratio':>10}"
     )
-    print(header)
-    print("-" * 100)
+    print(hdr)
+    print("-" * 110)
 
     for r in data:
-        a_nse = r["method_A"].get("train_metrics", {}).get("NSE")
-        b_nse = r["method_B"].get("best_nse")
-        c_nse = r["method_C"].get("best_nse")
-        fmt = lambda v: f"{v:.4f}" if isinstance(v, float) else "N/A"
-        dfmt = lambda v: f"{v:+.4f}" if isinstance(v, float) else "N/A"
-        c_rounds = r["method_C"].get("rounds") or 0
+        a_agg = r["method_A_agg"]
+        c1 = r["method_C1"]
+        b = r["method_B"]
+
+        a_tr = _ms(a_agg["kge_train"])
+        b_tr = _f(b.get("best_kge"))
+        c1_tr = _f(c1.get("train_metrics", {}).get("KGE"))
+        a_te = _ms(a_agg["kge_test"])
+        c1_te = _f(c1.get("test_metrics", {}).get("KGE"))
+        d_c1a = _f(r.get("delta_C1_vs_A_kge"))
+
+        c1_rounds = c1.get("rounds") or 0
         a_eval = SCE_UA_REP_DEFAULT
-        c_eval = _estimate_c_total_evals(c_rounds)
-        ratio_str = f"{c_eval/a_eval:.1f}x" if a_eval > 0 else "N/A"
+        c1_eval = _estimate_c_total_evals(c1_rounds)
+        ratio = f"{c1_eval/a_eval:.1f}x" if a_eval > 0 else "N/A"
+
         print(
             f"{r['basin_id']:<12} {r['climate_zone']:<20} "
-            f"{fmt(a_nse):>7} {fmt(b_nse):>7} {fmt(c_nse):>7} "
-            f"{dfmt(r.get('delta_C_vs_A')):>7} "
-            f"{c_rounds:>5} {a_eval:>7} {c_eval:>7} {ratio_str:>10}"
+            f"{a_tr:>16} {b_tr:>8} {c1_tr:>8} "
+            f"{a_te:>12} {c1_te:>8} "
+            f"{d_c1a:>7} {c1_rounds:>6} {ratio:>10}"
         )
 
-    print()
-    print("  [Test NSE - generalization]")
-    hdr2 = f"{'Basin':<12} {'Zone':<20} {'A(test)':>8} {'B(test)':>8} {'C(test)':>8}"
+    # C2 comparison (if enabled)
+    if C2_MODEL:
+        print(f"\n  [C1 vs C2 LLM comparison - KGE train]")
+        print(f"  {'Basin':<12} {'C1 ('+cfg_model_name(results)+')':>20} {'C2 ('+C2_MODEL+')':>20} {'dC2-A':>8}")
+        print("-" * 65)
+        for r in data:
+            c1_kge = _f(r["method_C1"].get("train_metrics", {}).get("KGE"))
+            c2_kge = _f(r["method_C2"].get("train_metrics", {}).get("KGE"))
+            d_c2a = _f(r.get("delta_C2_vs_A_kge"))
+            print(f"  {r['basin_id']:<12} {c1_kge:>20} {c2_kge:>20} {d_c2a:>8}")
+
+    # NSE secondary table
+    print(f"\n  [NSE Results - secondary metric]")
+    hdr2 = f"  {'Basin':<12} {'A_train NSE':>16} {'B_train':>8} {'C1_train':>8} {'A_test':>12} {'C1_test':>8}"
     print(hdr2)
-    print("-" * 60)
+    print("  " + "-" * 65)
     for r in data:
-        a_test = r["method_A"].get("test_metrics", {}).get("NSE")
-        b_test = r["method_B"].get("test_metrics", {}).get("NSE")
-        c_test = r["method_C"].get("test_metrics", {}).get("NSE")
-        fmt = lambda v: f"{v:.4f}" if isinstance(v, float) else "N/A"
-        print(
-            f"{r['basin_id']:<12} {r['climate_zone']:<20} "
-            f"{fmt(a_test):>8} {fmt(b_test):>8} {fmt(c_test):>8}"
-        )
+        a_agg = r["method_A_agg"]
+        c1 = r["method_C1"]
+        b = r["method_B"]
+        a_tr = _ms(a_agg["nse_train"])
+        b_tr = _f(b.get("best_nse"))
+        c1_tr = _f(c1.get("best_nse"))
+        a_te = _ms(a_agg["nse_test"])
+        c1_te = _f(c1.get("test_metrics", {}).get("NSE"))
+        print(f"  {r['basin_id']:<12} {a_tr:>16} {b_tr:>8} {c1_tr:>8} {a_te:>12} {c1_te:>8}")
 
-    print(f"\n  NSE trajectory (Method C - each round uses different random seed):")
+    # NSE trajectory for C1
+    print(f"\n  [C1 NSE trajectory per round - each round uses different SCE-UA seed]")
     for r in data:
-        hist = r["method_C"].get("nse_history", [])
+        hist = r["method_C1"].get("nse_history", [])
         traj = " -> ".join(f"{v:.3f}" for v in hist if isinstance(v, float))
-        seeds = " | ".join(
-            f"r{i+1}:seed={1234+i*137}" for i in range(len(hist))
-        )
         print(f"    {r['basin_id']}: {traj or 'no data'}")
-        if hist:
-            print(f"      ({seeds})")
 
-    print(f"\n  [Automation story: tool sequences]")
-    print(f"  A (standard): user must know algorithm params, check results, decide to retry")
-    print(f"  C (autonomous): agent handles multi-round decision loop, zero human intervention")
+    # Boundary hits from Method A (parameter sensitivity)
+    print(f"\n  [Parameter boundary analysis - Method A across {N_SEEDS_A} runs]")
     for r in data:
-        a_tools = "->".join(r["method_A"].get("tool_sequence", []))
-        c_tools = "->".join(r["method_C"].get("tool_sequence", []))
-        print(f"    {r['basin_id']} A: {a_tools}")
-        print(f"    {r['basin_id']} C: {c_tools}")
+        hits = r["method_A_agg"].get("boundary_hits_any", [])
+        if hits:
+            from collections import Counter
+            hit_summary = Counter(f"{h['param']}({h['boundary']})" for h in hits)
+            print(f"    {r['basin_id']}: {dict(hit_summary)}")
+        else:
+            print(f"    {r['basin_id']}: no boundary hits detected")
+
+    # Tool sequence + automation story
+    print(f"\n  [Automation: tool sequences]")
+    for r in data:
+        a_seqs = r["method_A_agg"].get("tool_sequences", [])
+        c1_tools = "->".join(r["method_C1"].get("tool_sequence", []))
+        consistent = sum(1 for i in range(len(a_seqs)-1) if a_seqs[i] == a_seqs[i+1])
+        a_repr = "->".join(a_seqs[0]) if a_seqs else "?"
+        print(f"    {r['basin_id']} A (repr): {a_repr}  [consistency {consistent}/{max(len(a_seqs)-1,1)}]")
+        print(f"    {r['basin_id']} C1:        {c1_tools}")
+
+    # Failure analysis
+    print(f"\n  [Failure analysis]")
+    all_a_failures = []
+    for r in data:
+        all_a_failures.extend(r["method_A_agg"].get("failure_types", []))
+    if all_a_failures:
+        from collections import Counter
+        print(f"    Method A failures: {dict(Counter(all_a_failures))}")
+    else:
+        print(f"    Method A: no failures")
 
     tokens = results.get("llm_token_usage", {})
-    print(f"\n  LLM: {tokens.get('calls', 0)} calls, {tokens.get('total_tokens', 0)} tokens")
-    print(f"  Note: C uses more total SCE-UA evaluations than A due to multi-round design.")
-    print(f"        Trade-off: computational cost for full autonomy (no human calibration loops).")
+    print(f"\n  LLM (shared for B): {tokens.get('calls', 0)} calls, {tokens.get('total_tokens', 0)} tokens")
+
+
+def cfg_model_name(results: dict) -> str:
+    """Extract primary LLM model name from results for display."""
+    for r in results.get("results", []):
+        return r.get("method_C1", {}).get("model_used", "primary")
+    return "primary"
 
 
 def main():
     setup_logging()
-    logger.info("Starting Exp2: LLM Calibration Comparison (Hybrid Agent+Script)")
+    logger.info(f"Starting Exp2: LLM Calibration Comparison (N_SEEDS_A={N_SEEDS_A})")
+    if C2_MODEL:
+        logger.info(f"  C2 LLM enabled: {C2_MODEL}")
     results = run_experiment()
     save_results(results)
     print_summary(results)

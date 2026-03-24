@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css?v=20">
+<link rel="stylesheet" href="/static/style.css?v=27">
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 </head>
 <body data-theme="light">
@@ -112,6 +112,9 @@
         <span id="elapsed-timer" style="display:none"></span>
         <button id="stop-btn" onclick="sendStop()">停止</button>
       </div>
+      <div id="input-toolbar">
+        <!-- populated by buildToolbar() in app.js -->
+      </div>
       <div id="input-row">
         <textarea id="input" rows="2" placeholder="输入问题（例：率定GR4J模型，流域12025000）"></textarea>
         <button id="send-btn" onclick="sendQuery()">发送</button>
@@ -162,6 +165,11 @@
 <div id="toast"></div>
 <div id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src="" alt=""></div>
 
-<script src="/static/app.js?v=20"></script>
+<script src="/static/utils.js?v=27"></script>
+<script src="/static/chat.js?v=27"></script>
+<script src="/static/sessions.js?v=27"></script>
+<script src="/static/panels.js?v=27"></script>
+<script src="/static/toolbar.js?v=27"></script>
+<script src="/static/app.js?v=27"></script>
 </body>
 </html>

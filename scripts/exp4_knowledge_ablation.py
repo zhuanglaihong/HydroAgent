@@ -337,7 +337,7 @@ def run_main_ablation(workspace: Path) -> dict:
                 "expected_first": sc["expected_first"],
                 "actual_tools": [], "first_tool_correct": False,
                 "tool_match": False, "success": False,
-                "token_count": 0, "time_s": 0, "error": None,
+                "total_tokens": 0, "wall_time_s": 0.0, "error": None,
             }
 
             agent.memory._log.clear()
@@ -346,7 +346,7 @@ def run_main_ablation(workspace: Path) -> dict:
             t0 = time.time()
             try:
                 agent.run(sc["query"])
-                record["time_s"] = round(time.time() - t0, 2)
+                record["wall_time_s"] = round(time.time() - t0, 2)
                 record["actual_tools"] = [e["tool"] for e in agent.memory._log]
                 record["success"] = True
                 # T3 special: pass if generate_code was called AND no calibrate_model/evaluate_model
@@ -378,14 +378,14 @@ def run_main_ablation(workspace: Path) -> dict:
                 else:
                     record["first_tool_correct"] = False
             except Exception as e:
-                record["time_s"] = round(time.time() - t0, 2)
+                record["wall_time_s"] = round(time.time() - t0, 2)
                 record["error"] = str(e)
                 logger.error(f"    {sid}/{cond_id} failed: {e}")
             finally:
                 _restore_condition(agent, backup)
 
-            # agent.run() resets token counter internally; .total is this run's count
-            record["token_count"] = agent.llm.tokens.total
+            # agent.run() resets token counter internally; summary().total_tokens is this run's count
+            record["total_tokens"] = agent.llm.tokens.summary().get("total_tokens", 0)
             all_results.append(record)
             _save_checkpoint(ck_key, record)
 
@@ -398,7 +398,7 @@ def run_main_ablation(workspace: Path) -> dict:
             logger.info(
                 f"    {cond_id}/{sid}  match={record['tool_match']}  "
                 f"first_ok={record['first_tool_correct']}  "
-                f"actual={record['actual_tools']}  tokens={record['token_count']}{sim_flag}"
+                f"actual={record['actual_tools']}  tokens={record['total_tokens']}{sim_flag}"
             )
 
     # Aggregate stats
@@ -410,8 +410,8 @@ def run_main_ablation(workspace: Path) -> dict:
             "n": n,
             "tool_match_rate": sum(1 for r in subset if r["tool_match"]) / n,
             "first_tool_rate": sum(1 for r in subset if r["first_tool_correct"]) / n,
-            "avg_tokens": sum(r["token_count"] for r in subset) / n,
-            "avg_time_s": sum(r["time_s"] for r in subset) / n,
+            "avg_tokens": sum(r["total_tokens"] for r in subset) / n,
+            "avg_time_s": sum(r["wall_time_s"] for r in subset) / n,
         }
 
     stats_by_condition = {
