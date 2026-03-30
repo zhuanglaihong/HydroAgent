@@ -438,10 +438,11 @@ def _ask_llm_for_adjustments(
     ]
 
     response = llm.chat(messages)
-    return _parse_adjustments(response.text, current_ranges)
+    return _parse_adjustments(response.text, current_ranges, model_name)
 
 
-def _parse_adjustments(text: str, current_ranges: dict) -> dict | None:
+def _parse_adjustments(text: str, current_ranges: dict,
+                        model_name: str | None = None) -> dict | None:
     """Parse parameter range and/or algorithm param adjustments from LLM response.
 
     Returns {"ranges": new_ranges|None, "algo_params": dict|None},
@@ -499,11 +500,27 @@ def _parse_adjustments(text: str, current_ranges: dict) -> dict | None:
             if name in current_ranges and isinstance(bounds, list) and len(bounds) == 2:
                 try:
                     lo, hi = float(bounds[0]), float(bounds[1])
-                    if lo < hi:
-                        candidate[name] = [lo, hi]
-                        changed = True
                 except (ValueError, TypeError):
+                    logger.warning("_parse_adjustments: cannot parse bounds for %s: %s", name, bounds)
                     continue
+                if lo >= hi:
+                    logger.warning("_parse_adjustments: invalid range for %s: [%s, %s] (lo >= hi)", name, lo, hi)
+                    continue
+                # Clamp to physical model boundaries so LLM cannot suggest out-of-spec ranges
+                phys = DEFAULT_PARAM_RANGES.get(model_name or "", {}).get(name)
+                if phys:
+                    phys_lo, phys_hi = phys[0], phys[1]
+                    if lo < phys_lo or hi > phys_hi:
+                        logger.warning(
+                            "_parse_adjustments: clamping %s [%.4f, %.4f] to physical bounds [%.4f, %.4f]",
+                            name, lo, hi, phys_lo, phys_hi,
+                        )
+                        lo = max(lo, phys_lo)
+                        hi = min(hi, phys_hi)
+                        if lo >= hi:
+                            continue
+                candidate[name] = [lo, hi]
+                changed = True
         if changed:
             new_ranges = candidate
 

@@ -1,5 +1,7 @@
 # LLM 智能率定
 
+> 版本：v2.6 | 日期：2026-03-25
+
 ## 概述
 
 HydroClaw 的 LLM 智能率定让 LLM 作为"虚拟水文学家"，指导模型参数优化过程。与传统方法的区别在于 LLM 负责**元决策**（调整参数范围、诊断问题），而 SCE-UA 负责**数值优化**（在范围内搜索最优参数）。
@@ -96,24 +98,28 @@ llm_calibrate(
 {
   "best_params": {"x1": 450.2, "x2": -0.8, "x3": 120.5, "x4": 1.7},
   "best_nse": 0.74,
-  "rounds": 2,
+  "rounds_used": 2,
+  "boundary_hits": {"x1": 1},
+  "final_boundary_hits": {},
   "history": [
     {
       "round": 1,
-      "param_ranges": {"x1": [1.0, 2000.0], ...},
-      "best_params": {"x1": 1998.0, ...},
+      "param_ranges": {"x1": [1.0, 2000.0]},
+      "best_params": {"x1": 1998.0},
       "metrics": {"NSE": 0.65, "RMSE": 2.1},
-      "nse": 0.65
+      "nse": 0.65,
+      "boundary_hit": true
     },
     {
       "round": 2,
-      "param_ranges": {"x1": [1.0, 3000.0], ...},
-      "best_params": {"x1": 450.2, ...},
+      "param_ranges": {"x1": [1.0, 3000.0]},
+      "best_params": {"x1": 450.2},
       "metrics": {"NSE": 0.74, "RMSE": 1.3},
-      "nse": 0.74
+      "nse": 0.74,
+      "boundary_hit": false
     }
   ],
-  "calibration_dir": "results/llm_round_1",
+  "calibration_dir": "results/llm_round_2",
   "success": true
 }
 ```
@@ -139,12 +145,15 @@ LLM 据此做出判断：
 
 ## 支持的模型
 
-| 模型 | 默认参数范围 |
-|---|---|
-| GR4J | x1: [1, 2000], x2: [-10, 10], x3: [1, 500], x4: [0.5, 10] |
-| XAJ | binfilt, Dsmax, Ds, Ws, soil_d2 |
+| 模型 | 参数数量 | 默认参数范围 |
+|---|---|---|
+| GR4J | 4 | x1:[1,2000], x2:[-10,10], x3:[1,500], x4:[0.5,10] |
+| GR5J | 5 | GR4J + x5:[0,1] |
+| GR6J | 6 | GR5J + x6:[0,20] |
+| XAJ | 多参 | binfilt, Dsmax, Ds, Ws, soil_d2 等 |
 
-可通过 `param_ranges` 参数自定义初始范围。
+LLM 在每轮结束后根据 `knowledge/model_parameters.md` 中的参数物理含义做出决策，
+不同模型的参数解释不同。可通过 `param_range_file` 参数传入自定义初始范围 YAML。
 
 ## 学术参考
 

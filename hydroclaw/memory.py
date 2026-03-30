@@ -106,11 +106,18 @@ class Memory:
         best_params: dict,
         metrics: dict,
         algorithm: str = "SCE_UA",
+        climate_attrs: dict | None = None,
     ):
         """Save a calibration result as a structured basin profile.
 
         Appends to the basin's history file; each basin can accumulate
         multiple records across sessions (different models / algorithms).
+
+        Args:
+            climate_attrs: Optional basin characteristics, e.g.
+                {"climate_type": "semiarid", "area_km2": 1234,
+                 "elevation_m": 800, "land_use": "grassland"}.
+                Stored once at the profile root (not per-record).
         """
         profile_file = self.basin_profiles_dir / f"{basin_id}.json"
 
@@ -122,6 +129,10 @@ class Memory:
                 profile = {"basin_id": basin_id, "records": []}
         else:
             profile = {"basin_id": basin_id, "records": []}
+
+        # Merge climate_attrs into profile root (never overwrite existing with None)
+        if climate_attrs:
+            profile.setdefault("climate_attrs", {}).update(climate_attrs)
 
         record = {
             "model": model_name,
@@ -141,6 +152,61 @@ class Memory:
             f"Basin profile saved: {basin_id}/{model_name} "
             f"NSE={metrics.get('NSE')}"
         )
+
+        # Keep basin_index.json in sync
+        self._rebuild_basin_index()
+
+    def _rebuild_basin_index(self):
+        """Rebuild basin_profiles/basin_index.json from all profile files.
+
+        The index is a flat list of basin summaries enabling cross-basin
+        semantic search (e.g. "semiarid basins with NSE > 0.7").
+        Format: {"updated_at": "...", "basins": [{basin_id, climate_type,
+        area_km2, best_nse_by_model: {model: nse}, record_count}, ...]}
+        """
+        entries = []
+        for pf in sorted(self.basin_profiles_dir.glob("*.json")):
+            if pf.name == "basin_index.json":
+                continue
+            try:
+                with open(pf, encoding="utf-8") as f:
+                    profile = json.load(f)
+            except Exception:
+                continue
+
+            basin_id = profile.get("basin_id", pf.stem)
+            attrs = profile.get("climate_attrs", {})
+            records = profile.get("records", [])
+
+            # Best NSE per model
+            best_nse: dict[str, float] = {}
+            for rec in records:
+                m = rec.get("model", "unknown")
+                nse = rec.get("train_nse")
+                if isinstance(nse, (int, float)):
+                    if m not in best_nse or nse > best_nse[m]:
+                        best_nse[m] = round(float(nse), 4)
+
+            entries.append({
+                "basin_id": basin_id,
+                "climate_type": attrs.get("climate_type", "unknown"),
+                "area_km2": attrs.get("area_km2"),
+                "elevation_m": attrs.get("elevation_m"),
+                "land_use": attrs.get("land_use"),
+                "best_nse_by_model": best_nse,
+                "record_count": len(records),
+            })
+
+        index = {
+            "updated_at": datetime.now().isoformat(),
+            "basins": entries,
+        }
+        index_file = self.basin_profiles_dir / "basin_index.json"
+        try:
+            with open(index_file, "w", encoding="utf-8") as f:
+                json.dump(index, f, indent=2, ensure_ascii=False, default=str)
+        except Exception as e:
+            logger.warning(f"Failed to write basin_index.json: {e}")
 
     def load_basin_profile(self, basin_id: str) -> dict | None:
         """Load all historical calibrations for a basin."""
@@ -166,6 +232,18 @@ class Memory:
                 continue
 
             lines.append(f"### Basin {basin_id}")
+            attrs = profile.get("climate_attrs", {})
+            if attrs:
+                attr_parts = []
+                if "climate_type" in attrs:
+                    attr_parts.append(f"climate={attrs['climate_type']}")
+                if "area_km2" in attrs:
+                    attr_parts.append(f"area={attrs['area_km2']}km2")
+                if "elevation_m" in attrs:
+                    attr_parts.append(f"elev={attrs['elevation_m']}m")
+                if "land_use" in attrs:
+                    attr_parts.append(f"land={attrs['land_use']}")
+                lines.append(f"Attributes: {', '.join(attr_parts)}")
             # Show at most last 3 records to keep context short
             for rec in profile["records"][-3:]:
                 nse = rec.get("train_nse")

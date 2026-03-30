@@ -1,5 +1,7 @@
 # 配置系统
 
+> 版本：v2.6 | 日期：2026-03-25
+
 ## 配置层级
 
 优先级从低到高（高优先级覆盖低优先级）：
@@ -149,6 +151,39 @@ calibrate_model(basin_ids=["12025000"], model_name="gr4j", algorithm="SCE_UA")
     }
 }
 ```
+
+## 插件配置（plugins.json）
+
+本地包和单文件工具通过 `plugins.json` 管理，两层优先级：
+
+```
+~/.hydroclaw/plugins.json              # 全局（所有工作区共享）
+<workspace>/.hydroclaw/plugins.json    # 本地（本项目覆盖全局）
+```
+
+格式示例：
+
+```json
+{
+  "plugins": [
+    {
+      "name": "autohydro",
+      "type": "local_dir",
+      "path": "D:/project/autohydro",
+      "description": "AutoHydro 自动水文分析包",
+      "enabled": true
+    },
+    {
+      "name": "fdc_tool",
+      "type": "single_file",
+      "path": "D:/scripts/fdc.py",
+      "enabled": true
+    }
+  ]
+}
+```
+
+通常通过 `add_local_package` 或 `add_local_tool` 工具自动写入，不需要手动编辑。
 
 ## 结果目录结构
 

@@ -17,6 +17,7 @@ _ZH = {
     "get_pending_tasks": ("获取待办任务",  "获取下一个待执行的任务及整体进度概览"),
     "add_task":          ("动态添加任务",  "根据中间结果动态向任务列表追加新任务"),
     "update_task":       ("更新任务状态",  "将任务标记为已完成或失败，记录 NSE/KGE 等指标"),
+    "get_task_result":   ("获取任务结果",  "获取已完成任务的结构化结果，用于下游任务读取上游产出"),
 }
 
 
@@ -27,7 +28,7 @@ def _state(workspace: Path | None) -> TaskState:
 
 def create_task_list(
     goal: str,
-    tasks: list[str],
+    tasks: list,
     _workspace: Path | None = None,
 ) -> dict:
     """Create a task list to plan and track a multi-step batch experiment.
@@ -42,7 +43,11 @@ def create_task_list(
 
     Args:
         goal: Human-readable description of the overall goal, e.g. "Compare GR4J and XAJ on 5 basins"
-        tasks: List of task descriptions in execution order, e.g. ["Calibrate GR4J on basin 12025000", "Calibrate XAJ on basin 12025000"]
+        tasks: List of tasks. Each item can be either:
+            - A plain string: "Calibrate GR4J on basin 12025000"
+            - A dict with optional dependency info:
+              {"description": "Evaluate on test set", "depends_on": ["task_001", "task_002"]}
+              'depends_on' lists task IDs that must be done before this task is eligible.
 
     Returns:
         {"success": True, "total": N, "goal": "...", "message": "..."}
@@ -66,10 +71,20 @@ def create_task_list(
                 ),
             }
 
-    task_dicts = [
-        {"id": f"task_{i+1:03d}", "description": desc}
-        for i, desc in enumerate(tasks)
-    ]
+    task_dicts = []
+    for i, item in enumerate(tasks):
+        task_id = f"task_{i+1:03d}"
+        if isinstance(item, str):
+            task_dicts.append({"id": task_id, "description": item})
+        elif isinstance(item, dict):
+            task_dicts.append({
+                "id": task_id,
+                "description": item.get("description", str(item)),
+                "depends_on": item.get("depends_on", []),
+            })
+        else:
+            task_dicts.append({"id": task_id, "description": str(item)})
+
     s.create(goal, task_dicts)
     return {
         "success": True,
@@ -105,8 +120,21 @@ def get_pending_tasks(
         }
 
     s.load()
-    pending = s.pending()
     progress = s.summary()
+    done_ids = {t["id"] for t in s.done()}
+    failed_ids = {t["id"] for t in s.failed()}
+
+    # Filter pending tasks whose dependencies are all satisfied
+    pending = s.pending()
+    ready = [
+        t for t in pending
+        if all(dep in done_ids for dep in t.get("depends_on", []))
+    ]
+    # Tasks blocked only by failures (not by pending deps) are effectively stuck
+    blocked_by_failure = [
+        t for t in pending
+        if t not in ready and any(dep in failed_ids for dep in t.get("depends_on", []))
+    ]
 
     if not pending:
         return {
@@ -119,7 +147,30 @@ def get_pending_tasks(
             "message": "All tasks complete. Generate the final report now.",
         }
 
-    next_task = pending[0]
+    if not ready:
+        # All pending tasks are waiting on unfinished dependencies
+        waiting_on = [
+            dep
+            for t in pending
+            for dep in t.get("depends_on", [])
+            if dep not in done_ids and dep not in failed_ids
+        ]
+        return {
+            "complete": False,
+            "next_task": None,
+            "progress": progress,
+            "done": len(s.done()),
+            "failed": len(s.failed()),
+            "pending": len(pending),
+            "blocked_by_failure": [t["id"] for t in blocked_by_failure],
+            "total": len(s.all_tasks()),
+            "message": (
+                f"No tasks ready yet. Waiting on: {list(set(waiting_on))}. "
+                "Check if dependent tasks failed."
+            ),
+        }
+
+    next_task = ready[0]
     return {
         "complete": False,
         "next_task": {
@@ -130,6 +181,7 @@ def get_pending_tasks(
         "done":      len(s.done()),
         "failed":    len(s.failed()),
         "pending":   len(pending),
+        "ready":     len(ready),
         "total":     len(s.all_tasks()),
         "message": f"Next: {next_task['description']}. Call update_task() after finishing it.",
     }
@@ -241,8 +293,60 @@ def update_task(
     }
 
 
+def get_task_result(
+    task_id: str,
+    _workspace: Path | None = None,
+) -> dict:
+    """Retrieve the stored result of a completed task.
+
+    Call this when a downstream task needs to read the output of an upstream
+    task, for example: after calibration (task_001) is done, the evaluation
+    task (task_002) calls get_task_result("task_001") to get the NSE and
+    calibration directory from the previous step.
+
+    For file-based results (e.g. model output netCDF), check the directory
+    workflow_output/{task_id}/ in the workspace.
+
+    Args:
+        task_id: ID of the completed task, e.g. "task_001"
+
+    Returns:
+        {"found": True, "task_id": "...", "status": "done", "result": {...}}
+        or {"found": False, "error": "..."} if task not found or not done
+    """
+    s = _state(_workspace)
+    if not s.exists():
+        return {"found": False, "error": "No task list found. Call create_task_list() first."}
+
+    s.load()
+    task = s.get(task_id)
+    if task is None:
+        return {"found": False, "error": f"Task not found: {task_id}"}
+
+    status = task.get("status", "unknown")
+    result = task.get("result") or {}
+
+    # Also report workflow_output dir if it exists
+    ws = _workspace or Path(".")
+    output_dir = ws / "workflow_output" / task_id
+    file_hints = []
+    if output_dir.exists():
+        file_hints = [str(p.name) for p in sorted(output_dir.iterdir())[:10]]
+
+    return {
+        "found": True,
+        "task_id": task_id,
+        "status": status,
+        "description": task.get("description", ""),
+        "result": result,
+        "finished_at": task.get("finished_at", ""),
+        "workflow_output_dir": str(output_dir) if output_dir.exists() else None,
+        "output_files": file_hints,
+    }
+
+
 # ── Chinese UI metadata ────────────────────────────────────────────────────────
-for _fn in (create_task_list, get_pending_tasks, add_task, update_task):
+for _fn in (create_task_list, get_pending_tasks, add_task, update_task, get_task_result):
     _n, _d = _ZH[_fn.__name__]
     _fn.__zh_name__ = _n
     _fn.__zh_desc__ = _d

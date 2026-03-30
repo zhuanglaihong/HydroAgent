@@ -30,6 +30,7 @@ const TOOL_ZH = {
   derive_formula:"推导产流公式", run_pipeline:"运行推导管道",
   create_task_list:"创建任务列表", get_pending_tasks:"获取待办任务",
   add_task:"动态添加任务", update_task:"更新任务状态",
+  spawn_agent:"委派子代理",
   list_basins:"列出流域", read_dataset:"读取数据集", convert_dataset_to_nc:"转换为 NC",
   list_camels_basins:"列出 CAMELS 流域", check_camels_data:"检查数据可用性",
 };
@@ -111,6 +112,7 @@ const TOOL_ICON = {
   simulate:"\uD83D\uDCA7", observe:"\uD83D\uDC41", record_error_solution:"\uD83D\uDCDD",
   add_local_package:"\uD83D\uDD0C", add_local_tool:"\uD83D\uDD27",
   derive_formula:"\uD83E\uDDEA", run_pipeline:"\uD83D\uDE80",
+  spawn_agent:"\uD83E\uDD16",
 };
 
 // ── Pure utilities ─────────────────────────────────────────────────────────────

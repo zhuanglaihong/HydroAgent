@@ -51,6 +51,20 @@ class HydroClaw:
         self.cfg = load_config(config_path)
         if config_override:
             _deep_merge(self.cfg, config_override)
+
+        # Config validation: fail early with a clear message instead of KeyError
+        if "llm" not in self.cfg:
+            raise ValueError(
+                "Configuration error: missing required key 'llm'. "
+                "Check your config file or configs/private.py."
+            )
+        for _k in ("model", "base_url"):
+            if _k not in self.cfg["llm"]:
+                raise ValueError(
+                    f"Configuration error: missing required LLM config key '{_k}'. "
+                    f"Check the [llm] section of your config."
+                )
+
         self.llm = LLMClient(self.cfg["llm"])
         self.memory = Memory(workspace or Path("."))
         self.tools = discover_tools()
@@ -69,11 +83,76 @@ class HydroClaw:
         self.skill_registry = SkillRegistry(skills_dir)
         self.skill_states = SkillStateManager(skills_dir)
 
+        # CC-3: Subagent registry
+        from hydroclaw.agents import AgentRegistry
+        self.agent_registry = AgentRegistry(self.workspace)
+
+        # CC-4: PostToolUse hook registry. Maps tool_name -> list of callables.
+        # Each hook: fn(tool_name: str, arguments: dict, result: Any) -> None
+        # External plugins / tests can add hooks via register_post_hook().
+        self._post_tool_hooks: dict[str, list] = {}
+        self._register_builtin_post_hooks()
+
         logger.info(
             f"HydroClaw initialized: {len(self.tools)} tools, "
             f"{len(self.skill_registry.skills)} skills, "
             f"model={self.cfg['llm']['model']}, max_turns={self.max_turns}"
         )
+
+    def register_post_hook(self, tool_name: str, fn) -> None:
+        """Register a PostToolUse hook for the given tool name.
+
+        Hook signature: fn(tool_name: str, arguments: dict, result: Any) -> None
+        Hooks are called after the tool executes, in registration order.
+        Exceptions are caught and logged; they do not abort the agent loop.
+        """
+        self._post_tool_hooks.setdefault(tool_name, []).append(fn)
+
+    def _register_builtin_post_hooks(self) -> None:
+        """Register built-in PostToolUse hooks (replaces the if-chain in _execute_tool)."""
+        # Auto-save basin profile after successful calibration
+        for tool in ("calibrate_model", "llm_calibrate"):
+            self.register_post_hook(tool, self._hook_save_basin_profile)
+        # Show task progress in UI after task-state-mutating tools
+        for tool in ("create_task_list", "update_task", "add_task"):
+            self.register_post_hook(tool, self._hook_task_progress)
+        # Refresh tool/skill registries after dynamic tool/skill/adapter creation
+        self.register_post_hook("create_skill",   self._hook_refresh_registries)
+        self.register_post_hook("create_adapter", self._hook_reload_adapters)
+
+    def _hook_save_basin_profile(self, name: str, arguments: dict, result: Any) -> None:
+        if not (isinstance(result, dict) and result.get("success")):
+            return
+        basin_ids = arguments.get("basin_ids", [])
+        model_name = arguments.get("model_name", "")
+        algorithm = arguments.get("algorithm", "SCE_UA")
+        best_params = result.get("best_params", {})
+        if name == "calibrate_model":
+            metrics = result.get("metrics", {})
+        else:
+            nse = result.get("best_nse")
+            metrics = {"NSE": nse} if nse is not None else {}
+        for basin_id in basin_ids:
+            self.memory.save_basin_profile(basin_id, model_name, best_params, metrics, algorithm)
+
+    def _hook_task_progress(self, name: str, arguments: dict, result: Any) -> None:
+        if isinstance(result, dict) and result.get("success"):
+            self.ui.on_task_progress(self.workspace)
+
+    def _hook_refresh_registries(self, name: str, arguments: dict, result: Any) -> None:
+        if not (isinstance(result, dict) and result.get("success")):
+            return
+        self.tools = discover_tools()
+        self.tool_schemas = get_tool_schemas()
+        self.skill_registry = SkillRegistry(Path(__file__).parent / "skills")
+        logger.info("Registries refreshed: %d tools, %d skills", len(self.tools), len(self.skill_registry.skills))
+        self.ui.dev_log(f"Registry refreshed: {len(self.tools)} tools, {len(self.skill_registry.skills)} skills")
+
+    def _hook_reload_adapters(self, name: str, arguments: dict, result: Any) -> None:
+        if isinstance(result, dict) and result.get("success"):
+            from hydroclaw.adapters import reload_adapters
+            reload_adapters()
+            self.ui.dev_log("Adapter registry reloaded after create_adapter.")
 
     def request_stop(self):
         """Request immediate stop after current tool completes."""
@@ -109,6 +188,7 @@ class HydroClaw:
 
         _consecutive: dict[str, int] = {}   # tool_name -> consecutive call count
         _MAX_CONSECUTIVE = 4                 # stop loop if same tool called >4 times in a row
+        _recent_tools: list[str] = []        # sliding window for alternating-loop detection
 
         _total_calls: dict[str, int] = {}    # tool_name -> total calls this session
         # When a tool has been called this many times total without resolving the task,
@@ -253,6 +333,27 @@ class HydroClaw:
                         })
                         break
 
+                    # Alternating-loop guard: catch A->B->A->B patterns missed by consecutive counter
+                    _recent_tools.append(tc.name)
+                    if len(_recent_tools) > 6:
+                        _recent_tools.pop(0)
+                    if len(_recent_tools) >= 4:
+                        last4 = _recent_tools[-4:]
+                        if (last4[0] == last4[2] and last4[1] == last4[3]
+                                and last4[0] != last4[1]):
+                            loop_msg = (
+                                f"Alternating loop detected: {'->'.join(last4)}. "
+                                "Stopping to avoid a runaway loop. "
+                                "Please summarize what you have accomplished so far and stop."
+                            )
+                            logger.warning(loop_msg)
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": json.dumps({"error": loop_msg, "success": False}),
+                            })
+                            break
+
                     self.ui.on_tool_start(tc.name, tc.arguments)
                     t0 = time.time()
                     result = {"error": "execution failed", "success": False}
@@ -291,6 +392,12 @@ class HydroClaw:
                         )
                         messages.append({"role": "user", "content": nudge})
 
+                # CC-2: inject task status once after ALL tool results for this turn
+                # (must be after all tool messages to avoid breaking the API message order)
+                task_note = self._get_task_status_note()
+                if task_note:
+                    messages.append({"role": "user", "content": task_note})
+
             else:
                 # Prompt-based fallback
                 if response.text:
@@ -314,6 +421,25 @@ class HydroClaw:
                         })
                         break
 
+                    # Alternating-loop guard (shared _recent_tools with function-calling branch)
+                    _recent_tools.append(tc.name)
+                    if len(_recent_tools) > 6:
+                        _recent_tools.pop(0)
+                    if len(_recent_tools) >= 4:
+                        last4 = _recent_tools[-4:]
+                        if (last4[0] == last4[2] and last4[1] == last4[3]
+                                and last4[0] != last4[1]):
+                            loop_msg = (
+                                f"Alternating loop detected: {'->'.join(last4)}. "
+                                "Stopping loop. Summarize and stop."
+                            )
+                            logger.warning(loop_msg)
+                            messages.append({
+                                "role": "user",
+                                "content": f"SYSTEM: {loop_msg}",
+                            })
+                            break
+
                     self.ui.on_tool_start(tc.name, tc.arguments)
                     t0 = time.time()
                     result = {"error": "execution failed", "success": False}
@@ -325,10 +451,11 @@ class HydroClaw:
 
                     self.memory.log_tool_call(tc.name, tc.arguments, result)
 
-                    messages.append({
-                        "role": "user",
-                        "content": f"Tool `{tc.name}` returned:\n```json\n{truncate_tool_result(tc.name, result)}\n```\nContinue with the next step.",
-                    })
+                    tool_result_content = f"Tool `{tc.name}` returned:\n```json\n{truncate_tool_result(tc.name, result)}\n```\nContinue with the next step."
+                    task_note = self._get_task_status_note()
+                    if task_note:
+                        tool_result_content += f"\n\n{task_note}"
+                    messages.append({"role": "user", "content": tool_result_content})
 
                     # Total-call guard (prompt-based branch)
                     _total_calls[tc.name] = _total_calls.get(tc.name, 0) + 1
@@ -384,6 +511,11 @@ class HydroClaw:
         available_skills = self.skill_registry.available_skills_prompt(self.skill_states)
         if available_skills:
             parts.append(available_skills)
+
+        # ── Section 2.5: Available subagents (always included) ───────────────────
+        available_agents = self.agent_registry.available_agents_prompt()
+        if available_agents:
+            parts.append(available_agents)
 
         # ── Section 3: Package adapter skill docs (always included) ─────────────
         from hydroclaw.adapters import get_all_skill_docs
@@ -484,7 +616,14 @@ class HydroClaw:
         return "\n\n---\n\n".join(result)
 
     def _load_system_prompt(self) -> str:
-        """Load the system skill file."""
+        """Load the system prompt.
+
+        When running as a subagent, _subagent_system_prompt overrides the
+        default system.md so the subagent uses its own focused instructions.
+        """
+        # CC-3: subagent custom prompt override
+        if getattr(self, "_subagent_system_prompt", ""):
+            return self._subagent_system_prompt
         skill_path = Path(__file__).parent / "skills" / "system.md"
         if skill_path.exists():
             return skill_path.read_text(encoding="utf-8")
@@ -510,15 +649,25 @@ class HydroClaw:
             return messages
 
         # Safety: if estimated tokens are impossibly large (likely a bug in
-        # memory/knowledge injection), refuse to send and raise immediately
-        # rather than consuming API quota on a doomed request.
+        # memory/knowledge injection), try a forced aggressive compression first
+        # rather than aborting immediately and losing the entire session.
         _HARD_LIMIT = 500_000  # ~1.5M chars — no legitimate context exceeds this
         if est > _HARD_LIMIT:
+            logger.error(
+                "Context far exceeds HARD_LIMIT (~%d est. tokens). "
+                "Attempting forced compression to system+query+last-2.",
+                est,
+            )
+            if len(messages) > 4:
+                compressed = [messages[0], messages[1]] + messages[-2:]
+                logger.warning(
+                    "Forced compression: %d messages -> %d", len(messages), len(compressed)
+                )
+                return compressed
             raise RuntimeError(
                 f"Context size is abnormally large: ~{est:,} est. tokens "
-                f"({est * 3:,} chars). This is almost certainly caused by "
-                f"excessive memory or knowledge injection. Aborting to protect "
-                f"API quota. Check memory.load_knowledge() and basin profiles."
+                f"({est * 3:,} chars). Forced compression did not help. "
+                f"Check memory.load_knowledge() and basin profiles."
             )
 
         # Need at least system + user + some history to compress
@@ -571,6 +720,27 @@ class HydroClaw:
         )
         return compressed
 
+    def _get_task_status_note(self) -> str:
+        """Return a compact task-status message to inject after tool calls.
+
+        Mirrors Claude Code's behavior: after every tool result, inject the
+        current TODO list so the agent always knows what remains.
+        Returns empty string if no active task list or all tasks done.
+        """
+        from hydroclaw.utils.task_state import TaskState, PENDING, RUNNING
+        try:
+            ts = TaskState(self.workspace)
+            if not ts.all_tasks():
+                return ""
+            pending = ts.pending_tasks()
+            running = [t for t in ts.all_tasks() if t["status"] == RUNNING]
+            if not pending and not running:
+                return ""  # all done or all failed, no need to remind
+            summary = ts.summary()
+            return f"[任务状态]\n{summary}"
+        except Exception:
+            return ""
+
     def _execute_tool(self, name: str, arguments: dict) -> Any:
         """Execute a tool function by name."""
         fn = self.tools.get(name)
@@ -591,51 +761,14 @@ class HydroClaw:
         try:
             result = fn(**arguments)
 
-            # Auto-save basin profile after successful calibration
-            if (
-                name in ("calibrate_model", "llm_calibrate")
-                and isinstance(result, dict)
-                and result.get("success")
-            ):
-                basin_ids = arguments.get("basin_ids", [])
-                model_name = arguments.get("model_name", "")
-                algorithm = arguments.get("algorithm", "SCE_UA")
-                best_params = result.get("best_params", {})
-                if name == "calibrate_model":
-                    metrics = result.get("metrics", {})
-                else:
-                    nse = result.get("best_nse")
-                    metrics = {"NSE": nse} if nse is not None else {}
-                for basin_id in basin_ids:
-                    self.memory.save_basin_profile(
-                        basin_id, model_name, best_params, metrics, algorithm
-                    )
+            # CC-4: run registered PostToolUse hooks (decoupled from tool functions)
+            for hook in self._post_tool_hooks.get(name, []):
+                try:
+                    hook(name, arguments, result)
+                except Exception as hook_err:
+                    logger.warning("PostToolUse hook failed for %s: %s", name, hook_err)
 
-            # Show task progress after any task-state-mutating tool
-            if name in ("create_task_list", "update_task", "add_task") and isinstance(result, dict) and result.get("success"):
-                self.ui.on_task_progress(self.workspace)
-
-            # If a new skill was created, refresh all registries
-            if name == "create_skill" and isinstance(result, dict) and result.get("success"):
-                self.tools = discover_tools()
-                self.tool_schemas = get_tool_schemas()
-                self.skill_registry = SkillRegistry(Path(__file__).parent / "skills")
-                logger.info(
-                    f"Registries refreshed: {len(self.tools)} tools, "
-                    f"{len(self.skill_registry.skills)} skills"
-                )
-                self.ui.dev_log(
-                    f"Registry refreshed: {len(self.tools)} tools, "
-                    f"{len(self.skill_registry.skills)} skills"
-                )
-
-            # If a new adapter was created, reload the adapter registry
-            if name == "create_adapter" and isinstance(result, dict) and result.get("success"):
-                from hydroclaw.adapters import reload_adapters
-                reload_adapters()
-                self.ui.dev_log("Adapter registry reloaded after create_adapter.")
-
-            # Update skill lifecycle state for generated skills
+            # Update skill lifecycle state for generated skills (not a hook; tightly coupled to agent)
             if self.skill_states.is_generated(name):
                 success = isinstance(result, dict) and result.get("success", False)
                 err = result.get("error") if isinstance(result, dict) else None

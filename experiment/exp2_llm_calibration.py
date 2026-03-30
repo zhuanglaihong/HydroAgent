@@ -296,6 +296,12 @@ def _zhu_method(basin_id: str, model_name: str, llm, cfg: dict, output_dir: str)
             r_lo = max(lo, float(v) - margin)
             r_hi = min(hi, float(v) + margin)
             if r_lo >= r_hi:
+                logger.warning(
+                    "Zhu iter %d: tight range degenerated for '%s' "
+                    "(proposed=%.4f, margin=%.4f, range=[%.4f, %.4f]). "
+                    "Falling back to full range.",
+                    iteration, k, float(v), margin, lo, hi,
+                )
                 r_lo, r_hi = lo, hi
             tight_ranges[k] = [r_lo, r_hi]
             param_names.append(k)

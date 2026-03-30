@@ -1,5 +1,7 @@
 # 使用指南
 
+> 版本：v2.6 | 日期：2026-03-25
+
 ## 首次使用前：配置密钥与路径
 
 运行前必须先填写 `configs/private.py`（复制模板）：
@@ -220,6 +222,26 @@ You> 再次率定流域12025000的GR4J模型，看看能不能比上次更好
 | `logs/` | 运行日志 |
 | `generated_code/` | LLM 生成的分析脚本 |
 
+### 10. 注册本地水文包
+
+```
+You> 帮我注册本地包 D:/project/autohydro，包名 autohydro
+```
+
+Agent 会调用 `add_local_package`，将包写入 `plugins.json` 并热加载，之后即可驱动该包执行计算。
+
+### 11. 委派子代理
+
+批量任务中，Agent 可以委派每个单流域任务给专用的子代理（上下文隔离）：
+
+```
+You> 用子代理并行率定流域 12025000 和 03439000，模型 GR4J
+```
+
+Agent 自动调用 `spawn_agent("calibrate-worker", ...)` 两次，每个子代理独立运行，不共享历史上下文。
+
+---
+
 ## 常用技巧
 
 **控制迭代轮数**：
@@ -234,6 +256,14 @@ You> 率定GR4J模型，流域12025000，只需100轮迭代
 python -m hydroclaw -w results/exp_gr4j "率定GR4J模型，流域12025000"
 python -m hydroclaw -w results/exp_xaj  "率定XAJ模型，流域12025000"
 ```
+
+**强制诊断模式**（NSE 偏低时让 Agent 主动观测）：
+
+```
+You> 率定结果 results/gr4j_12025000 的 NSE 偏低，帮我检查参数是否触边界
+```
+
+Agent 会调用 `read_file` 直接读取参数文件，自主诊断边界情况。
 
 **英文查询同样支持**：
 

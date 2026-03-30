@@ -207,10 +207,10 @@ K3: +跨会话记忆 -> 流域档案先验（完整系统）
 
 ```bash
 # 建议顺序（exp1 无 LLM，优先验证环境）
-python scripts/exp1_standard_calibration.py   # ~3h，需要 LLM（Agent 驱动）
-python scripts/exp2_llm_calibration.py        # ~4h，需要 LLM（Zhu 迭代 + Agent）
-python scripts/exp3_capability_breadth.py     # ~2h，全 Agent 对话
-python scripts/exp4_knowledge_ablation.py     # ~2h，全 Agent 对话（含消融条件切换）
+python experiment/exp1_standard_calibration.py   # ~3h，需要 LLM（Agent 驱动）
+python experiment/exp2_llm_calibration.py        # ~4h，需要 LLM（Zhu 迭代 + Agent）
+python experiment/exp3_capability_breadth.py     # ~2h，全 Agent 对话
+python experiment/exp4_knowledge_ablation.py     # ~2h，全 Agent 对话（含消融条件切换）
 ```
 
 **注意事项**：

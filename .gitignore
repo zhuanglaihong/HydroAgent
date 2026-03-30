@@ -186,6 +186,7 @@ faiss_db/
 *.pkl
 
 # 其他临时文件
+.workbuddy/
 chunks_result.txt
 .qodo/
 *.log
@@ -214,6 +215,9 @@ test_workspaces/
 test_prompt_pool/
 prompt_pool/
 test_results/
+.cowork-temp/
+hydroclaw-research-plan.md
+integration-plan.md
 # 重构相关临时文件
 refactor_script.py
 split_agent.py

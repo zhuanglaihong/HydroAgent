@@ -58,7 +58,7 @@ class TaskState:
         now = datetime.now().isoformat(timespec="seconds")
         normalized = []
         for t in tasks:
-            normalized.append({
+            entry: dict = {
                 "id":          t["id"],
                 "description": t.get("description", t["id"]),
                 "status":      PENDING,
@@ -66,7 +66,10 @@ class TaskState:
                 "error":       None,
                 "started_at":  None,
                 "finished_at": None,
-            })
+            }
+            if t.get("depends_on"):
+                entry["depends_on"] = list(t["depends_on"])
+            normalized.append(entry)
         self._data = {
             "goal":       goal,
             "created_at": now,

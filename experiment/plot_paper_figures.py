@@ -13,9 +13,9 @@ Output: results/paper/figures/
   Fig4b_exp4_adversarial.png    - Exp4: Adversarial prior detection
 
 Usage:
-  python scripts/plot_paper_figures.py          # generate all
-  python scripts/plot_paper_figures.py --exp 2  # only exp2 figures
-  python scripts/plot_paper_figures.py --show   # also display interactively
+  python experiment/plot_paper_figures.py          # generate all
+  python experiment/plot_paper_figures.py --exp 2  # only exp2 figures
+  python experiment/plot_paper_figures.py --show   # also display interactively
 """
 
 import sys

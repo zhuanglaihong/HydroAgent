@@ -446,12 +446,131 @@ HydroClaw 当前**不使用向量数据库或语义检索（RAG）**，而采用
 
 ### 5.1 论文定位
 
-**目标期刊**（候选，按契合度排序）：
-- *Environmental Modelling & Software*（水文+软件工程，最契合）
-- *Journal of Hydroinformatics*（已有多篇 LLM+水文论文）
-- *Geophysical Research Letters*（短文快发，同 Zhu et al. 2026）
+> 本节经 2026-03-30 专项调研后更新，覆盖期刊选择、命名说明、题目确定及完整调研报告。
 
-**论文类型**：系统设计 + 实验验证
+**首投期刊（确定）**：*Geoscientific Model Development*（EGU，**JCR Q1**，IF≈6.0，开放获取强制）
+
+> **注意**：GMD 在**中科院分区**为地学 **Q2**（IF 6.0 低于 Q1 门槛约 6.5），在 **JCR 分区**（Geosciences Multidisciplinary）为 **Q1**。若所在单位/导师要求中科院 Q1，请改投 JoH。
+>
+> 选择依据：HydroClaw 本质是建模框架，框架本身即贡献。GMD 专门发表地球系统模型/工具开发论文，
+> 不要求"水文科学发现"作为主叙事，与 HydroClaw 论文体质天然契合。
+> AI4Water v1.0（GMD 2022）、smash v1.0（GMD 2025）是直接先例。
+
+**拒稿后备选（降序）**：
+
+1. *Journal of Hydrology*（Elsevier，**中科院地学 Q1**，IF≈6.5）— 若需中科院 Q1 则优先此项；需将主叙事改为"LLM 如何改善水文率定结果"，补充参数物理解释，压缩框架描述
+2. *Hydrology and Earth System Sciences*（EGU，中科院地学 Q1，IF≈6.0，开放获取）
+3. *Environmental Modelling & Software*（Elsevier，中科院工程/环境 **Q2**（多数年份），IF≈5.5）— 内容最契合，但底层栈（hydromodel/hydrodataset）的框架论文已于 EM&S 2026 发表，存在"增量工作"拒稿风险
+4. *Journal of Hydroinformatics*（多篇 LLM+水文前例，门槛相对低）
+
+**论文类型**：Model Description Paper + Empirical Validation（GMD 标准论文类型）
+
+**确定题目**：
+> **HydroClaw v1.0: an LLM-powered agentic framework for automated hydrological model calibration with structured domain knowledge**
+
+格式对标 GMD 惯例（系统名+版本号+冒号+一句话描述），关键词覆盖：LLM / agentic / automated / calibration / domain knowledge。
+
+**项目命名说明（论文 Introduction 第一段写入）**：
+
+> HydroClaw derives its name from OpenClaw, the lightweight agentic loop framework that inspired
+> its architectural design. The "Hydro" prefix marks its domain-specific adaptation to hydrological
+> modeling workflows — following the same pattern by which domain-specialized tools extend general
+> computational frameworks for geoscientific applications (cf. HydroLang, AI4Water).
+
+命名逻辑的学术价值：直接建立技术谱系（OpenClaw -> HydroClaw），印证论文核心论点"通用 Agentic Loop + 领域知识注入 = 专精 Agent"，名字本身即对这一论点的演示。
+
+---
+
+### 5.0 期刊调研报告（2026-03-27）
+
+#### 5.0.1 Journal of Hydrology 范围与偏好
+
+根据 JoH 官方作者指南和近年发表规律：
+
+| 维度 | 期刊偏好 | HydroClaw 对齐度 |
+|------|---------|----------------|
+| **空间尺度** | **流域尺度**，明确排斥纯站点实验 | GR4J/HBV 在 CAMELS 流域率定，符合 |
+| **科学问题** | 水文过程理解、预测精度、参数不确定性 | **弱**：HydroClaw 重点是工作流自动化，非新水文发现 |
+| **数据规模** | 大样本（CAMELS，10+ 流域）是近年主流 | **偏少**：5 流域，审稿人可能要求扩大 |
+| **方法论文** | 接受，但必须有量化 NSE/KGE 验证 | 有量化指标，符合 |
+| **软件框架** | 较少，框架类更常见于 EM&S/GMD | **风险**：Exp3/Exp4 偏 AI 系统评估，需包装成水文问题 |
+
+投 JoH 核心前提：主叙事必须是"LLM Agent 如何改善水文率定的科学结果"，框架是手段，水文发现是目的。
+
+#### 5.0.2 近年相关文献地图（2024-2026）
+
+**A. 直接竞品（LLM + 水文工作流）**
+
+| 论文 | 期刊 | 年份 | 与 HydroClaw 差异 |
+|------|------|------|-----------------|
+| Zhu et al. — LLMs as Calibration Agents | *GRL* | 2026 | 仅替换单步参数提议；HydroClaw 是端到端闭环 + 多流域 |
+| Wang et al. — LLMs for Water Distribution Network | *Water Research* | 2025 | 管网水力优化（非降雨径流率定）；无跨会话记忆；无动态扩展 |
+| INDRA — Automated Scientific Discovery in Hydrology | *Hydrological Processes* | 2025 | 概念框架，无量化实验；HydroClaw 有完整实证 |
+| AQUAH | *ICCVW SEA Workshop* | 2025 | 只做模拟设置，不做率定；主观评分（7/10），无 NSE/KGE |
+
+**B. GMD 框架论文先例（直接参照）**
+
+| 论文 | 年份 | 对 HydroClaw 的参照价值 |
+|------|------|----------------------|
+| AI4Water v1.0（ML/DL 水文时序 Python 包） | 2022 | 结构最相似：框架即贡献，基准案例验证，无新水文发现 |
+| RoGeR v3.0.5（过程水文 Python 工具箱） | 2024 | 模块化工具箱描述范式 |
+| smash v1.0（可微水文建模+数据同化框架） | 2025 | 复杂框架在 GMD 发表的案例 |
+| Python framework for differentiable hydrology（hydromodel/hydrodataset 栈） | EM&S 2026 | HydroClaw 底层依赖栈，已发表于 EM&S → EM&S 再投有增量风险 |
+
+#### 5.0.3 GMD 路线论文结构
+
+```
+1. Introduction（15%）
+   - 水文模型率定自动化需求
+   - 现有框架局限：手动配置、无 NL 接口、无工作流编排
+   - HydroClaw 设计目标与三条贡献
+
+2. Framework Design（50% — GMD 核心）
+   2.1 整体架构：五层模型（大脑/小脑/脊椎/末梢/肌肉）
+   2.2 Agentic Loop（ReAct 模式，工具调用协议）
+   2.3 PackageAdapter 插件层（优先级路由、热插拔）
+   2.4 Skill 包系统（工作流说明书 + 工具自包含）
+   2.5 四层知识体系（工具自描述/Skill/领域知识/跨会话记忆）
+   2.6 LLM 参数范围调控机制（llm_calibrate）
+   2.7 上下文控制策略（截断机制、Token 预算）
+
+3. System Evaluation（25%）
+   3.1 正确性基准（Exp1）：Agent 是否复现标准 SCE-UA 结果？
+   3.2 LLM 调控模块验证（Exp2 A/B/C）：参数范围调整 -> NSE 改进因果链
+   3.3 框架鲁棒性与可扩展性（Exp3）：NL 多样性 + 动态 Skill 生成
+   3.4 知识注入模块消融（Exp4 K0-K3）：各知识层贡献量化
+
+4. Limitations and Future Development（10%）
+   - LLM 随机性与可复现性（报告 mean±std）
+   - Token 成本与延迟（TokenTracker 数据）
+   - 当前支持模型范围（GR4J/GR5J/GR6J/HBV）
+   - 大样本验证路线（50-100 流域）
+
+5. Code and Data Availability（必须）
+   - GitHub 仓库链接 + Zenodo DOI（v1.0 tag release）
+   - 安装文档、实验复现脚本、最小可运行示例
+```
+
+#### 5.0.4 GMD 审稿人预期质疑与应对
+
+| 预期质疑 | 应对策略 |
+|---------|---------|
+| "LLM 有随机性，结果可复现吗？" | 每实验重复 3 次报告 mean±std；提供完整配置文件；工具调用序列可记录 |
+| "依赖哪个 LLM，版本锁定怎么办？" | 说明 OpenAI-compatible API 可替换性；实验用 Qwen/DeepSeek（非付费 GPT-4 only）|
+| "代码在哪？许可证？" | GitHub 链接 + Zenodo DOI + Apache-2.0 许可 |
+| "与 AI4Water 的区别？" | AI4Water = DL 预测模型训练工具；HydroClaw = 过程模型率定 Agentic 框架（NL -> SCE-UA/LLM 调控）|
+| "Token 成本实用吗？" | 报告每次率定的 token 消耗（TokenTracker）和估算美元成本 |
+
+#### 5.0.5 面向 JoH（备选）的撰写策略
+
+若 GMD 拒稿转投 JoH，需做以下调整：
+
+- **主叙事重构**：从"我们构建了一个框架"改为"我们研究了 LLM 参与水文率定的条件和效果"
+- **实验重新定位**：Exp1/Exp2 升级为主实验（水文科学结果），Exp3 降格为补充验证，Exp4 改名"领域知识贡献量化"
+- **加参数物理解释**：记录 LLM 每轮调整 GR4J 参数方向，与流域气候特征（干旱指数 AI、面积）关联分析
+- **5 流域规模论证**：覆盖 3 个气候区 + 每组 3 次重复 + 引用 Zhu 2026（GRL，单流域）说明探索性研究规模惯例
+
+---
 
 ### 5.2 论文结构
 

@@ -1,84 +1,69 @@
-# 独立工具参考
+# 工具完整参考
 
-独立工具（`hydroclaw/tools/`）是不附属于特定 Skill 工作流的通用工具，任何场景下均可调用。
+> 版本：v2.6 | 日期：2026-03-25
 
-Skill 工具（`hydroclaw/skills/*/`）的详细说明见 [skills.md](skills.md)。
+HydroClaw 的所有工具按来源分为三类，详细 API 见 [skills.md](skills.md)：
+
+| 来源 | priority | 位置 | 工具列表 |
+|------|----------|------|---------|
+| 核心工具 | 20 | `tools/*.py` | validate_basin, run_simulation, read_file, inspect_dir, create_task_list, get_pending_tasks, update_task, add_task, search_memory, save_basin_profile, record_error_solution, ask_user, create_skill, create_adapter, install_package, register_package, add_local_package, add_local_tool, spawn_agent |
+| Skill 工具 | 10 | `skills/*/` | calibrate_model, evaluate_model, llm_calibrate, batch_calibrate, compare_models, generate_code, run_code, visualize, run_simulation, list_basins, read_dataset, convert_dataset_to_nc, list_camels_basins, check_camels_data |
+| 动态工具 | 5 | `create_skill` 生成 | 任意（运行时生成） |
+
+同名冲突时保留高优先级工具；调用 `list_tools()` 可查询当前注册状态。
 
 ---
 
-## 工具列表
+## 核心工具（tools/，priority=20）
 
-| 工具 | 功能 |
+### 观测类
+
+| 工具 | 说明 |
 |------|------|
-| `validate_basin` | 验证 CAMELS 流域 ID 是否存在 |
-| `run_simulation` | 使用已有参数运行模型模拟 |
-| `create_skill` | 运行时生成新 Skill（元工具） |
+| `validate_basin(basin_id, t_range)` | 验证流域 ID 是否有效，返回数据探针（变量列表、时间范围、读取 API 说明） |
+| `read_file(path)` | 读取工作区内 JSON/YAML/CSV/TXT 文件，截断到 8K |
+| `inspect_dir(path)` | 查看目录文件列表与结构 |
 
----
+### 任务管理类
 
-## validate_basin
+| 工具 | 说明 |
+|------|------|
+| `create_task_list(goal, tasks)` | 为批量任务创建持久化任务列表（写入 task_state.json） |
+| `get_pending_tasks()` | 获取下一个待执行任务及整体进度摘要 |
+| `update_task(task_id, status, nse, kge, notes)` | 标记任务为 done/failed，记录结果 |
+| `add_task(description)` | 动态追加新任务（Agent 根据中间结果决定） |
 
-验证 CAMELS-US 流域 ID 是否存在且数据可用。通常是任何率定流程的第一步。
+### 记忆类
 
-```python
-validate_basin(basin_ids=["12025000", "99999999"])
-# -> {
-#     "valid_basins": ["12025000"],
-#     "invalid_basins": ["99999999"],
-#     "valid": true,
-#     "success": true
-#    }
-```
+| 工具 | 说明 |
+|------|------|
+| `search_memory(query)` | 检索跨会话历史（MEMORY.md + 流域档案） |
+| `save_basin_profile(basin_id, model, ...)` | 保存流域率定档案（通常由 PostToolUse hook 自动调用） |
+| `record_error_solution(error, solution)` | 将错误-解决方案对写入 error_solutions.json 知识库 |
 
-当流域 ID 无效时，Agent 会提前告知用户，不会触发后续率定。
+### 交互类
 
----
+| 工具 | 说明 |
+|------|------|
+| `ask_user(question)` | 暂停并向用户提问（信息不足时使用） |
 
-## run_simulation
+### 仿真类
 
-使用已有率定参数运行模型模拟，不重新做参数优化。适用于：
-- 在训练/测试期以外的时段运行模拟
-- 使用固定参数集进行情景分析
+| 工具 | 说明 |
+|------|------|
+| `run_simulation(calibration_dir, sim_period)` | 用已率定参数在任意时段做径流模拟 |
 
-```python
-run_simulation(
-    calibration_dir="results/gr4j_12025000",
-    sim_period=["2015-01-01", "2020-12-31"],
-)
-# -> {"simulation_file": "results/gr4j_12025000/simulation.nc", "success": true}
-```
+### 元工具（动态扩展类）
 
----
-
-## create_skill
-
-元工具（Meta-tool）：LLM 在运行时自动生成新的 Skill 目录，包含 `skill.md` 工作流指引和工具实现文件，立即注册进工具表。
-
-```python
-create_skill(
-    skill_name="mcmc_uncertainty",
-    description="使用 spotpy 对水文模型参数做 MCMC 不确定性分析",
-    requirements=["spotpy"],
-)
-# -> {
-#     "skill_dir": "hydroclaw/skills/mcmc_uncertainty/",
-#     "files_created": ["skill.md", "tool.py"],
-#     "tool_registered": true,
-#     "success": true
-#    }
-```
-
-生成示例：
-
-```
-# 用户: 帮我做参数敏感性分析，用SALib包
-
-hydroclaw/skills/sensitivity_analysis/
-├── skill.md      <- LLM 生成的工作流指引
-└── tool.py       <- LLM 生成的工具实现（语法已验证）
-```
-
-新工具在当前对话中立即可用，下次启动时也会自动加载。
+| 工具 | 说明 |
+|------|------|
+| `create_skill(name, description)` | 运行时生成新 Skill 包（skill.md + tool.py），立即注册（priority=5） |
+| `create_adapter(name, description, supported_models)` | 生成 PackageAdapter 骨架 + skills/skill.md，自动 reload |
+| `install_package(package_name, version)` | 受控 pip 安装（需用户授权） |
+| `register_package(package_name)` | fetch PyPI API + importlib 探测 + LLM 分析，自动生成适配器 |
+| `add_local_package(path, name, description)` | 注册本地目录包，写入 plugins.json + 热重载 |
+| `add_local_tool(path)` | 注册单 .py 文件，自动发现公开函数并注册为工具（priority=5） |
+| `spawn_agent(name, task)` | 委派任务给子代理（depth limit=1，防递归） |
 
 ---
 
@@ -86,10 +71,11 @@ hydroclaw/skills/sensitivity_analysis/
 
 `hydroclaw/tools/__init__.py` 在启动时扫描：
 
-1. `hydroclaw/tools/*.py` — 独立工具文件
-2. `hydroclaw/skills/*/*.py` — 每个 Skill 子目录中的工具文件
+1. `hydroclaw/tools/*.py` — 核心工具（priority=20）
+2. `hydroclaw/skills/*/*.py` — 每个 Skill 子目录（priority=10）
+3. `create_skill` 动态生成的目录（priority=5，生成后立即触发重扫）
 
-所有不以 `_` 开头的公开函数自动生成 OpenAI Function Calling Schema 并注册。
+**Schema 自动生成规则**：
 
 | Python 类型 | JSON Schema 类型 |
 |-------------|-----------------|
@@ -99,12 +85,45 @@ hydroclaw/skills/sensitivity_analysis/
 | `bool` | `"boolean"` |
 | `list[str]` | `{"type": "array", "items": {"type": "string"}}` |
 | `dict` | `"object"` |
-| `str \| None` | `"string"`（Optional 展开） |
-| `_xxx` 前缀参数 | 不出现在 Schema 中（Agent 自动注入） |
+| `str | None` | `"string"`（Optional 展开） |
+| `_xxx` 前缀参数 | 不出现在 Schema（Agent 运行时自动注入） |
 
-热加载：
+**`__agent_hint__` 协议**：工具函数可附加 `__agent_hint__` 属性，描述隐性约束和输出->输入关系，
+`fn_to_schema()` 自动追加到 schema description，LLM 调用前即可看到：
+
+```python
+calibrate_model.__agent_hint__ = (
+    "Returns calibration_dir, NO metrics. "
+    "Call evaluate_model(calibration_dir=...) separately for NSE/KGE."
+)
+```
+
+---
+
+## 内部参数注入（_ 前缀约定）
+
+以 `_` 开头的参数不出现在 Function Calling Schema 中，由 Agent 在运行时自动注入：
+
+| 参数 | 注入值 | 用途 |
+|------|--------|------|
+| `_workspace` | 当前工作目录（Path） | 文件读写路径 |
+| `_cfg` | 全局配置字典 | API Key、默认参数等 |
+| `_llm` | LLM 客户端实例 | 需要调用 LLM 的工具（llm_calibrate 等） |
+| `_ui` | UI 实例 | 进度显示 |
+
+---
+
+## 热加载
 
 ```python
 from hydroclaw.tools import reload_tools
-reload_tools()   # create_skill 完成后自动调用
+reload_tools()  # create_skill / create_adapter 完成后自动调用
+```
+
+查询当前工具集：
+
+```python
+from hydroclaw.tools import get_all_tools
+for name, (fn, priority) in sorted(get_all_tools().items()):
+    print(f"  [{priority:2d}] {name}")
 ```

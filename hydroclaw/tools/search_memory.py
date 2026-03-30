@@ -61,6 +61,7 @@ def search_memory(
 
     if "basin_profiles" in sources:
         candidates.extend(_search_basin_profiles(_workspace, tokens))
+        candidates.extend(_search_basin_index(_workspace, tokens))
 
     if "knowledge" in sources:
         knowledge_dir = Path(__file__).parent.parent / "knowledge"
@@ -145,6 +146,8 @@ def _search_basin_profiles(workspace: Path, tokens: list[str]) -> list[dict]:
 
     results = []
     for profile_file in profiles_dir.glob("*.json"):
+        if profile_file.name == "basin_index.json":
+            continue
         try:
             with open(profile_file, encoding="utf-8") as f:
                 profile = json.load(f)
@@ -152,8 +155,9 @@ def _search_basin_profiles(workspace: Path, tokens: list[str]) -> list[dict]:
             continue
 
         basin_id = profile.get("basin_id", profile_file.stem)
+        climate_attrs = profile.get("climate_attrs", {})
         for rec in profile.get("records", []):
-            text = _profile_record_to_text(basin_id, rec)
+            text = _profile_record_to_text(basin_id, rec, climate_attrs)
             score = _bm25_score(tokens, _tokenize(text))
             if score > 0:
                 results.append({
@@ -165,6 +169,70 @@ def _search_basin_profiles(workspace: Path, tokens: list[str]) -> list[dict]:
                 })
 
     return results
+
+
+def _search_basin_index(workspace: Path, tokens: list[str]) -> list[dict]:
+    """Search basin_index.json for cross-basin semantic queries.
+
+    Enables queries like "semiarid basins" or "basins with area > 1000".
+    Each matching basin entry becomes one result with a summary of all models.
+    """
+    index_file = workspace / "basin_profiles" / "basin_index.json"
+    if not index_file.exists():
+        return []
+
+    try:
+        with open(index_file, encoding="utf-8") as f:
+            index = json.load(f)
+    except Exception:
+        return []
+
+    results = []
+    for entry in index.get("basins", []):
+        text = _index_entry_to_text(entry)
+        score = _bm25_score(tokens, _tokenize(text))
+        if score > 0:
+            nse_str = ", ".join(
+                f"{m}={v:.3f}" for m, v in entry.get("best_nse_by_model", {}).items()
+            )
+            summary = (
+                f"Basin {entry['basin_id']} | "
+                f"climate={entry.get('climate_type', '?')} | "
+                f"area={entry.get('area_km2', '?')}km2 | "
+                f"best NSE: {nse_str or 'N/A'} | "
+                f"{entry.get('record_count', 0)} calibration(s)"
+            )
+            results.append({
+                "source": "basin_index",
+                "title": f"Basin index / {entry['basin_id']}",
+                "timestamp": index.get("updated_at", ""),
+                "content": summary[:_SNIPPET_MAX_CHARS],
+                "score": score * 1.2,  # Slight boost: index entries are pre-summarized
+            })
+    return results
+
+
+def _index_entry_to_text(entry: dict) -> str:
+    """Serialize a basin index entry to searchable text."""
+    parts = [
+        f"basin={entry.get('basin_id', '')}",
+        f"climate={entry.get('climate_type', '')}",
+        f"land={entry.get('land_use', '')}",
+    ]
+    if entry.get("area_km2") is not None:
+        area = entry["area_km2"]
+        parts.append(f"area={area}")
+        # Add human-readable size label for keyword matching
+        if isinstance(area, (int, float)):
+            if area < 500:
+                parts.append("small_basin")
+            elif area < 5000:
+                parts.append("medium_basin")
+            else:
+                parts.append("large_basin")
+    for model, nse in entry.get("best_nse_by_model", {}).items():
+        parts.append(f"model={model} nse={nse:.3f}")
+    return " ".join(parts)
 
 
 def _search_knowledge(knowledge_dir: Path, tokens: list[str]) -> list[dict]:
@@ -278,7 +346,9 @@ def _entry_to_text(entry: dict) -> str:
     return " | ".join(parts)
 
 
-def _profile_record_to_text(basin_id: str, rec: dict) -> str:
+def _profile_record_to_text(
+    basin_id: str, rec: dict, climate_attrs: dict | None = None
+) -> str:
     """Serialize a basin profile record to searchable text."""
     nse = rec.get("train_nse")
     nse_str = f"{nse:.3f}" if isinstance(nse, float) else str(nse)
@@ -287,13 +357,21 @@ def _profile_record_to_text(basin_id: str, rec: dict) -> str:
         f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}"
         for k, v in params.items()
     )
-    return (
-        f"basin={basin_id} model={rec.get('model', '?')} "
-        f"algorithm={rec.get('algorithm', '?')} "
-        f"train_nse={nse_str} kge={rec.get('train_kge', 'N/A')} "
-        f"date={rec.get('calibrated_at', '')[:10]} "
-        f"params: {params_str}"
-    )
+    parts = [
+        f"basin={basin_id}",
+        f"model={rec.get('model', '?')}",
+        f"algorithm={rec.get('algorithm', '?')}",
+        f"train_nse={nse_str}",
+        f"kge={rec.get('train_kge', 'N/A')}",
+        f"date={rec.get('calibrated_at', '')[:10]}",
+    ]
+    if params_str:
+        parts.append(f"params: {params_str}")
+    if climate_attrs:
+        for k, v in climate_attrs.items():
+            if v is not None:
+                parts.append(f"{k}={v}")
+    return " ".join(parts)
 
 
 def _parse_date(date_str: str | None) -> datetime | None:

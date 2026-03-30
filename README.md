@@ -332,7 +332,7 @@ HydroAgent/
 │   ├── model_config.py           # 算法参数（轮次、目标函数等）
 │   └── private.py                # API Key、数据路径（gitignore）
 ├── sessions/                     # 会话历史（*.jsonl + *_summary.json）
-├── scripts/                      # 论文实验脚本
+├── experiment/                   # 论文实验脚本
 └── docs/                         # 项目文档
 ```
 
