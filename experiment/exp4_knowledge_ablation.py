@@ -313,7 +313,7 @@ def run_main_ablation(workspace: Path) -> dict:
     logger.info("=" * 60)
 
     _seed_basin_profile(workspace)
-    agent = HydroClaw(workspace=workspace)
+    agent = HydroClaw(workspace=workspace, prompt_mode="minimal", config_override={"max_turns": 8})
     all_results = []
 
     for cond_id, cond_key, cond_name in CONDITIONS:
@@ -444,7 +444,7 @@ def run_adversarial_robustness(workspace: Path) -> dict:
     logger.info("=" * 60)
 
     results = []
-    agent = HydroClaw(workspace=workspace)
+    agent = HydroClaw(workspace=workspace, prompt_mode="minimal", config_override={"max_turns": 8})
 
     for basin_info in ADVERSARIAL_BASINS:
         basin_id = basin_info["basin_id"]

@@ -174,43 +174,61 @@ def _execute_tool(self, name: str, arguments: dict) -> dict:
 
 ---
 
-## 4. 系统提示构建（六段式）
+## 4. 系统提示构建（七段式）
 
-`_build_system_prompt(query)` 动态组装六个部分：
+`_build_system_prompt(query)` 动态组装七个部分（五层提示模型）：
 
 ```
-Section 1: 角色与核心原则
-  <- skills/system.md（每次对话都注入）
+Layer 1 — 身份层（Identity）
+  Section 1: 角色与核心原则
+    <- skills/system.md（每次对话都注入）
 
-Section 2: 工作流 Skill 说明书
-  <- skills/*/skill.md（按查询关键词匹配注入）
-  仅注入文档路径列表（让 LLM 按需 read_file），避免全量注入占用 token
+Layer 2 — 行为层（Policy）          [v2.7 新增]
+  Section 1.5: 行为约束策略
+    <- policy/*.md（全量注入，上限 2000 字符）
+    含：agent_behavior / calibration_policy / tool_safety_policy / reporting_policy
+    在 full 和 minimal 模式下均注入（安全约束不可省略）
 
-Section 2.5: 可用子代理列表
-  <- AgentRegistry.available_agents_prompt()
-  格式：[name]: [description] (tools: ...)
+Layer 3 — 技能层（Skills）
+  Section 2: 工作流 Skill 说明书
+    <- skills/*/skill.md（按查询关键词匹配注入）
+    仅注入文档路径列表（让 LLM 按需 read_file），避免全量注入占用 token
+  Section 2.5: 可用子代理列表
+    <- AgentRegistry.available_agents_prompt()
+  Section 3: 适配器包文档
+    <- adapters/*/skills/*.md（全量注入，通常较短）
 
-Section 3: 适配器包文档
-  <- adapters/*/skills/*.md（全量注入，通常较短）
-  包含 hydromodel / hydrodatasource 的调用约定
+Layer 4 — 知识层（Knowledge）
+  Section 4: 领域知识
+    <- knowledge/*.md（按查询关键词匹配注入，含 failure_modes.md）
+    上限 4000 字符
 
-Section 4: 领域知识
-  <- knowledge/*.md（按查询关键词匹配注入）
-  含 model_parameters.md（参数物理含义）+ calibration_guide.md（率定经验）
+Layer 5 — 记忆层（Memory）
+  Section 5: 流域档案 + 跨会话记忆
+    <- basin_profiles/<basin_id>.json（按 basin_id 匹配注入）
+    <- MEMORY.md（跨会话通用知识，上限 4000 字符）
+    上限 3000 字符
 
-Section 5: 工作区状态 + 流域档案
-  <- basin_profiles/<basin_id>.json（按 basin_id 匹配注入）
-  <- MEMORY.md（跨会话通用知识，截断到 4000 字符）
-
-Section 6: 工具自描述摘要
+Section 6（工具 schema 内嵌）:
   <- __agent_hint__ 属性（自动附加到工具 schema description）
-  不作为独立段落，而是嵌在工具列表里
+  不作为独立段落，嵌在工具列表里
 ```
+
+**Token 预算（目标初始上下文 < 15K tokens）：**
+
+| 层次 | 载体 | token 预算 |
+|------|------|-----------|
+| 身份层 | system.md | ~2K（约 6K 字符） |
+| 行为层 | policy/*.md | 上限 2K 字符 (~700 tokens) |
+| 技能层 | skill 路径列表 + adapter docs | ~1-2K |
+| 知识层 | knowledge/*.md 片段 | 上限 4K 字符 (~1.3K tokens) |
+| 记忆层 | basin_profiles + MEMORY.md | 上限 3K 字符 (~1K tokens) |
 
 **注入顺序的设计理由**：
-- 工作流 Skill 在前：确保 LLM 先获得"该怎么做"的行为框架
-- 领域知识在后：在 Skill 框架确定后，知识作为推理的底层依据
-- 流域档案最后：作为针对本次查询的具体上下文
+- 行为层紧跟身份层：约束规则比技能指导更基础，LLM 先建立"不能做什么"再看"怎么做"
+- 技能层在前：确保 LLM 先获得"该怎么做"的行为框架
+- 知识层在后：在 Skill 框架确定后，知识作为推理的底层依据
+- 记忆层最后：作为针对本次查询的具体上下文
 - 工具自描述嵌在 schema：与工具定义同位，修改工具时自然同步更新
 
 ---
@@ -852,7 +870,74 @@ GET  /api/tasks            -- 获取当前任务列表
 
 ---
 
-## 17. 知识注入顺序总览
+## 17. 认知记忆架构（三类记忆模型）
+
+HydroClaw 的知识组织参照认知科学的三类长期记忆模型：
+
+```
+                    ┌─────────────────────────────────┐
+                    │         system.md               │
+                    │   与生俱来的原则与常识底座        │
+                    │  NSE阈值/默认值/工具规则/身份定位 │
+                    └──────────────┬──────────────────┘
+                                   │ 始终在（每次对话）
+                                   ▼
+用户提问 ──────────────────► Agent 推理（ReAct Loop）
+                                   │
+              ┌────────────────────┼────────────────────┐
+              ▼                    ▼                    ▼
+         程序性记忆           语义记忆              情节记忆
+     skill 索引 in prompt    knowledge/          memory/ + basin_profiles
+     完整内容 read_file       按需 read_file       任务前 search_memory
+     「我会做什么」          「遇事查手册」         任务后写入
+```
+
+### 三类记忆对照表
+
+| 记忆类型 | 认知科学对应 | 载体 | 触发方式 | 内容 |
+|---------|------------|------|---------|------|
+| **程序性** | 骑自行车——不需要有意识提取 | `skills/*/skill.md` | 任务开始时 read_file | 操作流程、决策规则、止损条件 |
+| **语义性** | 事实知识——需要时查阅 | `knowledge/*.md` | 遇到问题主动 read_file | 报错诊断、参数含义、数据集说明 |
+| **情节性** | 个人经历——跨会话积累 | `memory/` + `basin_profiles/` | 任务前 search_memory / 任务后写入 | 历史率定记录、用户偏好、流域档案 |
+
+### 各类记忆在 `_build_system_prompt` 中的位置
+
+```
+Section 1   system.md      — 常识底座（与生俱来，始终注入）
+Section 2   skill 路径列表 — 程序性记忆索引（始终注入；内容按需 read_file）
+Section 4   knowledge/     — 语义记忆（v2.8 起：不再自动注入，Agent 按需 read_file）
+Section 5   basin_profiles + MEMORY.md — 情节记忆摘要（full 模式注入）
+```
+
+> **v2.8 变更**：`knowledge/` 不再通过 `_load_domain_knowledge()` 自动注入。
+> Agent 在遇到报错或不确定情况时，遵循 skill.md 的指引，主动调用 `read_file` 查阅。
+> 优势：消除截断问题（原先硬截断 2000 字符）；零冗余注入；知识质量更高。
+
+---
+
+### system prompt 设计质量标准
+
+参照 Cursor / Claude Code / Devin 等顶级 Agent 系统提示分析，优质 system prompt 应包含：
+
+| 模块 | 内容要求 | HydroClaw 现状 |
+|------|---------|--------------|
+| **角色与边界** | 明确是什么、不是什么、能做什么不能做什么 | ✅ system.md 首段 |
+| **工具决策规则** | 何时用哪个工具，不只是列清单 | ✅ 各场景工具序列表 |
+| **记忆架构说明** | 告知 Agent 有哪几类记忆及访问方式 | ✅ search_memory 使用规则 |
+| **预算自治边界** | 明确何时停止、何时上报、何时询问用户 | ✅ ask_user / Stop Conditions |
+| **错误升级路径** | 失败后的决策树，不是"重试三次" | ✅ Failure Recovery 在 skill.md |
+| **反思校验** | 输出前检查结果是否合理 | ⚠️ 部分（calibrate_model 无指标提醒存在）|
+| **安全约束** | 不可绕过的底线，写入 Identity 而非条件 | ✅ 身份定位段 |
+| **输出格式** | 语言、结构、禁止的表达方式 | ✅ 响应语言 + 工具调用原则 |
+
+**当前 system.md 相对薄弱的地方：**
+- 缺少对三类记忆的显式说明（Agent 靠 search_memory 的用法示例隐式理解）
+- 缺少"反思校验"的明确指令（如"给出最终结论前，先验证指标是否合理"）
+- 工具预算约束（最多调用几次同一工具）分散在各处，不够集中
+
+---
+
+## 17.5 知识注入顺序总览
 
 ```
 用户查询："帮我用 GR4J 率定流域 12025000"
@@ -860,18 +945,22 @@ GET  /api/tasks            -- 获取当前任务列表
          v
 [agent._build_system_prompt(query)]
   |
-  +-- [1] system.md（角色、工具风格、安全约束、身份约束）
+  +-- [1] system.md（角色、工具风格、观测原则）           <- 身份层
   |
-  +-- [2] 匹配 Skill 说明书路径列表（calibration/skill.md, llm_calibration/skill.md）
+  +-- [1.5] policy/*.md（行为约束，上限 2K 字符）         <- 行为层 [v2.7 新增]
+  |         agent_behavior / calibration_policy /
+  |         tool_safety_policy / reporting_policy
+  |
+  +-- [2] 匹配 Skill 说明书路径列表（calibration/skill.md）  <- 技能层
   |       -> LLM 按需调用 read_file 读取详情（CC-1 按需注入）
   |
   +-- [2.5] 可用子代理列表（calibrate-worker, basin-explorer）
   |
   +-- [3] 适配器包文档（hydromodel.md, hydrodatasource.md）
   |
-  +-- [4] 领域知识（model_parameters.md 中 GR4J 参数部分）
+  +-- [4] 领域知识（model_parameters.md + failure_modes.md）  <- 知识层
   |
-  +-- [5] 流域档案（basin_profiles/12025000.json，如有历史记录）
+  +-- [5] 流域档案（basin_profiles/12025000.json，如有历史记录）  <- 记忆层
            + MEMORY.md（跨会话通用知识摘要）
   |
   v
@@ -885,7 +974,7 @@ GET  /api/tasks            -- 获取当前任务列表
 
 ---
 
-## 18. 目录结构（v2.6 完整版）
+## 18. 目录结构（v2.7 完整版）
 
 ```
 hydroclaw/
@@ -909,10 +998,22 @@ hydroclaw/
 │   └── generic/
 │       └── adapter.py     # GenericAdapter（priority=0，兜底）
 │
+├── policy/                # 行为约束层（v2.7）
+│   ├── agent_behavior.md  # Always/Never/When uncertain 通用约束
+│   ├── calibration_policy.md  # 率定顺序与边界规则
+│   ├── tool_safety_policy.md  # 高副作用工具约束
+│   └── reporting_policy.md    # 报告输出规范
+│
 ├── agents/                # 子代理定义（v2.6，CC-3）
 │   ├── __init__.py        # AgentRegistry（扫描内置 + 项目级 agents/）
 │   ├── calibrate_worker.md
 │   └── basin_explorer.md
+│
+├── knowledge/             # 领域知识库（按关键词注入 LLM 上下文）
+│   ├── model_parameters.md       # 参数物理含义与典型范围
+│   ├── calibration_guide.md      # 率定经验指南
+│   ├── datasets.md               # 数据集说明
+│   └── failure_modes.md          # 水文失败模式诊断手册（v2.7）
 │
 ├── skills/                # Skill 包（工作流说明书 + 工具实现）
 │   ├── system.md          # 系统基础 prompt
@@ -961,10 +1062,6 @@ hydroclaw/
 │   ├── add_local_tool.py  # 注册单文件工具（动态 import + 注册）
 │   └── spawn_agent.py     # 委派子代理（CC-3）
 │
-├── knowledge/             # 领域知识库（按关键词注入）
-│   ├── model_parameters.md  # GR4J/GR5J/GR6J/HBV/LSTM 参数物理含义
-│   └── calibration_guide.md # 率定策略、诊断经验、边界效应识别
-│
 ├── utils/                 # 辅助模块
 │   ├── context_utils.py   # truncate_tool_result()（字段级 8K + 整体 16K）
 │   ├── task_state.py      # TaskState（任务状态持久化到 task_state.json）
@@ -978,13 +1075,15 @@ hydroclaw/
     ├── ui.py              # Rich 终端 UI（user / dev 两种模式）
     ├── server.py          # FastAPI + WebSocket 服务
     └── static/            # Web 前端（6 模块，v=27）
+
+llms.txt                   # 包级可发现性声明（v2.7，供 smolagents/LangChain 读取）
 ```
 
 ---
 
 ## 19. 与 HydroAgent 旧版对比
 
-| 维度 | HydroAgent v6.0 | HydroClaw v2.6 |
+| 维度 | HydroAgent v6.0 | HydroClaw v2.7 |
 |------|-----------------|----------------|
 | 架构 | 5 Agent + Orchestrator 状态机 | 单一 Agentic Loop（+子代理系统） |
 | 代码量 | ~27,000 行 | ~5,500 行 |

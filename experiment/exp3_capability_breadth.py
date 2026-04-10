@@ -327,7 +327,7 @@ def run_section_a(workspace: Path, resume: bool = False) -> dict:
                 "total_tokens": 0, "wall_time_s": 0.0, "error": None,
             }
 
-            agent = HydroClaw(workspace=rep_workspace)
+            agent = HydroClaw(workspace=rep_workspace, prompt_mode="minimal", config_override={"max_turns": 8})
             t0 = time.time()
             try:
                 response = agent.run(sc["query"])
@@ -443,7 +443,7 @@ def run_section_b(workspace: Path, resume: bool = False) -> dict:
                 logger.info(f"  Removed previous skill from last run: {prev_skill}")
 
         skills_before = _snapshot_skills()
-        agent = HydroClaw(workspace=workspace)  # fresh instance per scenario
+        agent = HydroClaw(workspace=workspace, prompt_mode="minimal", config_override={"max_turns": 8})  # fresh instance per scenario
 
         record = {
             "id": sid, "description": sc["description"], "query": sc["query"],
@@ -663,7 +663,7 @@ def run_section_c(workspace: Path, resume: bool = False) -> dict:
         # contamination (C3 "resume" query would otherwise see C1/C2 session history).
         phase_ws = workspace / phase_id
         phase_ws.mkdir(parents=True, exist_ok=True)
-        agent = HydroClaw(workspace=phase_ws)
+        agent = HydroClaw(workspace=phase_ws, config_override={"max_turns": 8})
         result = _run_planning_phase(agent, query, phase_ws, phase_id, preset)
         _save_checkpoint(phase_id, result)
         phases.append(result)

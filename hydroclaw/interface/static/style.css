@@ -336,6 +336,28 @@ details[open] > summary::after { transform: rotate(90deg); }
   padding: 0 0 8px;
   flex-wrap: nowrap; position: relative;
 }
+
+/* Mode selector */
+#mode-selector {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 0 6px;
+}
+.mode-label {
+  font-size: .72rem; color: var(--text3);
+  margin-right: 2px; white-space: nowrap;
+}
+.mode-btn {
+  padding: 3px 10px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--bg2);
+  font-size: .74rem; color: var(--text2); cursor: pointer;
+  font-family: var(--font); transition: all .12s;
+  white-space: nowrap;
+}
+.mode-btn:hover { border-color: var(--accent); color: var(--accent); }
+.mode-btn.active {
+  background: var(--accent); color: #fff;
+  border-color: var(--accent); font-weight: 500;
+}
 .tb-cat-wrap { position: relative; flex-shrink: 0; }
 .tb-btn {
   display: inline-flex; align-items: center; gap: 5px;
@@ -637,6 +659,16 @@ details[open] > summary::after { transform: rotate(90deg); }
 .s-item-del-btn:hover { background: rgba(220,38,38,.08); }
 .s-empty {
   padding: 8px 14px; font-size: .78rem; color: var(--text2); font-style: italic;
+}
+.s-info-banner {
+  margin: 0 0 10px 0; padding: 7px 12px;
+  font-size: .78rem; color: var(--text2);
+  background: var(--bg2); border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0; line-height: 1.5;
+}
+.s-info-banner code {
+  font-family: var(--font-mono, monospace); font-size: .76rem;
+  background: var(--bg3, #eee); padding: 1px 4px; border-radius: 3px;
 }
 
 /* Add-form / config form inside details */

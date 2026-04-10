@@ -103,3 +103,13 @@ def spawn_agent(
 
     logger.info("spawn_agent '%s' finished.", name)
     return {"success": True, "result": result_text, "agent": name}
+
+
+spawn_agent.__agent_hint__ = (
+    "Delegate a self-contained sub-task to a named specialist agent. "
+    "Use when the task is clearly scoped (one basin, one check) and you want to isolate "
+    "its context from the main conversation. Available agents: 'basin-explorer' (data validation), "
+    "'calibrate-worker' (single-basin calibration + evaluation). "
+    "Do NOT use for tasks that require the main agent's full context or for tasks that "
+    "modify global state (e.g., create_skill, install_package)."
+)

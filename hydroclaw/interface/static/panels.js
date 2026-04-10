@@ -22,8 +22,8 @@ const _PAGE_PANELS = {
   skills:   { title: "技能",    subtitle: "为您的智能体提供预封装且可重复的最佳实践与工具" },
   tools:    { title: "工具",    subtitle: "已注册的工具函数及优先级" },
   packages: { title: "水文包",   subtitle: "已集成的水文工具包，包括模型框架与数据读取库" },
-  knowledge:{ title: "知识库",  subtitle: "水文领域结构化知识文件" },
-  memory:   { title: "记忆",    subtitle: "跨会话记忆与流域档案" },
+  knowledge:{ title: "知识库",  subtitle: "语义记忆：Agent 遇到问题时主动查阅，不自动注入对话" },
+  memory:   { title: "记忆",    subtitle: "情节记忆：跨会话经验积累，任务开始时摘要加载，任务后主动写入" },
   datasets: { title: "数据集",  subtitle: "公共水文数据集与自定义数据集管理" },
   config:   { title: "模型配置",subtitle: "LLM 接口与参数配置" },
 };
@@ -393,6 +393,7 @@ async function __loadKnowledge() {
     if (countEl) countEl.textContent = items.length;
     if (!items.length) { body.innerHTML = '<div class="panel-h2">领域知识文件</div><div class="s-empty">暂无知识文件</div>'; return; }
     body.innerHTML = '<div class="panel-h2">领域知识文件</div>'
+      + '<div class="s-info-banner">这些文件不会自动注入对话。Agent 遇到报错或不确定情况时，会主动调用 <code>read_file</code> 按需查阅。</div>'
       + items.map(k => {
         const safeName = escHtml(k.name).replace(/'/g, "&#39;");
         const safeId   = escHtml(k.name).replace(/\./g, "-").replace(/[^a-zA-Z0-9_-]/g, "_");

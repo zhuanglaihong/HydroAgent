@@ -507,6 +507,20 @@ class HydroClaw:
         # ── Section 1: Core identity & instructions (always included) ──────────
         parts.append(self._load_system_prompt())
 
+        # ── Section 1.5: Behavior policies (always included, even in minimal mode) ─
+        _policy_dir = Path(__file__).parent / "policy"
+        if _policy_dir.exists():
+            _policy_parts = [
+                pf.read_text(encoding="utf-8").strip()
+                for pf in sorted(_policy_dir.glob("*.md"))
+            ]
+            if _policy_parts:
+                _policy_text = "\n\n".join(_policy_parts)
+                _MAX_POLICY_CHARS = 2_000
+                if len(_policy_text) > _MAX_POLICY_CHARS:
+                    _policy_text = _policy_text[:_MAX_POLICY_CHARS] + "\n...(policy truncated)"
+                parts.append("## Behavior Policies\n\n" + _policy_text)
+
         # ── Section 2: Available skills index (always included) ─────────────────
         available_skills = self.skill_registry.available_skills_prompt(self.skill_states)
         if available_skills:
@@ -526,13 +540,10 @@ class HydroClaw:
         if self._prompt_mode == "minimal":
             logger.info("[agent] prompt_mode=minimal: skipping domain/basin/memory sections")
         else:
-            # ── Section 4: Domain knowledge (full mode only) ─────────────────────
-            domain_knowledge = self._load_domain_knowledge(query)
-            if domain_knowledge:
-                parts.append(
-                    "## Domain Knowledge\n"
-                    + semantic_truncate(domain_knowledge, self._MAX_MEMORY_CHARS, "domain knowledge")
-                )
+            # ── Section 4: Domain knowledge ──────────────────────────────────────
+            # Knowledge files are NOT auto-injected here.
+            # Agent consults them on-demand via read_file when needed.
+            # Skill.md guides the Agent on which file to read in which situation.
 
             # ── Section 5: Basin profiles (full mode only) ────────────────────────
             basin_ids_in_query = re.findall(r'\b\d{8}\b', query)

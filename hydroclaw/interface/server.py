@@ -832,20 +832,42 @@ def create_app(workspace: str = ".") -> FastAPI:
                                 {"type": "error", "msg": "Agent is already running."})
                             continue
                         prior = msg.get("prior_messages") or None
+                        agent_mode = msg.get("agent_mode", "react")
 
                         def _run():
                             try:
-                                agent.run(text, prior_messages=prior)
-                                emit({"type": "session_id", "id": agent.memory.session_id})
-                            except Exception as exc:
-                                msg = str(exc)
-                                # Classify critical errors for targeted UI alerts
-                                if "429" in msg or "rate_limit" in msg.lower() or "quota" in msg.lower():
-                                    emit({"type": "error", "msg": f"[429] API 限速或额度耗尽: {msg}"})
-                                elif any(k in msg.lower() for k in ("timeout", "connection", "network", "500", "502", "503")):
-                                    emit({"type": "error", "msg": f"[网络错误] {msg}"})
+                                if agent_mode == "pipeline":
+                                    # Plan-and-Execute: single LLM planning call,
+                                    # then local execution with error recovery
+                                    from hydroclaw.pipeline import run_pipeline
+                                    from hydroclaw.tools import discover_tools
+                                    tools = discover_tools(workspace=ws_path)
+                                    result = run_pipeline(
+                                        task=text,
+                                        llm=agent.llm,
+                                        tools=tools,
+                                        ui=ui,
+                                    )
+                                    summary = (
+                                        f"Pipeline completed: {' -> '.join(result.steps_done)}\n"
+                                        if result.success else
+                                        f"Pipeline failed at {result.error_step}: {result.error}\n"
+                                    )
+                                    emit({"type": "answer", "text": summary})
+                                    emit({"type": "session_id", "id": "pipeline"})
                                 else:
-                                    emit({"type": "error", "msg": msg})
+                                    # ReAct or Waypoint (Waypoint = ReAct for now, P3)
+                                    agent.run(text, prior_messages=prior)
+                                    emit({"type": "session_id", "id": agent.memory.session_id})
+                            except Exception as exc:
+                                err = str(exc)
+                                # Classify critical errors for targeted UI alerts
+                                if "429" in err or "rate_limit" in err.lower() or "quota" in err.lower():
+                                    emit({"type": "error", "msg": f"[429] API 限速或额度耗尽: {err}"})
+                                elif any(k in err.lower() for k in ("timeout", "connection", "network", "500", "502", "503")):
+                                    emit({"type": "error", "msg": f"[网络错误] {err}"})
+                                else:
+                                    emit({"type": "error", "msg": err})
                             finally:
                                 try:
                                     tok = agent.llm.tokens.summary()

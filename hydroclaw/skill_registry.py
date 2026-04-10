@@ -41,6 +41,14 @@ class SkillRegistry:
             try:
                 text = skill_md.read_text(encoding="utf-8")
                 meta, content = _parse_frontmatter(text)
+                # Store path relative to project root (parent of hydroclaw/)
+                # so it stays valid across machines and directory moves.
+                try:
+                    rel_path = skill_md.relative_to(self.skills_dir.parent.parent)
+                    skill_path = str(rel_path).replace("\\", "/")
+                except ValueError:
+                    skill_path = str(skill_md).replace("\\", "/")
+
                 self.skills[dir_name] = {
                     "name": meta.get("name", dir_name),
                     "description": meta.get("description", ""),
@@ -48,7 +56,7 @@ class SkillRegistry:
                     "tools": meta.get("tools", []),
                     "when_to_use": meta.get("when_to_use", ""),
                     "content": content,
-                    "skill_md_path": str(skill_md),  # absolute path for read_file
+                    "skill_md_path": skill_path,  # relative to project root
                 }
                 logger.debug(f"Loaded skill: {dir_name} ({meta.get('name', dir_name)})")
             except Exception as e:

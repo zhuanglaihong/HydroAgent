@@ -1,0 +1,38 @@
+# HydroClaw
+
+> 水文模型率定 Agentic Loop：一句自然语言完成 GR4J/XAJ/HBV 的数据验证、参数率定、评估与分析报告。
+> 不适用于：气象预报、遥感数据处理、通用代码生成、非水文领域任务。
+
+核心能力：
+- 自动参数率定（SCE-UA/GA/scipy），支持 CAMELS-US 数据集
+- LLM 智能率定：参数范围迭代调整，NSE 驱动的自适应搜索
+- 批量多流域 x 多模型对比实验，任务状态持久化（可断点续传）
+- 跨会话记忆：basin_profiles（含气候属性）+ BM25 语义搜索
+- 流域诊断：参数边界分析、失败类型分类、模型适配性建议
+
+依赖：hydromodel（模型计算后端），CAMELS-US 数据集
+
+## Tool Interfaces
+
+- [calibrate_model](./hydroclaw/tools/calibrate.py): 率定单流域单模型，返回最优参数与 calibration_dir
+- [evaluate_model](./hydroclaw/tools/evaluate.py): 在指定时段评估已率定模型，返回 NSE/KGE/RMSE
+- [llm_calibrate](./hydroclaw/tools/llm_calibrate.py): LLM 驱动的智能率定，自动扩展参数范围
+- [validate_basin](./hydroclaw/tools/validate.py): 验证流域数据可用性，返回变量列表与时间覆盖
+- [search_memory](./hydroclaw/tools/search_memory.py): 检索历史率定记录与流域档案（BM25）
+- [create_task_list](./hydroclaw/tools/task_tools.py): 创建批量任务列表，支持依赖关系
+- [get_pending_tasks](./hydroclaw/tools/task_tools.py): 获取下一个待执行任务及进度
+- [update_task](./hydroclaw/tools/task_tools.py): 标记任务完成或失败，记录 NSE/KGE
+
+## Resources
+
+- [Architecture](./docs/architecture.md): 五层架构与系统设计
+- [Research Plan](./docs/hydroclaw-research-plan.md): 论文研究计划
+- [Model Parameters](./hydroclaw/knowledge/model_parameters.md): GR4J/XAJ/HBV 参数范围
+- [Failure Modes](./hydroclaw/knowledge/failure_modes.md): 率定失败诊断手册
+
+## Usage
+
+```bash
+python -m hydroclaw "率定GR4J模型，流域12025000"
+python -m hydroclaw  # 交互模式
+```

@@ -115,6 +115,12 @@
       <div id="input-toolbar">
         <!-- populated by buildToolbar() in app.js -->
       </div>
+      <div id="mode-selector">
+        <span class="mode-label">模式</span>
+        <button class="mode-btn" id="mode-pipeline" onclick="setAgentMode('pipeline')" title="流水线：一次规划，本地执行，最省 token">Pipeline</button>
+        <button class="mode-btn active" id="mode-react" onclick="setAgentMode('react')" title="响应式：每步推理，最灵活">ReAct</button>
+        <button class="mode-btn" id="mode-waypoint" onclick="setAgentMode('waypoint')" title="检查点：关键节点才调用 LLM，兼顾效率与智能">Waypoint</button>
+      </div>
       <div id="input-row">
         <textarea id="input" rows="2" placeholder="输入问题（例：率定GR4J模型，流域12025000）"></textarea>
         <button id="send-btn" onclick="sendQuery()">发送</button>

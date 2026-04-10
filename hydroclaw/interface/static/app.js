@@ -2,6 +2,20 @@
 // Loaded LAST; all other modules (utils, chat, sessions, panels, toolbar) are
 // already in scope when this file executes.
 
+// ── Agent Mode ────────────────────────────────────────────────────────────────
+// Three execution modes: pipeline / react / waypoint
+let _agentMode = localStorage.getItem("hc_agent_mode") || "react";
+
+function setAgentMode(mode) {
+  _agentMode = mode;
+  localStorage.setItem("hc_agent_mode", mode);
+  ["pipeline", "react", "waypoint"].forEach(m => {
+    document.getElementById("mode-" + m)?.classList.toggle("active", m === mode);
+  });
+}
+// Restore persisted mode on load
+document.addEventListener("DOMContentLoaded", () => setAgentMode(_agentMode));
+
 // ── Theme ──────────────────────────────────────────────────────────────────────
 const _theme = { val: localStorage.getItem("hc_theme") || "light" };
 function setTheme(t) {
@@ -86,7 +100,7 @@ function sendQuery() {
   input.value = ""; input.style.height = "auto";
   const hint = getToolbarHint();
   const serverText = hint ? `${hint}\n\n用户输入：${text}` : text;
-  _ws.send(JSON.stringify({ type: "query", text: serverText, prior_messages: buildPrior() }));
+  _ws.send(JSON.stringify({ type: "query", text: serverText, prior_messages: buildPrior(), agent_mode: _agentMode }));
   setRunning(true);
   setExecCollapsed(false);
   const ls = liveSess();

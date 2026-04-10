@@ -22,17 +22,42 @@ def evaluate_model(
     Call this after calibrate_model to get NSE/KGE/RMSE metrics. Can be called
     multiple times with different eval_period to get both train and test metrics.
 
+    When to use: immediately after calibrate_model; also when calibration_dir already
+        exists on disk and you only need to (re-)compute metrics.
+    When NOT to use: if calibration_dir does not exist yet — run calibrate_model first.
+
     Args:
-        calibration_dir: Path to calibration output directory (from calibrate_model)
+        calibration_dir: Absolute path to calibration output directory.
+            Use the exact value returned by calibrate_model(), do not construct manually.
         eval_period: Evaluation period ["YYYY-MM-DD", "YYYY-MM-DD"].
-                     If None, uses the test_period saved in calibration config.
+            If None, uses the test_period saved in calibration_config.yaml (recommended
+            for the final test evaluation).
+            Pass the train period explicitly to get training metrics.
         output_subdir: Subdirectory name inside calibration_dir for saving results.
-                       Defaults to "train_metrics" or "test_metrics" based on eval_period
-                       vs the config's train/test split.
+            Auto-detected as "train_metrics" or "test_metrics" when left as None.
 
     Returns:
-        {"metrics": {"NSE": ..., "KGE": ..., "RMSE": ..., ...},
-         "eval_period": [...], "metrics_dir": "...", "output_files": [...], "success": True}
+        {
+          "success": bool,
+          "metrics": {
+            "NSE": float,   # Nash-Sutcliffe Efficiency, range (-inf, 1], higher is better
+            "KGE": float,   # Kling-Gupta Efficiency, range (-inf, 1]
+            "RMSE": float,  # Root Mean Square Error (same unit as streamflow)
+          },
+          "eval_period": list[str],   # actual period evaluated
+          "metrics_dir": str,         # directory where metrics files are saved
+          "output_files": list[str],  # e.g. ["metrics.csv", "hydrograph.png"]
+        }
+
+    Example:
+        >>> # Standard pattern: train then test evaluation
+        >>> cal = calibrate_model(["12025000"], "gr4j")
+        >>> train = evaluate_model(
+        ...     cal["calibration_dir"],
+        ...     eval_period=["2000-01-01", "2009-12-31"],
+        ... )
+        >>> test = evaluate_model(cal["calibration_dir"])  # None -> test period from config
+        >>> print(f"Train NSE={train['metrics']['NSE']:.3f}, Test NSE={test['metrics']['NSE']:.3f}")
     """
     from hydroclaw.adapters import get_adapter
 

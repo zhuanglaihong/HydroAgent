@@ -5,10 +5,16 @@ Purpose: Verify that HydroClaw agent correctly executes the full calibration
          workflow from natural language, and establish KGE/NSE baselines.
 Method:  HydroClaw agent receives a natural language calibration query.
          Agent autonomously decides: validate_basin -> calibrate_model -> evaluate_model.
-Design:  5 basins x 2 models x SCE-UA x N_SEEDS independent runs.
+Design:  5 basins x 1 model (XAJ) x SCE-UA x N_SEEDS independent runs.
+
+Model choice: XAJ (Xin'anjiang) only.
+  - XAJ is a conceptual model widely used in humid/semi-humid China basins.
+  - Single-model focus sharpens the paper's narrative around agent behavior
+    (workflow autonomy, failure classification) rather than model comparison.
+  - GR4J comparison deferred to exp2 (LLM calibration A/B/C contrast).
 
 Statistical design:
-  - N_SEEDS=3 independent runs per basin-model combo to capture algorithm variance
+  - N_SEEDS=3 independent runs per basin to capture SCE-UA random init variance
   - Primary metric: KGE (Kling-Gupta Efficiency), secondary: NSE
     Rationale: KGE is more balanced across bias/correlation/variability components
     than NSE (see Knoben et al. 2019, HESS, doi:10.5194/hess-23-4323-2019)
@@ -19,6 +25,11 @@ Data periods (CAMELS-US, documented for reproducibility):
   - Train:     1985-01-01 to 2000-12-31
   - Test:      2001-01-01 to 2014-12-31
   (Actual periods loaded from calibration_config.yaml written by hydromodel)
+
+Token comparison sub-experiment (appended to results):
+  - 1 basin (12025000) x 1 run each: ReAct vs Pipeline mode
+  - Demonstrates token efficiency of Pipeline without affecting main experiment validity
+  - Main experiment MUST use ReAct: tool_sequence is the autonomy evidence
 
 Paper:   Section 4.2 - Standard Calibration Baseline
 Demonstrates: Agent-driven workflow planning and execution reliability.
@@ -49,10 +60,13 @@ BASINS = [
     ("11532500", "Smith River, CA",        "mediterranean"),
 ]
 
-MODELS = ["gr4j", "xaj"]
+MODELS = ["xaj"]     # XAJ only; GR4J comparison is in exp2
 ALGORITHM = "SCE_UA"
-N_SEEDS = 3          # independent runs per basin-model combo for mean+/-std
+N_SEEDS = 3          # independent runs per basin for mean+/-std
 OUTPUT_DIR = Path("results/paper/exp1")
+
+# Token comparison sub-experiment: 1 basin, ReAct vs Pipeline (1 run each)
+TOKEN_COMPARE_BASIN = ("12025000", "Fish River, ME", "humid_cold")
 
 # Expected tool call sequence for correctness check
 EXPECTED_TOOLS = {"validate_basin", "calibrate_model", "evaluate_model"}
@@ -174,7 +188,9 @@ def run_single_task(
         f"输出目录请保存在 {task_workspace}。"
     )
 
-    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
+    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"),
+                      prompt_mode="minimal",
+                      config_override={"max_turns": 8})
 
     record = {
         "basin_id": basin_id,
@@ -208,7 +224,6 @@ def run_single_task(
     record["wall_time_s"] = round(time.time() - t0, 2)
     record["agent_turns"] = len(agent.memory._log)
 
-    # Token usage for this run
     try:
         tok = agent.llm.tokens.summary()
         record["total_tokens"] = tok.get("total_tokens", 0)
@@ -224,7 +239,6 @@ def run_single_task(
         train_m, test_m = _evaluate_from_disk(cal_dir, cfg)
         record["train_metrics"] = train_m
         record["test_metrics"] = test_m
-        # KGE is primary; NSE as fallback check
         record["success"] = bool(
             train_m.get("KGE") is not None or train_m.get("NSE") is not None
         )
@@ -274,6 +288,35 @@ def _aggregate_runs(combo_runs: list[dict]) -> dict:
     return agg
 
 
+# ── Checkpoint helpers ────────────────────────────────────────────────────────
+
+_CHECKPOINT = OUTPUT_DIR / "exp1_checkpoint.json"
+
+
+def _load_checkpoint_exp1() -> tuple[list, list]:
+    """Return (results_flat, results_agg) from checkpoint, or ([], [])."""
+    if _CHECKPOINT.exists():
+        try:
+            data = json.loads(_CHECKPOINT.read_text(encoding="utf-8"))
+            flat = data.get("results_flat", [])
+            agg  = data.get("results_agg", [])
+            done = {a["basin_id"] + "_" + a["model_name"] for a in agg}
+            logger.info(f"[checkpoint] Resuming — done combos: {done}")
+            return flat, agg
+        except Exception as e:
+            logger.warning(f"[checkpoint] Read failed: {e}")
+    return [], []
+
+
+def _save_checkpoint_exp1(flat: list, agg: list):
+    _CHECKPOINT.write_text(
+        json.dumps({"results_flat": flat, "results_agg": agg},
+                   indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    logger.info(f"[checkpoint] Saved ({len(agg)} combo(s) done)")
+
+
 # ── Main experiment ───────────────────────────────────────────────────────────
 
 def run_experiment() -> dict:
@@ -282,12 +325,17 @@ def run_experiment() -> dict:
     cfg = load_config()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    results_flat = []   # all individual runs (for detailed analysis)
-    results_agg = []    # aggregated per combo (for table display)
+    results_flat, results_agg = _load_checkpoint_exp1()
+    done_combos = {a["basin_id"] + "_" + a["model_name"] for a in results_agg}
 
     for basin_id, basin_name, climate_zone in BASINS:
         for model_name in MODELS:
             combo = f"{model_name}_{basin_id}"
+
+            if combo in done_combos:
+                logger.info(f"[checkpoint] Skipping {combo} (already done)")
+                continue
+
             logger.info(f"\n{'='*60}")
             logger.info(f"Combo: {combo} ({basin_name}, {climate_zone})")
             logger.info(f"{'='*60}")
@@ -323,6 +371,11 @@ def run_experiment() -> dict:
                 f"KGE_test={agg['kge_test']['mean']}+/-{agg['kge_test']['std']} "
                 f"({agg['n_success']}/{agg['n_runs']} success)"
             )
+            _save_checkpoint_exp1(results_flat, results_agg)
+
+    if _CHECKPOINT.exists():
+        _CHECKPOINT.unlink()
+        logger.info("[checkpoint] Cleared (all combos complete)")
 
     return {
         "experiment": "exp1_standard_calibration",
@@ -338,7 +391,114 @@ def run_experiment() -> dict:
         "results_flat": results_flat,
         "n_total_runs": len(results_flat),
         "n_success_runs": sum(1 for r in results_flat if r["success"]),
+        "token_comparison": None,  # filled by run_token_comparison()
     }
+
+
+# ── Token comparison sub-experiment ──────────────────────────────────────────
+
+def run_token_comparison(cfg: dict = None) -> dict:  # cfg reserved for future use
+    """Compare token consumption: ReAct vs Pipeline mode for 1 basin x 1 run.
+
+    This sub-experiment does NOT use N_SEEDS and does NOT affect the main
+    calibration results. It is appended to the output JSON as 'token_comparison'.
+
+    ReAct:    agent.run() — full ReAct loop, N LLM calls, accumulating history
+    Pipeline: run_pipeline() — 1 LLM planning call + local execution, no per-step LLM
+    """
+    from hydroclaw.agent import HydroClaw
+    from hydroclaw.interface.ui import ConsoleUI
+    from hydroclaw.pipeline import run_pipeline
+    from hydroclaw.tools import discover_tools
+
+    basin_id, basin_name, climate_zone = TOKEN_COMPARE_BASIN
+    model_name = "xaj"
+    comparison = {
+        "basin_id": basin_id,
+        "model_name": model_name,
+        "modes": {}
+    }
+
+    query = (
+        f"请率定{model_name.upper()}模型，流域{basin_id}，使用SCE-UA算法。"
+        f"请先验证流域数据，然后进行率定，最后分别评估训练期和测试期的KGE和NSE指标。"
+    )
+
+    # --- ReAct mode ---
+    logger.info("[token_compare] Running ReAct mode for basin %s", basin_id)
+    react_workspace = OUTPUT_DIR / "token_compare" / "react"
+    react_workspace.mkdir(parents=True, exist_ok=True)
+    react_agent = HydroClaw(
+        workspace=react_workspace,
+        ui=ConsoleUI(mode="dev"),
+        prompt_mode="minimal",
+        config_override={"max_turns": 8},
+    )
+    t0 = time.time()
+    try:
+        react_agent.run(query)
+    except Exception as e:
+        logger.warning("[token_compare] ReAct failed: %s", e)
+    react_elapsed = round(time.time() - t0, 1)
+    try:
+        tok = react_agent.llm.tokens.summary()
+        react_tokens = tok
+    except Exception:
+        react_tokens = {}
+    comparison["modes"]["react"] = {
+        "api_calls": len(react_agent.memory._log),
+        "elapsed_s": react_elapsed,
+        "tokens": react_tokens,
+    }
+    logger.info("[token_compare] ReAct: api_calls=%d tokens=%s",
+                comparison["modes"]["react"]["api_calls"], react_tokens)
+
+    # --- Pipeline mode ---
+    logger.info("[token_compare] Running Pipeline mode for basin %s", basin_id)
+    pipeline_workspace = OUTPUT_DIR / "token_compare" / "pipeline"
+    pipeline_workspace.mkdir(parents=True, exist_ok=True)
+    pipeline_agent = HydroClaw(
+        workspace=pipeline_workspace,
+        ui=ConsoleUI(mode="dev"),
+        prompt_mode="minimal",
+    )
+    tools = discover_tools(workspace=pipeline_workspace)
+    t0 = time.time()
+    try:
+        pipeline_result = run_pipeline(
+            task=query,
+            llm=pipeline_agent.llm,
+            tools=tools,
+            ui=None,
+        )
+        pipeline_success = pipeline_result.success
+    except Exception as e:
+        logger.warning("[token_compare] Pipeline failed: %s", e)
+        pipeline_success = False
+    pipeline_elapsed = round(time.time() - t0, 1)
+    try:
+        tok = pipeline_agent.llm.tokens.summary()
+        pipeline_tokens = tok
+    except Exception:
+        pipeline_tokens = {}
+    comparison["modes"]["pipeline"] = {
+        "api_calls": 1,  # 1 planning call + optional error recovery
+        "elapsed_s": pipeline_elapsed,
+        "tokens": pipeline_tokens,
+        "success": pipeline_success,
+    }
+    logger.info("[token_compare] Pipeline: success=%s tokens=%s",
+                pipeline_success, pipeline_tokens)
+
+    # --- Summary ---
+    react_total = react_tokens.get("total_tokens", 0)
+    pipeline_total = pipeline_tokens.get("total_tokens", 0)
+    if react_total and pipeline_total:
+        savings_pct = round((1 - pipeline_total / react_total) * 100, 1)
+        comparison["savings_pct"] = savings_pct
+        logger.info("[token_compare] Token savings: %.1f%%", savings_pct)
+
+    return comparison
 
 
 def save_results(results: dict):
@@ -426,12 +586,37 @@ def print_summary(results: dict):
             print(f"    {ftype:<20} {count} run(s)")
 
 
+def print_token_comparison(tc: dict):
+    if not tc:
+        return
+    print(f"\n  Token Comparison Sub-Experiment (basin {tc['basin_id']} x {tc['model_name']}, 1 run each):")
+    print(f"  {'Mode':<12} {'API Calls':>10} {'Total Tokens':>14} {'Elapsed(s)':>12}")
+    print(f"  {'-'*50}")
+    for mode, data in tc.get("modes", {}).items():
+        total = data.get("tokens", {}).get("total_tokens", "N/A")
+        print(f"  {mode:<12} {data.get('api_calls', '?'):>10} {str(total):>14} {data.get('elapsed_s', '?'):>12}")
+    savings = tc.get("savings_pct")
+    if savings is not None:
+        print(f"  Pipeline token savings vs ReAct: {savings:.1f}%")
+
+
 def main():
     setup_logging()
-    logger.info(f"Starting Exp1: Standard Calibration (N_SEEDS={N_SEEDS})")
-    results = run_experiment()
+    logger.info(f"Starting Exp1: Standard Calibration (N_SEEDS={N_SEEDS}, model=XAJ only)")
+
+    results = run_experiment()  # loads cfg internally
+
+    logger.info("Running token comparison sub-experiment...")
+    try:
+        from hydroclaw.config import load_config
+        tc = run_token_comparison(load_config())
+        results["token_comparison"] = tc
+    except Exception as e:
+        logger.warning("Token comparison failed: %s", e)
+
     save_results(results)
     print_summary(results)
+    print_token_comparison(results.get("token_comparison"))
     logger.info("Exp1 complete")
 
 

@@ -23,7 +23,7 @@ HydroClaw 是一个 LLM 驱动的水文模型率定智能体，采用**单一 Ag
 ### 核心特性
 
 - **自然语言交互** — 中英文对话式操作，支持交互模式和单次查询
-- **三层知识注入** — Skill 说明书 + 领域知识库 + 流域历史档案，按需注入 LLM 上下文
+- **五层知识注入** — 行为约束（Policy）+ Skill 说明书 + 领域知识库（含失败模式诊断）+ 流域历史档案，按需注入
 - **双模式率定** — 传统算法（SCE-UA/GA）+ LLM 智能率定（LLM 调整参数范围，SCE-UA 优化）
 - **跨会话记忆** — 流域档案自动积累，下次率定同一流域时先验注入，越用越准
 - **动态 Skill 扩展** — 运行时生成新 Skill，工具集可按需增长，无需修改任何注册代码
@@ -129,11 +129,12 @@ python -m hydroclaw --server --port 8080  # 自定义端口
 +------------------------------------------+
 |           Agentic Loop (agent.py)        |
 |                                          |
-|  System Prompt                           |
-|    = system.md                           |
-|    + 匹配的 Skill 工作流指引              |  <- 第一层：Skill 说明书
-|    + 领域知识（参数物理含义）              |  <- 第二层：领域知识库
-|    + 流域历史档案（上次率定结果）          |  <- 第三层：跨会话记忆
+|  System Prompt（七段式动态拼装）          |
+|    = system.md（身份层）                 |
+|    + policy/*.md（行为层：约束规则）      |  <- 新增：不能做什么
+|    + 匹配的 Skill 工作流指引              |  <- 技能层：怎么做
+|    + 领域知识（参数含义 + 故障诊断）      |  <- 知识层：为什么
+|    + 流域历史档案（上次率定结果）          |  <- 记忆层：做到哪了
 |                                          |
 |  LLM 推理 -> 选择工具 -> 执行 -> 推理    |
 |  循环直到 LLM 输出最终回答               |
@@ -320,7 +321,8 @@ HydroAgent/
 │   │   ├── add_local_package.py  # 元工具：注册本地目录包
 │   │   └── add_local_tool.py     # 元工具：注册单文件 .py 工具
 │   ├── skills/                   # Skill 包（工作流指引 + 工具实现）
-│   ├── knowledge/                # 结构化领域知识（参数物理含义、率定经验）
+│   ├── policy/                   # 行为约束层（agent_behavior / calibration_policy / ...）
+│   ├── knowledge/                # 结构化领域知识（参数物理含义、率定经验、故障诊断）
 │   └── utils/                    # 辅助模块
 │       ├── plugin_registry.py    # 插件注册表（全局 + 本地两层）
 │       ├── error_kb.py           # 错误知识库（自动积累）
@@ -346,6 +348,7 @@ HydroAgent/
 | [usage.md](docs/usage.md) | 所有使用场景示例 |
 | [architecture.md](docs/architecture.md) | Agentic Loop、五层架构（大脑-脊椎-四肢）、工具发现机制 |
 | [integration-plan.md](docs/integration-plan.md) | 通用包插件系统 + Agent 智能升级完整设计文档 |
+| [llms.txt](llms.txt) | 包级可发现性声明（供 smolagents/LangChain/其他 AI Agent 调用时读取） |
 | [skills.md](docs/skills.md) | Skill 工具 API 参考（calibrate、evaluate、llm_calibrate 等） |
 | [tools.md](docs/tools.md) | 独立工具参考（validate、simulate、create_skill、add_local_package 等） |
 | [memory.md](docs/memory.md) | 跨会话记忆、流域档案机制 |

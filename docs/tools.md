@@ -8,6 +8,7 @@ HydroClaw 的所有工具按来源分为三类，详细 API 见 [skills.md](skil
 |------|----------|------|---------|
 | 核心工具 | 20 | `tools/*.py` | validate_basin, run_simulation, read_file, inspect_dir, create_task_list, get_pending_tasks, update_task, add_task, search_memory, save_basin_profile, record_error_solution, ask_user, create_skill, create_adapter, install_package, register_package, add_local_package, add_local_tool, spawn_agent |
 | Skill 工具 | 10 | `skills/*/` | calibrate_model, evaluate_model, llm_calibrate, batch_calibrate, compare_models, generate_code, run_code, visualize, run_simulation, list_basins, read_dataset, convert_dataset_to_nc, list_camels_basins, check_camels_data |
+| 外部插件工具 | 5 | PluginRegistry（`single_file` 类型）| 由 `add_local_tool()` 注册的任意 .py 文件函数 |
 | 动态工具 | 5 | `create_skill` 生成 | 任意（运行时生成） |
 
 同名冲突时保留高优先级工具；调用 `list_tools()` 可查询当前注册状态。
@@ -69,11 +70,14 @@ HydroClaw 的所有工具按来源分为三类，详细 API 见 [skills.md](skil
 
 ## 工具发现机制
 
-`hydroclaw/tools/__init__.py` 在启动时扫描：
+`hydroclaw/tools/__init__.py` 在启动时扫描四层来源：
 
 1. `hydroclaw/tools/*.py` — 核心工具（priority=20）
 2. `hydroclaw/skills/*/*.py` — 每个 Skill 子目录（priority=10）
-3. `create_skill` 动态生成的目录（priority=5，生成后立即触发重扫）
+3. PluginRegistry（`single_file` 类型）— 外部 .py 文件函数（priority=5）
+4. `create_skill` 动态生成的目录（priority=5，生成后立即触发重扫）
+
+同名冲突时保留 **高优先级**；同优先级时后注册覆盖先注册（便于 hot-reload）。
 
 **Schema 自动生成规则**：
 

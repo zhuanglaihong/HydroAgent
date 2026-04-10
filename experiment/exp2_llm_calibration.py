@@ -16,9 +16,9 @@ Statistical design:
   - Method B: single scripted run (scipy-based, internal iterations cover variance)
   - Method C1/C2: single run each (multi-round LLM iteration already provides variance
     via NSE trajectory; adding 3 repeats would be prohibitively expensive)
-  - Primary metric: KGE; secondary: NSE
-  - Key comparison: C_kge APPROX= A_kge (automation equivalence, not superiority)
-    consistent with Zhu et al. 2026 finding (LLM value = convergence speed/automation)
+  - Primary metric: NSE; secondary: KGE
+  - Key comparison: C_nse >= B_nse (C not worse than scripted LLM); C_nse APPROX= A_nse
+    consistent with Zhu et al. 2026 finding (LLM value = automation equivalence)
 
 LLM comparison (C1 vs C2):
   - Tests whether reasoning-type LLMs (e.g., DeepSeek-R1) outperform dialogue-type
@@ -52,18 +52,18 @@ logger = logging.getLogger(__name__)
 # ── Experiment configuration ─────────────────────────────────────────────────
 
 BASINS = [
-    ("12025000", "Fish River, ME",      "humid_cold"),
-    ("11532500", "Smith River, CA",     "mediterranean"),
-    ("06043500", "Gallatin River, MT",  "semiarid_mountain"),
+    ("12025000", "Fish River, ME",   "humid_cold"),
+    ("11532500", "Smith River, CA",  "mediterranean"),
+    ("03439000", "French Broad, NC", "humid_warm"),
 ]
 
-MODEL = "gr4j"
+MODEL = "xaj"
 ZHU_MAX_ITERS = 15
 LLM_MAX_ROUNDS = 5
 NSE_TARGET = 0.80
 
-# Method A repetitions: 3 independent runs for mean+/-std baseline
-N_SEEDS_A = 3
+# Method A repetitions: 1 run representing standard practice (not best-of-N)
+N_SEEDS_A = 1
 
 # Method C LLM comparison:
 #   C1 = primary LLM from config (loaded automatically)
@@ -71,6 +71,11 @@ N_SEEDS_A = 3
 #   Example: C2_MODEL = "deepseek-reasoner"
 C2_MODEL = None
 C2_BASE_URL = None  # set if C2 uses a different API endpoint
+
+# Run mode: set to "C" to skip Method A and B, only run Method C1 (and C2 if configured)
+# Useful for re-running Method C after fixing Agent behavior without re-running A/B.
+# Results for A/B are loaded from the existing checkpoint if available.
+RUN_ONLY = None   # None = run all methods | "C" = only run C1/C2
 
 # SCE-UA budget constants (for total evaluation count comparison)
 SCE_UA_REP_DEFAULT = 750
@@ -122,6 +127,9 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
         "nse_history": [],
         "rounds": None,
         "llm_calibrate_failed": False,
+        "fixed_params_by_round": {},
+        "initial_param_ranges_llm": {},   # ranges used in round 1 (Agent's prior)
+        "basin_attributes": {},            # from get_basin_attributes call
     }
     calibrate_model_dirs = []
 
@@ -132,7 +140,16 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
         if not isinstance(r, dict):
             continue
 
-        if tool == "llm_calibrate":
+        if tool == "get_basin_attributes" and r.get("success"):
+            # Capture basin climate attributes for paper data
+            result["basin_attributes"] = {
+                k: r[k] for k in (
+                    "aridity", "runoff_ratio", "baseflow_index",
+                    "frac_snow", "p_mean", "pet_mean", "climate_zone",
+                ) if k in r
+            }
+
+        elif tool == "llm_calibrate":
             if r.get("success"):
                 cal_dir = r.get("calibration_dir", "")
                 if cal_dir:
@@ -142,6 +159,11 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
                 result["rounds"] = r.get("rounds")
                 result["nse_history"] = r.get("nse_history", [])
                 result["llm_calibrate_failed"] = False
+                result["fixed_params_by_round"] = r.get("fixed_params_by_round", {})
+                # Extract round-1 param_ranges from history (Agent's prior reasoning)
+                history = r.get("history", [])
+                if history and isinstance(history[0], dict):
+                    result["initial_param_ranges_llm"] = history[0].get("param_ranges", {})
             elif r.get("error"):
                 result["llm_calibrate_failed"] = True
                 logger.warning(f"llm_calibrate failed: {r.get('error', '')[:100]}")
@@ -389,9 +411,9 @@ def _run_method_a_single(basin_id: str, run_idx: int, cfg: dict) -> dict:
     task_workspace.mkdir(parents=True, exist_ok=True)
 
     query = (
-        f"请率定GR4J模型，流域{basin_id}，使用SCE-UA算法，"
+        f"请率定XAJ模型，流域{basin_id}，使用SCE-UA算法，"
         f"输出目录保存在 {task_workspace}。"
-        f"完成后评估训练期和测试期的KGE和NSE指标。"
+        f"完成后评估训练期和测试期的NSE和KGE指标。"
     )
 
     agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
@@ -474,10 +496,16 @@ def _run_method_c(basin_id: str, cfg: dict, label: str,
         run_cfg["llm"]["base_url"] = base_url_override
 
     query = (
-        f"请用LLM智能率定GR4J模型，流域{basin_id}，目标NSE>={NSE_TARGET}，"
-        f"最多{LLM_MAX_ROUNDS}轮参数范围调整，使用SCE-UA算法，"
-        f"输出目录保存在 {task_workspace}。"
-        f"完成后评估训练期和测试期的KGE和NSE指标。"
+        f"请对流域 {basin_id} 进行LLM智能率定XAJ模型，目标NSE>={NSE_TARGET}，"
+        f"最多{LLM_MAX_ROUNDS}轮，使用SCE-UA算法，输出目录 {task_workspace}。\n\n"
+        f"必须严格按照以下三步执行，不可跳过：\n"
+        f"第一步：调用 get_basin_attributes(basin_id='{basin_id}') 获取流域气候属性（aridity、"
+        f"runoff_ratio、baseflow_index、frac_snow、climate_zone）\n"
+        f"第二步：根据返回的属性，参照 skill.md 中的 XAJ 参数气候区对照表，推理每个参数的"
+        f"初始搜索范围，写出推理依据（如：aridity={{}:.2f}，属于{{}}气候区，因此K范围设为...）\n"
+        f"第三步：将推理出的 param_ranges dict 作为参数传入 llm_calibrate，"
+        f"让工具以此为起点进行迭代优化\n\n"
+        f"完成所有轮次后，评估训练期和测试期的NSE和KGE指标。"
     )
 
     agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"), config_override=run_cfg)
@@ -501,6 +529,17 @@ def _run_method_c(basin_id: str, cfg: dict, label: str,
         total_tokens = 0
 
     log_info = _extract_from_log(agent.memory._log)
+
+    # Compute range_delta: how much LLM narrowed each param vs default
+    from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
+    default_ranges = DEFAULT_PARAM_RANGES.get(MODEL, {})
+    initial_ranges = log_info.get("initial_param_ranges_llm", {})
+    range_delta = {}
+    for param, (d_lo, d_hi) in default_ranges.items():
+        if param in initial_ranges:
+            i_lo, i_hi = initial_ranges[param]
+            range_delta[param] = [round(i_lo - d_lo, 4), round(i_hi - d_hi, 4)]
+
     entry = {
         "success": False,
         "label": label,
@@ -516,6 +555,12 @@ def _run_method_c(basin_id: str, cfg: dict, label: str,
         "nse_history": log_info.get("nse_history", []),
         "llm_calibrate_failed": log_info.get("llm_calibrate_failed", False),
         "error": None,
+        # Paper data: agent prior reasoning artifacts
+        "basin_attributes": log_info.get("basin_attributes", {}),
+        "initial_param_ranges_llm": initial_ranges,
+        "initial_param_ranges_default": {k: list(v) for k, v in default_ranges.items()},
+        "range_delta": range_delta,
+        "fixed_params_by_round": log_info.get("fixed_params_by_round", {}),
     }
 
     if "llm_calibrate" not in log_info["tool_sequence"]:
@@ -555,6 +600,61 @@ def _estimate_c_total_evals(rounds: int) -> int:
     return total
 
 
+# ── Checkpoint helpers ────────────────────────────────────────────────────────
+
+CHECKPOINT_FILE = OUTPUT_DIR / "exp2_checkpoint.json"
+
+
+def _load_existing_basin_record(basin_id: str) -> dict:
+    """Load the existing basin record from exp2_results.json or checkpoint.
+
+    Used by RUN_ONLY='C' to preserve A/B results when only re-running Method C.
+    Returns the record dict if found, else empty dict.
+    """
+    # Try checkpoint first (more recent), then final results
+    for candidate in [CHECKPOINT_FILE, OUTPUT_DIR / "exp2_results.json"]:
+        if candidate.exists():
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                for r in data.get("results", []):
+                    if r.get("basin_id") == basin_id:
+                        logger.info(
+                            f"[checkpoint] Loaded existing A/B record for {basin_id} "
+                            f"from {candidate.name}"
+                        )
+                        return r
+            except Exception as e:
+                logger.warning(f"Could not read {candidate.name} for {basin_id}: {e}")
+    logger.warning(
+        f"[checkpoint] No existing record found for {basin_id}; A/B fields will be empty"
+    )
+    return {}
+
+
+def _load_checkpoint() -> list:
+    """Return already-completed basin records from checkpoint, or []."""
+    if CHECKPOINT_FILE.exists():
+        try:
+            data = json.loads(CHECKPOINT_FILE.read_text(encoding="utf-8"))
+            done = data.get("results", [])
+            logger.info(f"[checkpoint] Resuming: {len(done)} basin(s) already done: "
+                        f"{[r['basin_id'] for r in done]}")
+            return done
+        except Exception as e:
+            logger.warning(f"[checkpoint] Failed to read checkpoint: {e}")
+    return []
+
+
+def _save_checkpoint(results: list, meta: dict):
+    """Write partial results after each basin completes."""
+    payload = {**meta, "results": results}
+    CHECKPOINT_FILE.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    logger.info(f"[checkpoint] Saved ({len(results)} basin(s) done)")
+
+
 # ── Main experiment ───────────────────────────────────────────────────────────
 
 def run_experiment() -> dict:
@@ -573,61 +673,94 @@ def run_experiment() -> dict:
     else:
         logger.info("C2 LLM: not configured (set C2_MODEL to enable)")
 
-    results = []
+    # Resume from checkpoint if it exists
+    results = _load_checkpoint()
+    done_basins = {r["basin_id"] for r in results}
+
+    meta = {
+        "experiment": "exp2_llm_calibration",
+        "mode": f"A(agent x{N_SEEDS_A}) + B(scripted x1) + C1(agent x1) + C2({'agent' if C2_MODEL else 'skipped'})",
+        "timestamp": datetime.now().isoformat(),
+        "model": MODEL,
+        "primary_metric": "KGE (Knoben et al. 2019)",
+        "n_seeds_a": N_SEEDS_A,
+        "c2_model": C2_MODEL,
+        "nse_target": NSE_TARGET,
+    }
 
     for basin_id, basin_name, climate_zone in BASINS:
         logger.info(f"\n{'='*60}")
         logger.info(f"Basin: {basin_id} ({basin_name}, {climate_zone})")
         logger.info(f"{'='*60}")
 
+        # Skip already-completed basins (resume support)
+        if basin_id in done_basins:
+            logger.info(f"[checkpoint] Skipping {basin_id} (already done)")
+            continue
+
         record = {
             "basin_id": basin_id,
             "basin_name": basin_name,
             "climate_zone": climate_zone,
             "model": MODEL,
-            "method_A_runs": [],    # N_SEEDS_A individual runs
-            "method_A_agg": {},     # mean+/-std aggregation
+            "basin_attributes": {},  # from get_basin_attributes (filled after C1 runs)
+            "method_A_runs": [],     # N_SEEDS_A individual runs
+            "method_A_agg": {},      # mean+/-std aggregation
             "method_B": {},
             "method_C1": {},
-            "method_C2": {},        # empty dict if C2_MODEL not set
+            "method_C2": {},         # empty dict if C2_MODEL not set
         }
 
         # ── Method A: N_SEEDS_A independent runs ──
-        logger.info(f"[A] Standard SCE-UA (agent-driven, {N_SEEDS_A} independent runs)")
-        a_runs = []
-        for run_idx in range(N_SEEDS_A):
-            logger.info(f"  A run {run_idx+1}/{N_SEEDS_A}")
-            a_entry = _run_method_a_single(basin_id, run_idx, cfg)
-            a_runs.append(a_entry)
-            def _f(v): return f"{v:.4f}" if isinstance(v, (int, float)) else "N/A"
-            logger.info(
-                f"  A run{run_idx+1}: KGE={_f(a_entry['train_metrics'].get('KGE'))} "
-                f"NSE={_f(a_entry['train_metrics'].get('NSE'))} "
-                f"boundary_hits={len(a_entry.get('boundary_hits', []))}"
-            )
-        record["method_A_runs"] = a_runs
-        record["method_A_agg"] = _aggregate_method_a(a_runs)
+        if RUN_ONLY == "C":
+            # Load A results from existing JSON if available, otherwise use empty placeholder
+            logger.info("[A] Skipped (RUN_ONLY='C') — loading from existing results if available")
+            existing = _load_existing_basin_record(basin_id)
+            record["method_A_runs"] = existing.get("method_A_runs", [])
+            record["method_A_agg"] = existing.get("method_A_agg", {})
+        else:
+            logger.info(f"[A] Standard SCE-UA (agent-driven, {N_SEEDS_A} independent runs)")
+            a_runs = []
+            for run_idx in range(N_SEEDS_A):
+                logger.info(f"  A run {run_idx+1}/{N_SEEDS_A}")
+                a_entry = _run_method_a_single(basin_id, run_idx, cfg)
+                a_runs.append(a_entry)
+                def _f(v): return f"{v:.4f}" if isinstance(v, (int, float)) else "N/A"
+                logger.info(
+                    f"  A run{run_idx+1}: KGE={_f(a_entry['train_metrics'].get('KGE'))} "
+                    f"NSE={_f(a_entry['train_metrics'].get('NSE'))} "
+                    f"boundary_hits={len(a_entry.get('boundary_hits', []))}"
+                )
+            record["method_A_runs"] = a_runs
+            record["method_A_agg"] = _aggregate_method_a(a_runs)
 
         # ── Method B: Zhu et al. (scripted, single run) ──
-        logger.info("[B] Zhu et al. 2026 direct parameter proposal (scripted)")
-        b_dir = str(OUTPUT_DIR / f"B_{MODEL}_{basin_id}")
-        t0 = time.time()
-        b_entry = _zhu_method(basin_id, MODEL, llm, cfg, b_dir)
-        b_entry["wall_time_s"] = round(time.time() - t0, 2)
-        if b_entry.get("success") and b_entry.get("calibration_dir"):
-            b_tr, b_te = _evaluate_from_disk(b_entry["calibration_dir"], cfg)
-            b_entry["train_metrics"] = b_tr
-            b_entry["test_metrics"] = b_te
-        record["method_B"] = b_entry
-        logger.info(
-            f"  B: KGE={b_entry.get('best_kge', 'N/A')} "
-            f"NSE={b_entry.get('best_nse', 'N/A')} iters={b_entry.get('iterations', 0)}"
-        )
+        if RUN_ONLY == "C":
+            logger.info("[B] Skipped (RUN_ONLY='C') — loading from existing results if available")
+            record["method_B"] = existing.get("method_B", {})
+        else:
+            logger.info("[B] Zhu et al. 2026 direct parameter proposal (scripted)")
+            b_dir = str(OUTPUT_DIR / f"B_{MODEL}_{basin_id}")
+            t0 = time.time()
+            b_entry = _zhu_method(basin_id, MODEL, llm, cfg, b_dir)
+            b_entry["wall_time_s"] = round(time.time() - t0, 2)
+            if b_entry.get("success") and b_entry.get("calibration_dir"):
+                b_tr, b_te = _evaluate_from_disk(b_entry["calibration_dir"], cfg)
+                b_entry["train_metrics"] = b_tr
+                b_entry["test_metrics"] = b_te
+            record["method_B"] = b_entry
+            logger.info(
+                f"  B: KGE={b_entry.get('best_kge', 'N/A')} "
+                f"NSE={b_entry.get('best_nse', 'N/A')} iters={b_entry.get('iterations', 0)}"
+            )
 
         # ── Method C1: HydroClaw LLM range adjustment (primary LLM) ──
         logger.info("[C1] HydroClaw LLM range adjustment (primary LLM)")
         c1_entry = _run_method_c(basin_id, cfg, "C1")
         record["method_C1"] = c1_entry
+        # Propagate basin_attributes to top-level record for easy access
+        if c1_entry.get("basin_attributes"):
+            record["basin_attributes"] = c1_entry["basin_attributes"]
         def _f(v): return f"{v:.4f}" if isinstance(v, (int, float)) else "N/A"
         logger.info(
             f"  C1: KGE={_f(c1_entry.get('best_kge'))} "
@@ -652,31 +785,37 @@ def run_experiment() -> dict:
         else:
             record["method_C2"] = {"skipped": True, "reason": "C2_MODEL not configured"}
 
-        # ── Delta: C1 vs A_mean, C2 vs A_mean ──
+        # ── Delta: C1 vs A_mean, C2 vs A_mean (NSE primary) ──
+        a_nse_mean = record["method_A_agg"]["nse_test"].get("mean")
+        c1_nse = c1_entry.get("test_metrics", {}).get("NSE")
+        c2_nse = record["method_C2"].get("test_metrics", {}).get("NSE") if C2_MODEL else None
+
+        record["delta_C1_vs_A_nse"] = (
+            round(c1_nse - a_nse_mean, 4)
+            if isinstance(c1_nse, float) and isinstance(a_nse_mean, float) else None
+        )
+        record["delta_C2_vs_A_nse"] = (
+            round(c2_nse - a_nse_mean, 4)
+            if isinstance(c2_nse, float) and isinstance(a_nse_mean, float) else None
+        )
+        # Keep KGE delta for reference
         a_kge_mean = record["method_A_agg"]["kge_train"].get("mean")
         c1_kge = c1_entry.get("train_metrics", {}).get("KGE")
-        c2_kge = record["method_C2"].get("train_metrics", {}).get("KGE") if C2_MODEL else None
-
         record["delta_C1_vs_A_kge"] = (
             round(c1_kge - a_kge_mean, 4)
             if isinstance(c1_kge, float) and isinstance(a_kge_mean, float) else None
         )
-        record["delta_C2_vs_A_kge"] = (
-            round(c2_kge - a_kge_mean, 4)
-            if isinstance(c2_kge, float) and isinstance(a_kge_mean, float) else None
-        )
 
         results.append(record)
+        _save_checkpoint(results, meta)  # persist after each basin
+
+    # All basins done: remove checkpoint, write final results
+    if CHECKPOINT_FILE.exists():
+        CHECKPOINT_FILE.unlink()
+        logger.info("[checkpoint] Cleared (all basins complete)")
 
     return {
-        "experiment": "exp2_llm_calibration",
-        "mode": f"A(agent x{N_SEEDS_A}) + B(scripted x1) + C1(agent x1) + C2({'agent' if C2_MODEL else 'skipped'})",
-        "timestamp": datetime.now().isoformat(),
-        "model": MODEL,
-        "primary_metric": "KGE (Knoben et al. 2019)",
-        "n_seeds_a": N_SEEDS_A,
-        "c2_model": C2_MODEL,
-        "nse_target": NSE_TARGET,
+        **meta,
         "results": results,
         "llm_token_usage": llm.tokens.summary(),
     }
@@ -703,21 +842,21 @@ def print_summary(results: dict):
     data = results["results"]
     print(f"\n{'='*110}")
     print(f"  Exp2: LLM Calibration Comparison  ({results['mode']})")
-    print(f"  Primary metric: KGE | Secondary: NSE")
+    print(f"  Primary metric: NSE | Secondary: KGE")
     print(f"  A = SCE-UA standard ({N_SEEDS_A} runs, mean+/-std)  |  B = Zhu 2026 (scripted)")
     print(f"  C1 = HydroClaw LLM-guided (primary LLM)  |  C2 = alt LLM ({'enabled' if C2_MODEL else 'not configured'})")
-    print(f"  Key insight: C_kge APPROX= A_kge (automation equivalence, not superiority)")
+    print(f"  Key insight: C_nse >= B_nse (C not worse than scripted LLM); C_nse APPROX= A_nse (automation equivalence)")
     print(f"{'='*110}")
 
     def _f(v): return f"{v:.4f}" if isinstance(v, (int, float)) else "  N/A "
 
-    # KGE comparison table
-    print("\n  [KGE Results - primary metric]")
+    # NSE primary table
+    print("\n  [NSE Results - primary metric]")
     hdr = (
         f"{'Basin':<12} {'Zone':<20} "
         f"{'A_train':>16} {'B_train':>8} {'C1_train':>8} "
         f"{'A_test':>12} {'C1_test':>8} "
-        f"{'dC1-A':>7} {'C1_rn':>6} {'eval_ratio':>10}"
+        f"{'dC1-A(test)':>11} {'C1_rn':>6} {'eval_ratio':>10}"
     )
     print(hdr)
     print("-" * 110)
@@ -727,12 +866,12 @@ def print_summary(results: dict):
         c1 = r["method_C1"]
         b = r["method_B"]
 
-        a_tr = _ms(a_agg["kge_train"])
-        b_tr = _f(b.get("best_kge"))
-        c1_tr = _f(c1.get("train_metrics", {}).get("KGE"))
-        a_te = _ms(a_agg["kge_test"])
-        c1_te = _f(c1.get("test_metrics", {}).get("KGE"))
-        d_c1a = _f(r.get("delta_C1_vs_A_kge"))
+        a_tr = _ms(a_agg["nse_train"])
+        b_tr = _f(b.get("best_nse"))
+        c1_tr = _f(c1.get("best_nse"))
+        a_te = _ms(a_agg["nse_test"])
+        c1_te = _f(c1.get("test_metrics", {}).get("NSE"))
+        d_c1a = _f(r.get("delta_C1_vs_A_nse"))
 
         c1_rounds = c1.get("rounds") or 0
         a_eval = SCE_UA_REP_DEFAULT
@@ -743,34 +882,34 @@ def print_summary(results: dict):
             f"{r['basin_id']:<12} {r['climate_zone']:<20} "
             f"{a_tr:>16} {b_tr:>8} {c1_tr:>8} "
             f"{a_te:>12} {c1_te:>8} "
-            f"{d_c1a:>7} {c1_rounds:>6} {ratio:>10}"
+            f"{d_c1a:>11} {c1_rounds:>6} {ratio:>10}"
         )
 
     # C2 comparison (if enabled)
     if C2_MODEL:
-        print(f"\n  [C1 vs C2 LLM comparison - KGE train]")
+        print(f"\n  [C1 vs C2 LLM comparison - NSE test]")
         print(f"  {'Basin':<12} {'C1 ('+cfg_model_name(results)+')':>20} {'C2 ('+C2_MODEL+')':>20} {'dC2-A':>8}")
         print("-" * 65)
         for r in data:
-            c1_kge = _f(r["method_C1"].get("train_metrics", {}).get("KGE"))
-            c2_kge = _f(r["method_C2"].get("train_metrics", {}).get("KGE"))
-            d_c2a = _f(r.get("delta_C2_vs_A_kge"))
-            print(f"  {r['basin_id']:<12} {c1_kge:>20} {c2_kge:>20} {d_c2a:>8}")
+            c1_nse = _f(r["method_C1"].get("test_metrics", {}).get("NSE"))
+            c2_nse = _f(r["method_C2"].get("test_metrics", {}).get("NSE"))
+            d_c2a = _f(r.get("delta_C2_vs_A_nse"))
+            print(f"  {r['basin_id']:<12} {c1_nse:>20} {c2_nse:>20} {d_c2a:>8}")
 
-    # NSE secondary table
-    print(f"\n  [NSE Results - secondary metric]")
-    hdr2 = f"  {'Basin':<12} {'A_train NSE':>16} {'B_train':>8} {'C1_train':>8} {'A_test':>12} {'C1_test':>8}"
+    # KGE secondary table
+    print(f"\n  [KGE Results - secondary metric]")
+    hdr2 = f"  {'Basin':<12} {'A_train KGE':>16} {'B_train':>8} {'C1_train':>8} {'A_test':>12} {'C1_test':>8}"
     print(hdr2)
     print("  " + "-" * 65)
     for r in data:
         a_agg = r["method_A_agg"]
         c1 = r["method_C1"]
         b = r["method_B"]
-        a_tr = _ms(a_agg["nse_train"])
-        b_tr = _f(b.get("best_nse"))
-        c1_tr = _f(c1.get("best_nse"))
-        a_te = _ms(a_agg["nse_test"])
-        c1_te = _f(c1.get("test_metrics", {}).get("NSE"))
+        a_tr = _ms(a_agg["kge_train"])
+        b_tr = _f(b.get("best_kge"))
+        c1_tr = _f(c1.get("train_metrics", {}).get("KGE"))
+        a_te = _ms(a_agg["kge_test"])
+        c1_te = _f(c1.get("test_metrics", {}).get("KGE"))
         print(f"  {r['basin_id']:<12} {a_tr:>16} {b_tr:>8} {c1_tr:>8} {a_te:>12} {c1_te:>8}")
 
     # NSE trajectory for C1

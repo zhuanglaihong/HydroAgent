@@ -207,6 +207,7 @@ hydroclaw_config_override.json
 logs/
 test/results/
 results/
+plot/
 experiment_results/
 temp_calibration_result/
 generated_code/
