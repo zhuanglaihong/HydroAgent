@@ -4,7 +4,7 @@
 将本文件复制为 configs/private.py 并填写实际值。
 此文件是模板，可提交到版本库；private.py 已加入 .gitignore。
 
-HydroClaw 启动时会根据此处的路径自动生成 ~/hydro_setting.yml，
+HydroAgent 启动时会根据此处的路径自动生成 ~/hydro_setting.yml，
 无需手动配置 hydrodataset 的路径。
 """
 
@@ -38,6 +38,6 @@ RESULT_DIR  = r"D:\your\path\to\results"
 PROJECT_DIR = r"D:\your\path\to\HydroAgent"
 
 # hydrodataset NetCDF 缓存目录（可选，留空则默认为 DATASET_DIR 父目录下的 cache）
-# HydroClaw 启动时自动写入 ~/hydro_setting.yml，无需手动配置。
+# HydroAgent 启动时自动写入 ~/hydro_setting.yml，无需手动配置。
 CACHE_DIR = r""
 

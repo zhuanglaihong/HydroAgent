@@ -1,14 +1,14 @@
 """
 Experiment 2 - LLM Calibration vs Standard vs Zhu et al. (Hybrid Agent+Script)
 ================================================================================
-Purpose: Validate HydroClaw's LLM parameter-range adjustment mechanism against
+Purpose: Validate HydroAgent's LLM parameter-range adjustment mechanism against
          standard SCE-UA and the Zhu et al. 2026 direct-proposal baseline.
 
 Method - three arms:
   A. Standard SCE-UA (agent-driven, N_SEEDS_A=3 runs -> mean+/-std)
   B. Zhu et al. 2026 (scripted, single run)
-  C1. HydroClaw LLM range adjustment - primary LLM (agent-driven, single run)
-  C2. HydroClaw LLM range adjustment - alternative LLM (agent-driven, single run)
+  C1. HydroAgent LLM range adjustment - primary LLM (agent-driven, single run)
+  C2. HydroAgent LLM range adjustment - alternative LLM (agent-driven, single run)
       [Set C2_MODEL to enable; skip if None]
 
 Statistical design:
@@ -75,7 +75,7 @@ C2_BASE_URL = None  # set if C2 uses a different API endpoint
 # Run mode: set to "C" to skip Method A and B, only run Method C1 (and C2 if configured)
 # Useful for re-running Method C after fixing Agent behavior without re-running A/B.
 # Results for A/B are loaded from the existing checkpoint if available.
-RUN_ONLY = None   # None = run all methods | "C" = only run C1/C2
+RUN_ONLY = "C"    # None = run all methods | "C" = only run C1/C2
 
 # SCE-UA budget constants (for total evaluation count comparison)
 SCE_UA_REP_DEFAULT = 750
@@ -181,7 +181,7 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
 
 
 def _evaluate_from_disk(cal_dir: str, cfg: dict) -> tuple[dict, dict]:
-    from hydroclaw.skills.evaluation.evaluate import evaluate_model
+    from hydroagent.skills.evaluation.evaluate import evaluate_model
     try:
         import yaml
         config_file = Path(cal_dir) / "calibration_config.yaml"
@@ -263,9 +263,9 @@ def _zhu_method(basin_id: str, model_name: str, llm, cfg: dict, output_dir: str)
     Scripted (not agent-driven) to faithfully reproduce the external method:
     tight range (+-3% span) trick must be applied programmatically.
     """
-    from hydroclaw.skills.calibration.calibrate import calibrate_model
-    from hydroclaw.skills.evaluation.evaluate import evaluate_model
-    from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
+    from hydroagent.skills.calibration.calibrate import calibrate_model
+    from hydroagent.skills.evaluation.evaluate import evaluate_model
+    from hydroagent.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
     import yaml
 
     param_ranges = DEFAULT_PARAM_RANGES.get(model_name, {})
@@ -403,9 +403,9 @@ def _zhu_method(basin_id: str, model_name: str, llm, cfg: dict, output_dir: str)
 
 def _run_method_a_single(basin_id: str, run_idx: int, cfg: dict) -> dict:
     """One independent run of Method A (standard SCE-UA via agent)."""
-    from hydroclaw.agent import HydroClaw
-    from hydroclaw.interface.ui import ConsoleUI
-    from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
+    from hydroagent.agent import HydroAgent
+    from hydroagent.interface.ui import ConsoleUI
+    from hydroagent.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
 
     task_workspace = OUTPUT_DIR / f"A_{MODEL}_{basin_id}" / f"run{run_idx+1}"
     task_workspace.mkdir(parents=True, exist_ok=True)
@@ -416,7 +416,7 @@ def _run_method_a_single(basin_id: str, run_idx: int, cfg: dict) -> dict:
         f"完成后评估训练期和测试期的NSE和KGE指标。"
     )
 
-    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
+    agent = HydroAgent(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
     t0 = time.time()
     try:
         agent.run(query)
@@ -470,18 +470,18 @@ def _run_method_a_single(basin_id: str, run_idx: int, cfg: dict) -> dict:
     return entry
 
 
-# ── Method C: HydroClaw LLM range adjustment (agent-driven) ──────────────────
+# ── Method C: HydroAgent LLM range adjustment (agent-driven) ──────────────────
 
 def _run_method_c(basin_id: str, cfg: dict, label: str,
                   model_override: str | None = None,
                   base_url_override: str | None = None) -> dict:
-    """Method C: LLM-guided range adjustment via HydroClaw agent.
+    """Method C: LLM-guided range adjustment via HydroAgent agent.
 
     label: "C1" or "C2" (for workspace naming)
     model_override: if set, temporarily use this LLM model instead of config default
     """
-    from hydroclaw.agent import HydroClaw
-    from hydroclaw.interface.ui import ConsoleUI
+    from hydroagent.agent import HydroAgent
+    from hydroagent.interface.ui import ConsoleUI
 
     task_workspace = OUTPUT_DIR / f"{label}_{MODEL}_{basin_id}"
     task_workspace.mkdir(parents=True, exist_ok=True)
@@ -502,13 +502,13 @@ def _run_method_c(basin_id: str, cfg: dict, label: str,
         f"第一步：调用 get_basin_attributes(basin_id='{basin_id}') 获取流域气候属性（aridity、"
         f"runoff_ratio、baseflow_index、frac_snow、climate_zone）\n"
         f"第二步：根据返回的属性，参照 skill.md 中的 XAJ 参数气候区对照表，推理每个参数的"
-        f"初始搜索范围，写出推理依据（如：aridity={{}:.2f}，属于{{}}气候区，因此K范围设为...）\n"
+        "初始搜索范围，写出推理依据（如：aridity=0.45，属于湿润气候区，因此K范围设为...）\n"
         f"第三步：将推理出的 param_ranges dict 作为参数传入 llm_calibrate，"
         f"让工具以此为起点进行迭代优化\n\n"
         f"完成所有轮次后，评估训练期和测试期的NSE和KGE指标。"
     )
 
-    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"), config_override=run_cfg)
+    agent = HydroAgent(workspace=task_workspace, ui=ConsoleUI(mode="dev"), config_override=run_cfg)
     t0 = time.time()
     try:
         agent.run(query)
@@ -531,7 +531,7 @@ def _run_method_c(basin_id: str, cfg: dict, label: str,
     log_info = _extract_from_log(agent.memory._log)
 
     # Compute range_delta: how much LLM narrowed each param vs default
-    from hydroclaw.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
+    from hydroagent.skills.llm_calibration.llm_calibrate import DEFAULT_PARAM_RANGES
     default_ranges = DEFAULT_PARAM_RANGES.get(MODEL, {})
     initial_ranges = log_info.get("initial_param_ranges_llm", {})
     range_delta = {}
@@ -658,8 +658,8 @@ def _save_checkpoint(results: list, meta: dict):
 # ── Main experiment ───────────────────────────────────────────────────────────
 
 def run_experiment() -> dict:
-    from hydroclaw.config import load_config
-    from hydroclaw.llm import LLMClient
+    from hydroagent.config import load_config
+    from hydroagent.llm import LLMClient
 
     cfg = load_config()
     llm = LLMClient(cfg["llm"])
@@ -754,8 +754,8 @@ def run_experiment() -> dict:
                 f"NSE={b_entry.get('best_nse', 'N/A')} iters={b_entry.get('iterations', 0)}"
             )
 
-        # ── Method C1: HydroClaw LLM range adjustment (primary LLM) ──
-        logger.info("[C1] HydroClaw LLM range adjustment (primary LLM)")
+        # ── Method C1: HydroAgent LLM range adjustment (primary LLM) ──
+        logger.info("[C1] HydroAgent LLM range adjustment (primary LLM)")
         c1_entry = _run_method_c(basin_id, cfg, "C1")
         record["method_C1"] = c1_entry
         # Propagate basin_attributes to top-level record for easy access
@@ -770,7 +770,7 @@ def run_experiment() -> dict:
 
         # ── Method C2: alternative LLM (optional) ──
         if C2_MODEL:
-            logger.info(f"[C2] HydroClaw LLM range adjustment (alt LLM: {C2_MODEL})")
+            logger.info(f"[C2] HydroAgent LLM range adjustment (alt LLM: {C2_MODEL})")
             c2_entry = _run_method_c(
                 basin_id, cfg, "C2",
                 model_override=C2_MODEL,
@@ -844,7 +844,7 @@ def print_summary(results: dict):
     print(f"  Exp2: LLM Calibration Comparison  ({results['mode']})")
     print(f"  Primary metric: NSE | Secondary: KGE")
     print(f"  A = SCE-UA standard ({N_SEEDS_A} runs, mean+/-std)  |  B = Zhu 2026 (scripted)")
-    print(f"  C1 = HydroClaw LLM-guided (primary LLM)  |  C2 = alt LLM ({'enabled' if C2_MODEL else 'not configured'})")
+    print(f"  C1 = HydroAgent LLM-guided (primary LLM)  |  C2 = alt LLM ({'enabled' if C2_MODEL else 'not configured'})")
     print(f"  Key insight: C_nse >= B_nse (C not worse than scripted LLM); C_nse APPROX= A_nse (automation equivalence)")
     print(f"{'='*110}")
 
