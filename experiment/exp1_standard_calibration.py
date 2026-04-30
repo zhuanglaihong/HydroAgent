@@ -1,9 +1,9 @@
 """
 Experiment 1 - Standard Calibration Baseline (Agent-Driven)
 ============================================================
-Purpose: Verify that HydroClaw agent correctly executes the full calibration
+Purpose: Verify that HydroAgent agent correctly executes the full calibration
          workflow from natural language, and establish KGE/NSE baselines.
-Method:  HydroClaw agent receives a natural language calibration query.
+Method:  HydroAgent agent receives a natural language calibration query.
          Agent autonomously decides: validate_basin -> calibrate_model -> evaluate_model.
 Design:  5 basins x 2 models x SCE-UA x N_SEEDS independent runs.
 
@@ -125,7 +125,7 @@ def _extract_from_log(memory_log: list[dict]) -> dict:
 
 def _evaluate_from_disk(cal_dir: str, cfg: dict) -> tuple[dict, dict]:
     """Read calibration config and evaluate both train and test periods from disk."""
-    from hydroclaw.skills.evaluation.evaluate import evaluate_model
+    from hydroagent.skills.evaluation.evaluate import evaluate_model
     try:
         import yaml
         config_file = Path(cal_dir) / "calibration_config.yaml"
@@ -155,14 +155,14 @@ def run_single_task(
     basin_id: str, basin_name: str, climate_zone: str,
     model_name: str, run_idx: int, cfg: dict,
 ) -> dict:
-    """Run one calibration task through the HydroClaw agent (single independent run).
+    """Run one calibration task through the HydroAgent agent (single independent run).
 
     run_idx: 0-based index, used for workspace isolation across repeated runs.
     Each run uses a fresh agent and fresh workspace, so SCE-UA random initialization
     varies naturally (no explicit seed needed for inter-run variance).
     """
-    from hydroclaw.agent import HydroClaw
-    from hydroclaw.interface.ui import ConsoleUI
+    from hydroagent.agent import HydroAgent
+    from hydroagent.interface.ui import ConsoleUI
 
     combo = f"{model_name}_{basin_id}"
     task_workspace = OUTPUT_DIR / combo / f"run{run_idx + 1}"
@@ -174,7 +174,7 @@ def run_single_task(
         f"输出目录请保存在 {task_workspace}。"
     )
 
-    agent = HydroClaw(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
+    agent = HydroAgent(workspace=task_workspace, ui=ConsoleUI(mode="dev"))
 
     record = {
         "basin_id": basin_id,
@@ -277,7 +277,7 @@ def _aggregate_runs(combo_runs: list[dict]) -> dict:
 # ── Main experiment ───────────────────────────────────────────────────────────
 
 def run_experiment() -> dict:
-    from hydroclaw.config import load_config
+    from hydroagent.config import load_config
 
     cfg = load_config()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

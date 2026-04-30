@@ -1,4 +1,4 @@
-# HydroClaw 核心架构文档
+# HydroAgent 核心架构文档
 
 > 版本：v2.6 | 日期：2026-03-25
 
@@ -32,7 +32,7 @@
 
 **核心原则：让 LLM 做决策，代码只做执行。**
 
-传统水文系统需要大量 if-else 逻辑编排工作流；HydroClaw 把编排权交给 LLM，LLM 看到工具描述和场景指引后自然地决定调用顺序。没有状态机，没有路由表，循环何时结束完全由 LLM 决定。
+传统水文系统需要大量 if-else 逻辑编排工作流；HydroAgent 把编排权交给 LLM，LLM 看到工具描述和场景指引后自然地决定调用顺序。没有状态机，没有路由表，循环何时结束完全由 LLM 决定。
 
 **三个核心权衡（设计决策记录）**：
 
@@ -100,7 +100,7 @@
 ### 3.1 核心循环（ReAct 模式）
 
 ```python
-class HydroClaw:
+class HydroAgent:
     def run(self, query: str) -> str:
         messages = [{"role": "system", "content": self._build_system_prompt(query)}]
         messages.append({"role": "user", "content": query})
@@ -169,7 +169,7 @@ def _execute_tool(self, name: str, arguments: dict) -> dict:
 
 ### 3.3 子代理支持（_subagent_system_prompt）
 
-当 `HydroClaw` 作为子代理被 `spawn_agent` 创建时，`_subagent_system_prompt` 属性被设置，
+当 `HydroAgent` 作为子代理被 `spawn_agent` 创建时，`_subagent_system_prompt` 属性被设置，
 `_load_system_prompt()` 优先使用该覆盖值而非读取 `skills/system.md`。
 
 ---
@@ -354,8 +354,8 @@ def reload_adapters():
 ### 7.1 扫描路径
 
 启动时扫描两个位置（discover_tools()）：
-1. `hydroclaw/tools/*.py` — 核心工具（priority=20）
-2. `hydroclaw/skills/*/` — 每个 Skill 目录下的 `*.py`（priority=10）
+1. `hydroagent/tools/*.py` — 核心工具（priority=20）
+2. `hydroagent/skills/*/` — 每个 Skill 目录下的 `*.py`（priority=10）
 3. 动态生成的 Skill（priority=5，`create_skill` 写入后触发重扫）
 
 ### 7.2 Schema 自动生成（fn_to_schema）
@@ -591,7 +591,7 @@ MODEL_NAME = "deepseek-chat"                       # 或 qwen-max / qwen-plus
 
 ```python
 def _get_task_status_note(self) -> str:
-    from hydroclaw.utils.task_state import TaskState, PENDING, RUNNING
+    from hydroagent.utils.task_state import TaskState, PENDING, RUNNING
     try:
         ts = TaskState(self.workspace)
         if not ts.all_tasks():
@@ -618,7 +618,7 @@ def _get_task_status_note(self) -> str:
 **实现**：声明式 hook 注册表，解耦副作用逻辑：
 
 ```python
-class HydroClaw:
+class HydroAgent:
     def __init__(self, ...):
         self._post_tool_hooks: dict[str, list] = {}
         self._register_builtin_post_hooks()
@@ -657,8 +657,8 @@ Hook 函数签名：`fn(tool_name: str, arguments: dict, result: dict) -> None`
 class AgentRegistry:
     """扫描并管理子代理定义文件（.md 格式）"""
 
-    BUILTIN_DIR = Path(__file__).parent  # hydroclaw/agents/
-    PROJECT_DIR_NAME = ".hydroclaw/agents"  # <workspace>/.hydroclaw/agents/
+    BUILTIN_DIR = Path(__file__).parent  # hydroagent/agents/
+    PROJECT_DIR_NAME = ".hydroagent/agents"  # <workspace>/.hydroagent/agents/
 
     def __init__(self, workspace: Path | None = None):
         self._agents: dict[str, AgentDef] = {}
@@ -707,7 +707,7 @@ def spawn_agent(name: str, task: str, _workspace, _cfg, _ui) -> dict:
     registry = AgentRegistry(_workspace)
     agent_def = registry.get(name)
 
-    sub = HydroClaw(workspace=_workspace, config_override=_cfg, ui=_ui,
+    sub = HydroAgent(workspace=_workspace, config_override=_cfg, ui=_ui,
                     prompt_mode=agent_def["prompt_mode"])
     sub.max_turns = agent_def["max_turns"]
 
@@ -745,8 +745,8 @@ def spawn_agent(name: str, task: str, _workspace, _cfg, _ui) -> dict:
 ### 15.1 两层 plugins.json
 
 ```
-全局：~/.hydroclaw/plugins.json     -- 用户级，所有工作区共享
-本地：<workspace>/.hydroclaw/plugins.json -- 项目级，本地覆盖全局
+全局：~/.hydroagent/plugins.json     -- 用户级，所有工作区共享
+本地：<workspace>/.hydroagent/plugins.json -- 项目级，本地覆盖全局
 ```
 
 ### 15.2 三种插件类型
@@ -754,12 +754,12 @@ def spawn_agent(name: str, task: str, _workspace, _cfg, _ui) -> dict:
 | 类型 | 示例 | 接入方式 |
 |------|------|---------|
 | `pip` | hydromodel | pip install + 内置 adapter |
-| `local_dir` | D:/project/autohydro/ | sys.path 注入 + hydroclaw_adapter.py |
+| `local_dir` | D:/project/autohydro/ | sys.path 注入 + hydroagent_adapter.py |
 | `single_file` | D:/scripts/fdc.py | 动态 import + 函数级注册为工具 |
 
 ### 15.3 本地目录包约定
 
-在包根目录放 `hydroclaw_adapter.py`，继承 `PackageAdapter`：
+在包根目录放 `hydroagent_adapter.py`，继承 `PackageAdapter`：
 
 ```python
 class Adapter(PackageAdapter):
@@ -888,14 +888,14 @@ GET  /api/tasks            -- 获取当前任务列表
 ## 18. 目录结构（v2.6 完整版）
 
 ```
-hydroclaw/
+hydroagent/
 ├── agent.py               # Agentic Loop 核心（ReAct + CC-2/CC-4）
 ├── llm.py                 # LLM 客户端（Function Calling + Prompt 降级）
 ├── memory.py              # 三层记忆（会话/MEMORY.md/流域档案）
 ├── config.py              # 配置管理
 ├── skill_registry.py      # Skill 自动扫描与关键词匹配
 ├── skill_states.py        # Skill 生命周期状态管理
-├── __main__.py            # python -m hydroclaw 入口
+├── __main__.py            # python -m hydroagent 入口
 │
 ├── adapters/              # PackageAdapter 插件层（v2.5）
 │   ├── __init__.py        # reload_adapters() + get_adapter() + get_all_skill_docs()
@@ -984,7 +984,7 @@ hydroclaw/
 
 ## 19. 与 HydroAgent 旧版对比
 
-| 维度 | HydroAgent v6.0 | HydroClaw v2.6 |
+| 维度 | HydroAgent v6.0 | HydroAgent v2.6 |
 |------|-----------------|----------------|
 | 架构 | 5 Agent + Orchestrator 状态机 | 单一 Agentic Loop（+子代理系统） |
 | 代码量 | ~27,000 行 | ~5,500 行 |

@@ -9,7 +9,7 @@ Exp2 绘图脚本 — LLM Calibration A/B/C Comparison
 实验设计：
   方法A — SCE-UA 基线（传统优化，对照组）
   方法B — Zhu 方法（LLM 直接提议参数，外部对照）
-  方法C — HydroClaw LLM 率定（智能参数范围迭代调控，主角）
+  方法C — HydroAgent LLM 率定（智能参数范围迭代调控，主角）
 
 核心结论：
   - 三路方法在好流域（12025000/11532500）NSE 相当——自动化不损失精度
@@ -43,12 +43,12 @@ plt.rcParams.update({
 METHOD_COLORS = {
     "A": "#4878CF",   # 蓝 — SCE-UA 基线
     "B": "#D65F5F",   # 红 — Zhu 方法
-    "C": "#6ACC65",   # 绿 — HydroClaw LLM 率定
+    "C": "#6ACC65",   # 绿 — HydroAgent LLM 率定
 }
 METHOD_LABELS = {
     "A": "Method A\n(SCE-UA baseline)",
     "B": "Method B\n(Zhu: direct proposal)",
-    "C": "Method C\n(HydroClaw LLM)",
+    "C": "Method C\n(HydroAgent LLM)",
 }
 
 BASIN_LABELS = {
@@ -135,7 +135,7 @@ def fig4_method_comparison(data: dict):
 
     fig.suptitle(
         "Figure 4. Three-Method Calibration Comparison — Test Period Performance\n"
-        "Model: XAJ | Basins: 3 | A=SCE-UA baseline, B=Zhu LLM direct, C=HydroClaw basin-aware LLM",
+        "Model: XAJ | Basins: 3 | A=SCE-UA baseline, B=Zhu LLM direct, C=HydroAgent basin-aware LLM",
         fontsize=9.5, fontweight="bold")
 
     out = OUTDIR / "fig4_method_comparison.png"

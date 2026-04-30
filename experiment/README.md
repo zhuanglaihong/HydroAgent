@@ -1,4 +1,4 @@
-# HydroClaw 实验脚本说明
+# HydroAgent 实验脚本说明
 
 > 论文 Section 4: Experiments | 更新：2026-04-09
 
@@ -26,7 +26,7 @@ Exp4 -> 结构"有必要"              K0-K3逐层消融，量化每层知识的
 
 ## 二、Exp1：标准率定基线
 
-**目的**：验证 HydroClaw Agent 能从自然语言自主规划并执行完整水文率定工作流。
+**目的**：验证 HydroAgent Agent 能从自然语言自主规划并执行完整水文率定工作流。
 
 **设计**：5 流域 x XAJ 模型 x SCE-UA x 3 次独立运行
 （单模型：XAJ 为湿润区代表性概念模型；GR4J 对比移至 Exp2）
@@ -56,7 +56,7 @@ Exp4 -> 结构"有必要"              K0-K3逐层消融，量化每层知识的
 
 ## 三、Exp2：LLM 率定 A/B/C 三路对比
 
-**目的**：验证 HydroClaw 自主 LLM 率定工作流（方法C）达到与传统 SCE-UA（方法A）等价的精度，同时实现零人工干预。
+**目的**：验证 HydroAgent 自主 LLM 率定工作流（方法C）达到与传统 SCE-UA（方法A）等价的精度，同时实现零人工干预。
 
 **模型**：GR4J | **流域**：3 个气候区
 
@@ -66,7 +66,7 @@ Exp4 -> 结构"有必要"              K0-K3逐层消融，量化每层知识的
 |------|------|---------|---------|
 | A | SCE-UA 基线 | Agent 驱动 | 默认参数范围，1 次运行 |
 | B | Zhu et al. 风格 | 脚本复现（非 Agent） | LLM 直接提议参数值，极窄范围 +-3%，<=15 轮 |
-| C | HydroClaw LLM 率定 | Agent 驱动 | Agent 自主触发 llm_calibrate，最多 5 轮，每轮不同种子 |
+| C | HydroAgent LLM 率定 | Agent 驱动 | Agent 自主触发 llm_calibrate，最多 5 轮，每轮不同种子 |
 
 > 方法 B 用脚本而非 Agent：Zhu 方法需精确控制 prompt 格式和 +-3% 窄范围约定，自然语言无法准确表达，脚本复现更忠实原始方法。
 

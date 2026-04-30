@@ -4,21 +4,21 @@
 这里是面向用户的常用参数，修改这里即可覆盖系统默认值。
 
 配置层级（优先级从低到高）：
-  1. hydroclaw/config.py  DEFAULTS     <- 项目内部兜底，完整注释，不建议直接改
+  1. hydroagent/config.py  DEFAULTS     <- 项目内部兜底，完整注释，不建议直接改
   2. configs/model_config.py (本文件)   <- 用户自定义算法与时间参数
   3. configs/private.py                <- API Key、数据集路径等私密配置
-  4. HydroClaw(config_path="x.json")  <- 单次运行级覆盖
+  4. HydroAgent(config_path="x.json")  <- 单次运行级覆盖
 
 需要修改的参数类型：
   - API Key / 数据路径       -> configs/private.py
   - 常用率定参数（本文件）   -> 修改下面各 DEFAULT_* 变量
-  - 更细粒度的内部参数       -> 参考 hydroclaw/config.py 中的 DEFAULTS 注释
+  - 更细粒度的内部参数       -> 参考 hydroagent/config.py 中的 DEFAULTS 注释
 """
 
 # ============================================================================
 # 数据集
 # 对应 hydrodataset 包支持的 data_source_type 字符串，完整列表见：
-#   hydroclaw/knowledge/datasets.md
+#   hydroagent/knowledge/datasets.md
 #
 # 数据获取：hydrodataset 通过 AquaFetch 后端自动下载，首次运行会触发下载。
 # 下载前需在 ~/hydro_setting.yml 中指定本地存储路径：
@@ -26,7 +26,7 @@
 #     root: 'D:\data\waterism'
 #     datasets-origin: 'D:\data\waterism\datasets-origin'
 #     cache: 'D:\data\waterism\cache'
-# 详见 hydroclaw/knowledge/datasets.md 中的配置说明。
+# 详见 hydroagent/knowledge/datasets.md 中的配置说明。
 # ============================================================================
 
 DEFAULT_DATA_SOURCE = "camels_us"
@@ -93,7 +93,7 @@ DEFAULT_scipy_PARAMS = {
 
 # ============================================================================
 # 支持的模型与算法（仅供参考，不影响运行）
-# 完整参数范围定义见 hydroclaw/knowledge/model_parameters.md
+# 完整参数范围定义见 hydroagent/knowledge/model_parameters.md
 # ============================================================================
 
 SUPPORTED_MODELS     = ["gr4j", "gr5j", "gr6j", "xaj"]

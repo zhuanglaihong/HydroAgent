@@ -1,11 +1,11 @@
 # CLAUDE.md
 
-> 项目：HydroClaw（从 HydroAgent 重建）| 状态：主动开发中 | 日期：2026-03-06
+> 项目：HydroAgent（从 HydroAgent 重建）| 状态：主动开发中 | 日期：2026-03-06
 
 ## 项目背景
 
 之前做了一个多 Agent 水文智能体系统（HydroAgent，5个 Agent + Orchestrator 状态机），过度工程化、难以维护。
-受 OpenClaw 启发，重建为轻量 Agentic Loop 架构，命名 **HydroClaw**，以此写一篇论文。
+受 OpenClaw 启发，重建为轻量 Agentic Loop 架构，命名 **HydroAgent**，以此写一篇论文。
 
 ## 最终目标
 
@@ -16,17 +16,17 @@
 
 ## 当前架构（已实现）
 
-### 核心包：`hydroclaw/`
+### 核心包：`hydroagent/`
 
 ```
-hydroclaw/
+hydroagent/
 ├── agent.py              # Agentic Loop 核心（ReAct 模式）
 ├── llm.py                # LLM 客户端（Function Calling + Prompt fallback）
 ├── memory.py             # 记忆系统（会话日志 + 跨会话 MEMORY.md）
 ├── config.py             # 配置加载 + hydromodel config 构建
 ├── skill_registry.py     # Skill 自动扫描与关键词匹配
 ├── skill_states.py       # Skill 生命周期状态管理
-├── __main__.py           # python -m hydroclaw 入口
+├── __main__.py           # python -m hydroagent 入口
 ├── interface/            # 用户界面层（终端 + Web）
 │   ├── cli.py            # CLI 入口 + 交互 REPL
 │   ├── ui.py             # Rich 终端 UI（user / dev 两种模式）
@@ -80,6 +80,6 @@ LLM：Qwen/DeepSeek API（`configs/definitions_private.py` 中的 `OPENAI_API_KE
 ## 运行方式
 
 ```bash
-python -m hydroclaw "率定GR4J模型，流域12025000"
-python -m hydroclaw  # 交互模式
+python -m hydroagent "率定GR4J模型，流域12025000"
+python -m hydroagent  # 交互模式
 ```

@@ -1,4 +1,4 @@
-# HydroClaw Token 优化方案
+# HydroAgent Token 优化方案
 
 > 版本：v1.1 | 日期：2026-04-09
 > 背景：Exp1 基础率定每次运行约 82K token，其中大量来自 ReAct Loop 每轮重发历史。
@@ -24,9 +24,9 @@
 
 ---
 
-## 二、三种执行模式与 HydroClaw 五层架构的关系
+## 二、三种执行模式与 HydroAgent 五层架构的关系
 
-HydroClaw 五层架构：
+HydroAgent 五层架构：
 ```
 大脑  (agent.py)        — ReAct 推理决策循环
 小脑  (skill.md)        — 工作流指引，注入 system prompt
@@ -204,7 +204,7 @@ waypoints:
 
 ## 四、工具报错知识库（Error Knowledge Base）
 
-位置：`hydroclaw/knowledge/tool_error_kb.md`
+位置：`hydroagent/knowledge/tool_error_kb.md`
 
 格式：每个工具的常见报错 -> 诊断 -> 恢复建议。
 
@@ -299,11 +299,11 @@ waypoints:
 ### 已完成 (P0)
 
 - [x] 实验脚本改用 `prompt_mode="minimal"` + `max_turns=8`
-- [x] `hydroclaw/pipeline.py`：PipelinePlanner + LocalExecutor（350 行）
+- [x] `hydroagent/pipeline.py`：PipelinePlanner + LocalExecutor（350 行）
 - [x] 支持 `$var.field` 变量替换
 - [x] Schema 校验（LLM 生成计划后验证工具名）
 - [x] 错误 context 紧凑格式封装
-- [x] `hydroclaw/knowledge/tool_error_kb.md`（6 个工具，每工具 3-5 个常见错误）
+- [x] `hydroagent/knowledge/tool_error_kb.md`（6 个工具，每工具 3-5 个常见错误）
 - [x] 前端三模式切换按钮（Pipeline / ReAct / Waypoint）
 - [x] server.py 根据 mode 字段路由到 run_pipeline 或 agent.run
 

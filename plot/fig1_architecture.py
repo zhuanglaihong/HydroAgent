@@ -1,5 +1,5 @@
 """
-Fig.1 — HydroClaw System Architecture
+Fig.1 — HydroAgent System Architecture
 Clean two-section layout:
   Top row:    End-to-end flow  (User -> Agent -> Tools -> Result)
   Bottom row: Three detail panels (5-layer | System Prompt | ReAct Loop)
@@ -66,12 +66,12 @@ def section_title(x, y, s):
 # ══════════════════════════════════════════════════════════════════════════════
 # ROW 1 — End-to-end flow  (y: 7.3 – 9.2)
 # ══════════════════════════════════════════════════════════════════════════════
-section_title(0.2, 9.35, "HydroClaw: Natural Language-Driven Hydrological Modeling Agent")
+section_title(0.2, 9.35, "HydroAgent: Natural Language-Driven Hydrological Modeling Agent")
 
 # Flow boxes
 flow_items = [
     (0.25,  "User Query",       "\"Calibrate GR4J\nfor basin 12025000\"",  BLUE,   WHITE),
-    (3.35,  "HydroClaw Agent",  "LLM ReAct Loop\n(Brain Layer)",           GREEN,  WHITE),
+    (3.35,  "HydroAgent Agent",  "LLM ReAct Loop\n(Brain Layer)",           GREEN,  WHITE),
     (7.55,  "Tool Dispatch",    "calibrate / evaluate\nvalidate / code ...",ORANGE, WHITE),
     (11.75, "Hydrological Pkg", "GR4J / XAJ / HBV\nSCE-UA optimizer",      PURPLE, WHITE),
     (15.0,  "Result",           "NSE / KGE\nparams + report",              TEAL,   WHITE),
@@ -228,7 +228,7 @@ label(rx + rw + 0.52, (loop_top + loop_bot)/2, "loop\nback", size=7.5,
 
 # ── Figure caption ────────────────────────────────────────────────────────────
 fig.text(0.5, 0.005,
-         "Figure 1.  Architecture of HydroClaw.  "
+         "Figure 1.  Architecture of HydroAgent.  "
          "(A) Five-layer brain-spine-limb design separates reasoning, knowledge, routing, and computation.  "
          "(B) Seven-section system prompt assembled dynamically per query.  "
          "(C) ReAct loop iterates Observe-Think-Act until task completion.",

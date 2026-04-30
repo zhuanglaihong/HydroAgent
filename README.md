@@ -1,4 +1,4 @@
-# HydroClaw：LLM 驱动的水文模型率定智能体
+# HydroAgent：LLM 驱动的水文模型率定智能体
 
 <div align="center">
 
@@ -14,7 +14,7 @@
 
 ## 项目简介
 
-HydroClaw 是一个基于大语言模型（LLM）Agentic Loop 的水文模型率定系统。用户只需用自然语言描述任务，Agent 自主决定调用哪些工具、以何种顺序执行，最终输出率定参数、评估指标和分析报告。
+HydroAgent 是一个基于大语言模型（LLM）Agentic Loop 的水文模型率定系统。用户只需用自然语言描述任务，Agent 自主决定调用哪些工具、以何种顺序执行，最终输出率定参数、评估指标和分析报告。
 
 系统支持 GR4J、XAJ 等概念性水文模型，使用 CAMELS-US 数据集，率定算法包括传统 SCE-UA/GA 和 LLM 智能率定两种模式。
 
@@ -22,7 +22,7 @@ HydroClaw 是一个基于大语言模型（LLM）Agentic Loop 的水文模型率
 
 ## 系统架构
 
-HydroClaw 采用**五层架构**，每层职责明确：
+HydroAgent 采用**五层架构**，每层职责明确：
 
 ```
 大脑 (Brain)         agent.py            LLM 推理与工具调度（ReAct Loop）
@@ -84,23 +84,23 @@ RESULT_DIR      = r"/path/to/results"
 
 ```bash
 # 交互模式
-python -m hydroclaw
+python -m hydroagent
 
 # 单次查询
-python -m hydroclaw "率定 GR4J 模型，流域 12025000，SCE-UA 算法"
+python -m hydroagent "率定 GR4J 模型，流域 12025000，SCE-UA 算法"
 
 # 开发者模式（显示完整工具调用日志）
-python -m hydroclaw --dev
+python -m hydroagent --dev
 
 # 指定工作目录
-python -m hydroclaw -w results/my_experiment
+python -m hydroagent -w results/my_experiment
 ```
 
 **Web 服务**（FastAPI + WebSocket）：
 
 ```bash
-python -m hydroclaw --server           # 默认 http://localhost:7860
-python -m hydroclaw --server --port 8080
+python -m hydroagent --server           # 默认 http://localhost:7860
+python -m hydroagent --server --port 8080
 ```
 
 ---
@@ -147,7 +147,7 @@ Round 2: 新范围  -> SCE-UA -> NSE=0.74，无触界参数
 
 ```
 HydroAgent/
-├── hydroclaw/
+├── hydroagent/
 │   ├── agent.py                  # Agentic Loop 核心（ReAct 模式）
 │   ├── llm.py                    # LLM 客户端（Function Calling）
 │   ├── memory.py                 # 跨会话记忆（会话日志 + MEMORY.md + 流域档案）
@@ -239,4 +239,4 @@ python plot/exp4_figures.py
 
 > Zhu, S. et al. (2026). Large Language Models as Virtual Hydrologists. *Geophysical Research Letters*.
 
-HydroClaw 与 Zhu et al. 方法的核心区别：LLM 调整参数**搜索范围**（而非直接提议参数值），配合 SCE-UA 全局优化，LLM 调用次数减少约 100 倍，同时保持等价的率定精度。
+HydroAgent 与 Zhu et al. 方法的核心区别：LLM 调整参数**搜索范围**（而非直接提议参数值），配合 SCE-UA 全局优化，LLM 调用次数减少约 100 倍，同时保持等价的率定精度。

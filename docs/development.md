@@ -8,14 +8,14 @@
 
 ```
 HydroAgent/
-├── hydroclaw/                     # 核心包
+├── hydroagent/                     # 核心包
 │   ├── agent.py                   # Agentic Loop（ReAct + CC-2/CC-4）
 │   ├── llm.py                     # LLM 客户端（Function Calling + Prompt 降级）
 │   ├── memory.py                  # 记忆系统（会话 / MEMORY.md / 流域档案）
 │   ├── config.py                  # 配置加载 + hydromodel 配置构建
 │   ├── skill_registry.py          # Skill 自动扫描与关键词匹配
 │   ├── skill_states.py            # Skill 生命周期状态（draft/active/deprecated）
-│   ├── __main__.py                # python -m hydroclaw 入口
+│   ├── __main__.py                # python -m hydroagent 入口
 │   │
 │   ├── adapters/                  # PackageAdapter 插件层（v2.5）
 │   │   ├── __init__.py            # reload_adapters() + get_adapter() 路由
@@ -105,7 +105,7 @@ HydroAgent/
 适用于通用的、不属于特定工作流的工具：
 
 ```python
-# hydroclaw/tools/my_tool.py
+# hydroagent/tools/my_tool.py
 import logging
 from pathlib import Path
 
@@ -143,7 +143,7 @@ my_tool.__agent_hint__ = (
 适用于有明确工作流场景的功能，工作流说明书 + 工具实现自包含：
 
 ```
-hydroclaw/skills/my_skill/
+hydroagent/skills/my_skill/
 ├── skill.md      # 工作流指引（关键词匹配时注入 system prompt）
 └── my_tool.py    # 工具实现（自动发现注册）
 ```
@@ -178,8 +178,8 @@ priority: 10
 适用于接入新的水文计算包：
 
 ```python
-# hydroclaw/adapters/my_package/adapter.py
-from hydroclaw.adapters.base import PackageAdapter
+# hydroagent/adapters/my_package/adapter.py
+from hydroagent.adapters.base import PackageAdapter
 from pathlib import Path
 
 class Adapter(PackageAdapter):
@@ -208,7 +208,7 @@ class Adapter(PackageAdapter):
 ### 方式 4：注册本地包（运行时，无需修改代码）
 
 ```
-# 在本地包根目录放 hydroclaw_adapter.py（与方式 3 同结构）
+# 在本地包根目录放 hydroagent_adapter.py（与方式 3 同结构）
 # 然后 Agent 调用：
 add_local_package(path="D:/project/my_hydro_package", name="my_pkg")
 ```
@@ -276,7 +276,7 @@ agent.register_post_hook("my_tool", lambda name, args, result: do_something(resu
 
 ## 添加子代理
 
-在 `hydroclaw/agents/` 或 `<workspace>/.hydroclaw/agents/` 下新建 `.md` 文件：
+在 `hydroagent/agents/` 或 `<workspace>/.hydroagent/agents/` 下新建 `.md` 文件：
 
 ```markdown
 ---
@@ -346,7 +346,7 @@ path = _workspace + "\\results\\" + basin_id + ".json"
 ### 验证工具发现
 
 ```python
-from hydroclaw.tools import reload_tools, get_tool_schemas
+from hydroagent.tools import reload_tools, get_tool_schemas
 
 tools = reload_tools()
 print("Registered:", sorted(tools.keys()))
@@ -358,7 +358,7 @@ for s in get_tool_schemas():
 ### 单工具测试
 
 ```python
-from hydroclaw.tools.validate import validate_basin
+from hydroagent.tools.validate import validate_basin
 result = validate_basin(basin_id="12025000")
 print(result)
 ```
@@ -366,7 +366,7 @@ print(result)
 ### 完整流程测试
 
 ```bash
-python -m hydroclaw "验证流域12025000是否存在"
+python -m hydroagent "验证流域12025000是否存在"
 ```
 
 ---
@@ -376,20 +376,20 @@ python -m hydroclaw "验证流域12025000是否存在"
 ### 查看工具注册状态
 
 ```bash
-python -c "from hydroclaw.tools import reload_tools; t = reload_tools(); print(sorted(t.keys()))"
+python -c "from hydroagent.tools import reload_tools; t = reload_tools(); print(sorted(t.keys()))"
 ```
 
 ### 查看当前适配器
 
 ```bash
-python -c "from hydroclaw.adapters import get_loaded_adapters; [print(a.name, a.priority) for a in get_loaded_adapters()]"
+python -c "from hydroagent.adapters import get_loaded_adapters; [print(a.name, a.priority) for a in get_loaded_adapters()]"
 ```
 
 ### 常见问题
 
 **工具未被发现**：
 - 函数名或文件名不能以 `_` 开头
-- 检查 import 是否报错：`python -c "from hydroclaw.skills.xxx.yyy import zzz"`
+- 检查 import 是否报错：`python -c "from hydroagent.skills.xxx.yyy import zzz"`
 
 **Schema 参数类型错误**：
 - `list[str]` -> `"array"`，`dict` -> `"object"`，`str | None` -> `"string"`
@@ -402,7 +402,7 @@ python -c "from hydroclaw.adapters import get_loaded_adapters; [print(a.name, a.
 **适配器未加载**：
 - 检查 `adapters/<name>/adapter.py` 中是否有 `class Adapter(PackageAdapter)` 定义
 - 确认 `can_handle()` 在预期输入下返回 True
-- 手动 reload：`from hydroclaw.adapters import reload_adapters; reload_adapters()`
+- 手动 reload：`from hydroagent.adapters import reload_adapters; reload_adapters()`
 
 **uv 崩溃（此机器专属）**：
 - 此机器上 uv 会 EXCEPTION_ACCESS_VIOLATION，不要用 `uv pip install`

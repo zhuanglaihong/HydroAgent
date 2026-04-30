@@ -1,7 +1,7 @@
 """
 Experiment 3 - Agent 能力广度验证
 =================================
-目的：验证 HydroClaw 在三个正交维度的端到端能力广度：
+目的：验证 HydroAgent 在三个正交维度的端到端能力广度：
 
   Section A: 自然语言鲁棒性
     6 个代表性场景，覆盖标准率定/智能率定/代码分析/残缺信息/隐含意图/批量规划，
@@ -10,7 +10,7 @@ Experiment 3 - Agent 能力广度验证
 
   Section B: 动态 Skill 生成（元能力）
     3 个场景，每个请求一个默认 Skill 集不存在的能力，验证运行时生成 + 立即注册。
-    对比点：OpenClaw 静态 Skill 市场（预安装），HydroClaw 按需生成。
+    对比点：OpenClaw 静态 Skill 市场（预安装），HydroAgent 按需生成。
 
   Section C: 自驱动任务规划
     Phase C1 (基础执行): 批量任务 -> Agent 自主创建任务列表并完整执行
@@ -249,7 +249,7 @@ def _py_syntax_ok(py_file: Path) -> bool:
 
 
 def _snapshot_skills() -> set:
-    skills_dir = Path(__file__).parent.parent / "hydroclaw" / "skills"
+    skills_dir = Path(__file__).parent.parent / "hydroagent" / "skills"
     return {d.name for d in skills_dir.iterdir() if d.is_dir() and not d.name.startswith("_")}
 
 
@@ -290,7 +290,7 @@ def run_section_a(workspace: Path, resume: bool = False) -> dict:
     chooses the *same* tool sequence across independent repetitions of the same query —
     a proxy for decision stability under LLM sampling variance.
     """
-    from hydroclaw.agent import HydroClaw
+    from hydroagent.agent import HydroAgent
 
     logger.info("\n" + "=" * 60)
     logger.info(
@@ -327,7 +327,7 @@ def run_section_a(workspace: Path, resume: bool = False) -> dict:
                 "total_tokens": 0, "wall_time_s": 0.0, "error": None,
             }
 
-            agent = HydroClaw(workspace=rep_workspace)
+            agent = HydroAgent(workspace=rep_workspace)
             t0 = time.time()
             try:
                 response = agent.run(sc["query"])
@@ -408,8 +408,8 @@ def run_section_a(workspace: Path, resume: bool = False) -> dict:
 
 def run_section_b(workspace: Path, resume: bool = False) -> dict:
     """动态 Skill 生成：3 个场景，验证运行时生成 + 立即注册。"""
-    from hydroclaw.agent import HydroClaw
-    from hydroclaw.tools import reload_tools
+    from hydroagent.agent import HydroAgent
+    from hydroagent.tools import reload_tools
 
     logger.info("\n" + "=" * 60)
     logger.info("Section B: Dynamic Skill Generation (3 scenarios)")
@@ -437,13 +437,13 @@ def run_section_b(workspace: Path, resume: bool = False) -> dict:
         prev_skill = prev_ckpt.get("new_skill_dir")
         if prev_skill:
             import shutil
-            prev_path = Path(__file__).parent.parent / "hydroclaw" / "skills" / prev_skill
+            prev_path = Path(__file__).parent.parent / "hydroagent" / "skills" / prev_skill
             if prev_path.exists():
                 shutil.rmtree(prev_path, ignore_errors=True)
                 logger.info(f"  Removed previous skill from last run: {prev_skill}")
 
         skills_before = _snapshot_skills()
-        agent = HydroClaw(workspace=workspace)  # fresh instance per scenario
+        agent = HydroAgent(workspace=workspace)  # fresh instance per scenario
 
         record = {
             "id": sid, "description": sc["description"], "query": sc["query"],
@@ -469,7 +469,7 @@ def run_section_b(workspace: Path, resume: bool = False) -> dict:
             if new_skills:
                 skill_name = sorted(new_skills)[0]
                 record["new_skill_dir"] = skill_name
-                skill_dir = Path(__file__).parent.parent / "hydroclaw" / "skills" / skill_name
+                skill_dir = Path(__file__).parent.parent / "hydroagent" / "skills" / skill_name
                 record["skill_md_exists"] = (skill_dir / "skill.md").exists()
                 py_files = [f for f in skill_dir.glob("*.py") if f.name != "__init__.py"]
                 if py_files:
@@ -637,7 +637,7 @@ def _run_planning_phase(agent, query: str, workspace: Path,
 
 def run_section_c(workspace: Path, resume: bool = False) -> dict:
     """自驱动任务规划：C1基础执行 / C2自适应 / C3断点恢复。"""
-    from hydroclaw.agent import HydroClaw
+    from hydroagent.agent import HydroAgent
 
     logger.info("\n" + "=" * 60)
     logger.info("Section C: Self-Driven Task Planning (3 phases)")
@@ -663,7 +663,7 @@ def run_section_c(workspace: Path, resume: bool = False) -> dict:
         # contamination (C3 "resume" query would otherwise see C1/C2 session history).
         phase_ws = workspace / phase_id
         phase_ws.mkdir(parents=True, exist_ok=True)
-        agent = HydroClaw(workspace=phase_ws)
+        agent = HydroAgent(workspace=phase_ws)
         result = _run_planning_phase(agent, query, phase_ws, phase_id, preset)
         _save_checkpoint(phase_id, result)
         phases.append(result)

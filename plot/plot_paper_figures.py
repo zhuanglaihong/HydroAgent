@@ -1,5 +1,5 @@
 """
-Plot Paper Figures - HydroClaw
+Plot Paper Figures - HydroAgent
 ==============================
 Reads all 4 experiment result JSONs and generates publication-quality figures.
 
@@ -46,7 +46,7 @@ FIG_DIR     = RESULTS_DIR / "figures"
 COLORS = {
     "A":    "#4878CF",   # blue:  Method A / gr4j
     "B":    "#D65F5F",   # red:   Method B / Zhu et al.
-    "C":    "#6ACC65",   # green: Method C / HydroClaw
+    "C":    "#6ACC65",   # green: Method C / HydroAgent
     "K0":   "#d9d9d9",
     "K1":   "#a6bddb",
     "K2":   "#3690c0",
@@ -230,7 +230,7 @@ def fig_exp2(data: dict, show: bool = False):
         bars = [
             ax.bar(x - width, _safe(yA), width, color=COLORS["A"], alpha=0.85, label="A: SCE-UA"),
             ax.bar(x,         _safe(yB), width, color=COLORS["B"], alpha=0.85, label="B: Zhu 2026"),
-            ax.bar(x + width, _safe(yC), width, color=COLORS["C"], alpha=0.85, label="C: HydroClaw"),
+            ax.bar(x + width, _safe(yC), width, color=COLORS["C"], alpha=0.85, label="C: HydroAgent"),
         ]
         # annotate delta C-A
         for i, (va, vc) in enumerate(zip(yA, yC)):
@@ -504,7 +504,7 @@ EXP_MAP = {1: fig_exp1, 2: fig_exp2, 3: fig_exp3, 4: fig_exp4}
 def main():
     _style()
 
-    parser = argparse.ArgumentParser(description="Generate HydroClaw paper figures")
+    parser = argparse.ArgumentParser(description="Generate HydroAgent paper figures")
     parser.add_argument("--exp", type=int, nargs="+",
                         help="Experiment numbers to plot (default: all available)")
     parser.add_argument("--show", action="store_true",

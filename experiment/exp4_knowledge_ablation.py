@@ -1,7 +1,7 @@
 """
 Experiment 4 - 四层知识体系消融 + 认知框架评估 + 对抗先验鲁棒性
 =================================================================
-目的：定量评估 HydroClaw 四层知识注入各层的独立贡献，并新增专家认知框架（K4）的评估。
+目的：定量评估 HydroAgent 四层知识注入各层的独立贡献，并新增专家认知框架（K4）的评估。
 
 主实验：知识消融（K0-K4 逐层累加）
   K0: 无知识注入        — 仅基础角色描述
@@ -262,7 +262,7 @@ def _check_tool_match(expected: list, actual: list) -> bool:
 
 def _seed_basin_profile(workspace: Path):
     """为 T1 场景预存 12025000 的历史档案（用于 K3 条件效果验证）。"""
-    from hydroclaw.memory import Memory
+    from hydroagent.memory import Memory
     mem = Memory(workspace)
     existing = mem.load_basin_profile("12025000")
     if existing and existing.get("records"):
@@ -279,7 +279,7 @@ def _seed_basin_profile(workspace: Path):
 
 def _inject_adversarial_profile(workspace: Path, basin_id: str, profile_data: dict):
     """将对抗先验写入 basin_profiles/<basin_id>.json。"""
-    from hydroclaw.memory import Memory
+    from hydroagent.memory import Memory
     mem = Memory(workspace)
     profile_file = mem.basin_profiles_dir / f"{basin_id}.json"
     profile = {
@@ -348,14 +348,14 @@ def _restore_condition(agent, backup: dict):
 
 def run_main_ablation(workspace: Path) -> dict:
     """K0-K3 × 3 scenarios 消融实验。"""
-    from hydroclaw.agent import HydroClaw
+    from hydroagent.agent import HydroAgent
 
     logger.info("\n" + "=" * 60)
     logger.info("Main Ablation: K0-K3 x 3 scenarios")
     logger.info("=" * 60)
 
     _seed_basin_profile(workspace)
-    agent = HydroClaw(workspace=workspace)
+    agent = HydroAgent(workspace=workspace)
     all_results = []
 
     for cond_id, cond_key, cond_name in CONDITIONS:
@@ -503,14 +503,14 @@ def run_main_ablation(workspace: Path) -> dict:
 
 def run_adversarial_robustness(workspace: Path) -> dict:
     """对抗先验鲁棒性：注入极端参数档案，验证 LLM 在 K3 条件下能否察觉异常。"""
-    from hydroclaw.agent import HydroClaw
+    from hydroagent.agent import HydroAgent
 
     logger.info("\n" + "=" * 60)
     logger.info("Adversarial Prior Robustness (K3 pressure test)")
     logger.info("=" * 60)
 
     results = []
-    agent = HydroClaw(workspace=workspace)
+    agent = HydroAgent(workspace=workspace)
 
     for basin_info in ADVERSARIAL_BASINS:
         basin_id = basin_info["basin_id"]

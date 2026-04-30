@@ -2,7 +2,7 @@
 
 > 版本：v2.6 | 日期：2026-03-25
 
-HydroClaw 有三层记忆，覆盖从当前对话到跨会话的信息持久化。
+HydroAgent 有三层记忆，覆盖从当前对话到跨会话的信息持久化。
 
 ## 三层记忆概览
 
@@ -61,7 +61,7 @@ LLM 读到这段信息后可以：
 ### 手动读写档案
 
 ```python
-from hydroclaw.memory import Memory
+from hydroagent.memory import Memory
 
 mem = Memory(workspace="results/my_workspace")
 
@@ -90,7 +90,7 @@ print(ctx)
 ```
 You> 分析流域12025000的历史率定档案，给出下次率定建议
 
-HydroClaw> 注意：历史档案中 x1=1998.0（接近参数上界2000），
+HydroAgent> 注意：历史档案中 x1=1998.0（接近参数上界2000），
            x2=-9.8（接近下界-10），且 NSE=0.97 异常偏高，
            疑似存在过拟合或参数范围设置问题。建议重新率定并检查数据质量。
 ```
@@ -133,8 +133,8 @@ sessions/
 不同实验使用独立 workspace，流域档案和记忆互不干扰：
 
 ```bash
-python -m hydroclaw -w results/exp_A "率定GR4J模型，流域12025000"
-python -m hydroclaw -w results/exp_B "率定GR4J模型，流域12025000"
+python -m hydroagent -w results/exp_A "率定GR4J模型，流域12025000"
+python -m hydroagent -w results/exp_B "率定GR4J模型，流域12025000"
 ```
 
 ```

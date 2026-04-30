@@ -2,7 +2,7 @@
 
 > 版本：v2.6 | 日期：2026-03-25
 
-HydroClaw 的所有工具按来源分为三类，详细 API 见 [skills.md](skills.md)：
+HydroAgent 的所有工具按来源分为三类，详细 API 见 [skills.md](skills.md)：
 
 | 来源 | priority | 位置 | 工具列表 |
 |------|----------|------|---------|
@@ -69,10 +69,10 @@ HydroClaw 的所有工具按来源分为三类，详细 API 见 [skills.md](skil
 
 ## 工具发现机制
 
-`hydroclaw/tools/__init__.py` 在启动时扫描：
+`hydroagent/tools/__init__.py` 在启动时扫描：
 
-1. `hydroclaw/tools/*.py` — 核心工具（priority=20）
-2. `hydroclaw/skills/*/*.py` — 每个 Skill 子目录（priority=10）
+1. `hydroagent/tools/*.py` — 核心工具（priority=20）
+2. `hydroagent/skills/*/*.py` — 每个 Skill 子目录（priority=10）
 3. `create_skill` 动态生成的目录（priority=5，生成后立即触发重扫）
 
 **Schema 自动生成规则**：
@@ -116,14 +116,14 @@ calibrate_model.__agent_hint__ = (
 ## 热加载
 
 ```python
-from hydroclaw.tools import reload_tools
+from hydroagent.tools import reload_tools
 reload_tools()  # create_skill / create_adapter 完成后自动调用
 ```
 
 查询当前工具集：
 
 ```python
-from hydroclaw.tools import get_all_tools
+from hydroagent.tools import get_all_tools
 for name, (fn, priority) in sorted(get_all_tools().items()):
     print(f"  [{priority:2d}] {name}")
 ```

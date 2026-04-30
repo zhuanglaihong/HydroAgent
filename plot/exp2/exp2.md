@@ -46,7 +46,7 @@
 |------|------|---------|------|
 | **A** | SCE-UA 标准基线 | Agent 驱动，**1 次运行**，默认参数范围 | "不懂流域"的标准实践 |
 | **B** | Zhu et al. 脚本复现 | 纯脚本，LLM 直接猜参数值，±3% 范围，≤15轮 | 外部对照，LLM 直接提议参数 |
-| **C** | HydroClaw LLM 率定 | Agent 驱动，先验+自适应（见下） | 模拟人类专家经验 |
+| **C** | HydroAgent LLM 率定 | Agent 驱动，先验+自适应（见下） | 模拟人类专家经验 |
 
 > Method A 改为 **1 次运行**，代表"标准实践"，不取多次最优。
 
@@ -164,9 +164,9 @@ Method B 在 15 参数 XAJ 上必然失效（±3% 猜值策略在高维空间无
 
 ## 七、实现清单（待开发）
 
-- [ ] 新建 `hydroclaw/tools/basin_attrs.py`：`get_basin_attributes` 工具，读 CAMELS 属性
-- [ ] 新建 `hydroclaw/knowledge/xaj_param_guide.md`：XAJ 参数气候区对照知识
-- [ ] 重写 `hydroclaw/skills/llm_calibration/skill.md`：加入 3 步工作流
+- [ ] 新建 `hydroagent/tools/basin_attrs.py`：`get_basin_attributes` 工具，读 CAMELS 属性
+- [ ] 新建 `hydroagent/knowledge/xaj_param_guide.md`：XAJ 参数气候区对照知识
+- [ ] 重写 `hydroagent/skills/llm_calibration/skill.md`：加入 3 步工作流
 - [ ] `llm_calibrate.py`：确认 `param_ranges` 外部传入生效，补充参数固定逻辑
 - [ ] `experiment/exp2_llm_calibration.py`：
       流域改为 12025000/11532500/03439000，Model=XAJ，N_SEEDS_A=1，

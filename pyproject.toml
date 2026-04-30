@@ -1,5 +1,5 @@
 [project]
-name = "hydroclaw"
+name = "hydroagent"
 version = "0.3.0"
 description = "LLM-driven Hydrological Model Calibration Agent"
 authors = [
@@ -45,7 +45,7 @@ dev = [
 ]
 
 [project.scripts]
-hydroclaw = "hydroclaw.interface.cli:main"
+hydroagent = "hydroagent.interface.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
@@ -53,7 +53,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["hydroclaw*", "configs*"]
+include = ["hydroagent*", "configs*"]
 exclude = ["test*", "scripts*", "docs*"]
 
 [tool.pytest.ini_options]
