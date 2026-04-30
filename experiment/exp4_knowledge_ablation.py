@@ -1,34 +1,34 @@
 """
-Experiment 4 - 三层知识体系消融 + 跨会话记忆鲁棒性
-==================================================
-目的：定量评估 HydroClaw 三层知识注入各层的独立贡献，并验证记忆层对异常先验的鲁棒性。
+Experiment 4 - 四层知识体系消融 + 认知框架评估 + 对抗先验鲁棒性
+=================================================================
+目的：定量评估 HydroClaw 四层知识注入各层的独立贡献，并新增专家认知框架（K4）的评估。
 
-主实验：知识消融（K0-K3 逐层累加）
-  K0: 无知识注入   — 仅基础角色描述
-  K1: +Skill说明书 — 工作流步骤 + 工具调用顺序
-  K2: +领域知识库  — 参数物理含义 + 率定诊断经验
-  K3: +跨会话记忆  — 流域档案先验（完整系统）
+主实验：知识消融（K0-K4 逐层累加）
+  K0: 无知识注入        — 仅基础角色描述
+  K1: +Skill说明书      — 工作流步骤 + 工具调用顺序
+  K2: +领域知识库       — 参数物理含义 + 率定诊断经验
+  K3: +跨会话记忆       — 流域档案先验（三层完整系统）
+  K4: +认知框架         — 水文学家.skill 专家直觉（四层完整系统）★新增
 
-三个测试场景（逐渐难度递增）：
+四个测试场景：
   T1: 标准率定（工具序列正确性）
   T2: 参数边界感知（需要领域知识才能识别边界问题）
   T3: 自定义代码分析（不应触发率定流程）
+  T4: 认知诊断（多参数触界物理解释，专家直觉测试）★新增
 
-评估指标（主实验）：
-  - 工具序列匹配率（expected_tools 子集匹配）
-  - 首个工具准确率（第一个工具是否正确）
-  - 平均 LLM token 消耗（知识注入的代价）
+评估指标：
+  T1-T3: 工具序列匹配率 / 首个工具准确率 / 平均 LLM token 消耗
+  T4:    物理推理词命中率 / 正确结论比率（认知框架专属指标）
 
-附加实验：对抗先验鲁棒性（K3 层压力测试）
+附加实验：对抗先验鲁棒性（K3/K4 层压力测试）
   - 向记忆层注入物理上不合理的极端参数值（NSE=0.97, x1=1998 等）
-  - 验证 LLM 在 K3 条件下能否察觉先验异常并给出预警
-  - 结论：区分"记忆作为先验"和"记忆作为权威答案"的设计正确性
+  - 验证 LLM 在 K3/K4 条件下能否察觉先验异常并给出预警
 
 论文对应：Section 4.5
-合并来源：原 exp5_memory（附加实验部分）+ exp6_knowledge_ablation（主实验）
 参考文献：
   NHRI 2025 零知识 vs 专家知识对比（NSE +0.14），提供外部参照基准
   AgentHPO (ICLR 2025) — 历史记忆机制（与本实验记忆层设计对比）
+  Nuwa-Skill (2025) — 认知框架注入方法论启发
 """
 
 import sys
@@ -98,7 +98,8 @@ CONDITIONS = [
     ("K0", "no_knowledge",   "无知识注入"),
     ("K1", "skills_only",    "+Skill说明书"),
     ("K2", "skills_domain",  "+领域知识库"),
-    ("K3", "full",           "+跨会话记忆（完整系统）"),
+    ("K3", "full",           "+跨会话记忆（三层完整）"),
+    ("K4", "full_cognitive", "+认知框架（四层完整）"),  # 新增
 ]
 
 # ── 测试场景 ──────────────────────────────────────────────────────────────────
@@ -130,6 +131,43 @@ SCENARIOS = [
         "expected_first_alt": "generate_code",  # also acceptable for K0 (no skill knowledge)
         "description": "自定义代码生成（不应触发率定/评估流程）",
         "forbidden_tools": ["calibrate_model", "evaluate_model"],
+        "needs_basin_profile": None,
+    },
+    {
+        "id": "T4", "name": "cognitive_diagnosis",
+        "query": (
+            "流域03439000 XAJ模型完成5轮LLM率定，最终NSE=0.105。"
+            "详细参数检查发现4个参数同时触上界："
+            "CS=0.98（上界1.0），L=9.8（上界10.0），"
+            "CI=0.89（上界0.9），EX=1.49（上界1.5）。"
+            "请从水文物理角度分析：(1) 这4个参数同时触上界意味着什么物理过程？"
+            "(2) 继续扩大参数范围能否改善NSE？"
+            "(3) 建议下一步怎么做？"
+        ),
+        "expected_tools": [],        # 纯推理，不需要调用特定工具
+        "expected_first": None,
+        "description": "认知诊断：多参数触界物理解释（专家直觉测试）",
+        "eval_type": "cognitive",    # 使用认知评估指标而非工具序列指标
+        "physical_keywords": [       # 命中越多说明物理推理越充分
+            # 产流机制
+            "产流", "超渗", "蓄满", "产流机制", "地表径流",
+            # 汇流/退水
+            "汇流", "退水", "调蓄", "基流", "滞后",
+            # 模型结构
+            "模型结构", "结构", "结构性", "适配", "不适配",
+            # 流域特征
+            "半干旱", "蒸散发", "土壤", "下渗",
+            # 参数物理含义
+            "蓄水容量", "消退系数", "地下水",
+            # 英文（应对模型混用中英文）
+            "runoff", "recession", "structure", "infiltration",
+            "evapotranspiration", "semi-arid", "baseflow", "lag",
+        ],
+        "correct_conclusion_keywords": [  # 正确结论：建议停止或换模型
+            "不适配", "换模型", "结构性", "模型选择", "停止", "局限",
+            "超渗", "不匹配", "结构问题", "模型不适", "建议换",
+            "mismatch", "unsuitable", "switch model", "model structure",
+        ],
         "needs_basin_profile": None,
     },
 ]
@@ -257,40 +295,43 @@ def _inject_adversarial_profile(workspace: Path, basin_id: str, profile_data: di
 def _apply_condition(agent, condition_key: str) -> dict:
     """临时替换 agent 方法，实现知识条件控制。返回原始方法备份。
 
-    P3 update: skill content is no longer injected via skill_registry.match().
-    Instead, the skill list (with file paths) is provided via available_skills_prompt().
-    K0 must disable available_skills_prompt to truly remove skill guidance.
+    K0: 无 skill 索引 / 无领域知识 / 无流域档案 / 无记忆 / 无认知框架
+    K1: +skill 索引（Agent 可 read_file 读取 skill.md）
+    K2: +领域知识（knowledge/ 已改为按需，此条件暂与 K1 等价，保留以便未来扩展）
+    K3: +跨会话记忆（流域档案 + MEMORY.md，三层完整系统）
+    K4: +认知框架（水文学家.skill 始终注入，四层完整系统）
 
-    K0: no skill list, no domain knowledge, no profiles, no memory
-    K1: +skill list (agent can read skills via read_file)
-    K2: +domain knowledge
-    K3: +memory (full system)
+    注意：K0-K3 均禁用认知框架；K4 为唯一启用认知框架的条件。
     """
     backup = {
-        "load_domain":          agent._load_domain_knowledge,
-        "available_skills":     agent.skill_registry.available_skills_prompt,
-        "profile_ctx":          agent.memory.format_basin_profiles_for_context,
-        "load_mem":             agent.memory.load_knowledge,
+        "load_domain":      agent._load_domain_knowledge,
+        "available_skills": agent.skill_registry.available_skills_prompt,
+        "get_cognitive":    agent.skill_registry.get_cognitive_prompt,
+        "profile_ctx":      agent.memory.format_basin_profiles_for_context,
+        "load_mem":         agent.memory.load_knowledge,
     }
+
+    # K0-K3 全部禁用认知框架（K4 是唯一保留认知框架的条件）
+    if condition_key != "full_cognitive":
+        agent.skill_registry.get_cognitive_prompt = lambda: ""
 
     if condition_key == "no_knowledge":
         agent._load_domain_knowledge = lambda q: ""
         agent.skill_registry.available_skills_prompt = lambda *a, **kw: ""
         agent.memory.format_basin_profiles_for_context = lambda ids: ""
-        agent.memory.load_knowledge  = lambda: ""
+        agent.memory.load_knowledge = lambda: ""
 
     elif condition_key == "skills_only":
-        # skills enabled (available_skills_prompt unchanged)
         agent._load_domain_knowledge = lambda q: ""
         agent.memory.format_basin_profiles_for_context = lambda ids: ""
-        agent.memory.load_knowledge  = lambda: ""
+        agent.memory.load_knowledge = lambda: ""
 
     elif condition_key == "skills_domain":
-        # skills + domain knowledge enabled
         agent.memory.format_basin_profiles_for_context = lambda ids: ""
-        agent.memory.load_knowledge  = lambda: ""
+        agent.memory.load_knowledge = lambda: ""
 
-    # "full" -> no modification
+    # "full" -> 禁用认知框架（已在上方处理），其余不修改
+    # "full_cognitive" -> 全部保留（仅上方认知框架禁用逻辑被跳过）
 
     return backup
 
@@ -298,8 +339,9 @@ def _apply_condition(agent, condition_key: str) -> dict:
 def _restore_condition(agent, backup: dict):
     agent._load_domain_knowledge = backup["load_domain"]
     agent.skill_registry.available_skills_prompt = backup["available_skills"]
+    agent.skill_registry.get_cognitive_prompt = backup["get_cognitive"]
     agent.memory.format_basin_profiles_for_context = backup["profile_ctx"]
-    agent.memory.load_knowledge  = backup["load_mem"]
+    agent.memory.load_knowledge = backup["load_mem"]
 
 
 # ── Main ablation experiment ──────────────────────────────────────────────────
@@ -345,7 +387,7 @@ def run_main_ablation(workspace: Path) -> dict:
 
             t0 = time.time()
             try:
-                agent.run(sc["query"])
+                final_response = agent.run(sc["query"])
                 record["wall_time_s"] = round(time.time() - t0, 2)
                 record["actual_tools"] = [e["tool"] for e in agent.memory._log]
                 record["success"] = True
@@ -367,7 +409,31 @@ def run_main_ablation(workspace: Path) -> dict:
                     record["tool_match"] = _check_tool_match(
                         sc["expected_tools"], record["actual_tools"]
                     )
-                if record["actual_tools"] and sc.get("expected_first"):
+                if sc.get("eval_type") == "cognitive":
+                    # T4: evaluate final response quality (NOT tool results)
+                    # Scan both the final LLM response AND tool result summaries
+                    _resp = (final_response or "").lower()
+                    _tool_text = " ".join(
+                        str(e.get("result_summary", "")) for e in agent.memory._log
+                    ).lower()
+                    _all_text = _resp + " " + _tool_text
+                    phys_kws = sc.get("physical_keywords", [])
+                    conc_kws = sc.get("correct_conclusion_keywords", [])
+                    phys_hits = [kw for kw in phys_kws if kw.lower() in _all_text]
+                    conc_hit = any(kw.lower() in _all_text for kw in conc_kws)
+                    record["physical_keywords_found"] = phys_hits
+                    record["physical_reasoning_score"] = (
+                        round(len(phys_hits) / len(phys_kws), 3) if phys_kws else 0.0
+                    )
+                    record["correct_conclusion"] = conc_hit
+                    record["response_preview"] = (final_response or "")[:500]
+                    # tool_match = True if agent didn't call inappropriate tools
+                    forbidden = sc.get("forbidden_tools", [])
+                    record["tool_match"] = not any(
+                        t in record["actual_tools"] for t in forbidden
+                    ) if forbidden else True
+                    record["first_tool_correct"] = True   # N/A for T4
+                elif record["actual_tools"] and sc.get("expected_first"):
                     # P3: skip leading read_file (skill.md preamble) when checking first tool
                     first = _first_meaningful_tool(record["actual_tools"])
                     alt = sc.get("expected_first_alt")
@@ -545,26 +611,39 @@ def print_summary(results: dict):
     print(f"{'='*80}")
 
     # Aggregated table
-    print(f"\n  [Main Ablation] Aggregated metrics by condition:")
-    header = (f"{'Cond':<5} {'Description':<25} {'MatchRate':>10} "
+    print(f"\n  [Main Ablation] Aggregated metrics by condition (T1-T3 only):")
+    header = (f"{'Cond':<5} {'Description':<28} {'MatchRate':>10} "
               f"{'FirstOK':>8} {'Tokens':>8} {'Time':>7}")
     print(f"  {header}")
-    print(f"  {'-'*68}")
+    print(f"  {'-'*72}")
     for cond_id, cond_key, cond_name in CONDITIONS:
-        s = stats.get(cond_id, {})
+        # T1-T3 only for tool-sequence metrics
+        subset_t1t3 = [
+            r for r in abl["results"]
+            if r["condition_id"] == cond_id and r["scenario_id"] in ("T1", "T2", "T3")
+        ]
+        n = len(subset_t1t3)
+        if n == 0:
+            continue
+        match_rate = sum(1 for r in subset_t1t3 if r["tool_match"]) / n
+        first_rate = sum(1 for r in subset_t1t3 if r["first_tool_correct"]) / n
+        avg_tok = sum(r["total_tokens"] for r in subset_t1t3) / n
+        avg_t = sum(r["wall_time_s"] for r in subset_t1t3) / n
         print(
-            f"  {cond_id:<5} {cond_name:<25} "
-            f"{s.get('tool_match_rate', 0)*100:>9.0f}% "
-            f"{s.get('first_tool_rate', 0)*100:>7.0f}% "
-            f"{s.get('avg_tokens', 0):>9.0f} "
-            f"{s.get('avg_time_s', 0):>6.1f}s"
+            f"  {cond_id:<5} {cond_name:<28} "
+            f"{match_rate*100:>9.0f}% "
+            f"{first_rate*100:>7.0f}% "
+            f"{avg_tok:>9.0f} "
+            f"{avg_t:>6.1f}s"
         )
 
-    # Per-scenario x condition matrix
-    print(f"\n  Tool match matrix (Y=match, N=mismatch, E=error):")
-    header2 = f"{'Scenario':<10} {'Description':<32} {'K0':>4} {'K1':>4} {'K2':>4} {'K3':>4}"
+    # Per-scenario x condition matrix (T1-T4)
+    cond_ids = [c[0] for c in CONDITIONS]
+    col_w = max(4, max(len(c) for c in cond_ids))
+    print(f"\n  Tool match / cognitive score matrix:")
+    header2 = f"{'Scenario':<10} {'Description':<35}" + "".join(f"{c:>{col_w}}" for c in cond_ids)
     print(f"  {header2}")
-    print(f"  {'-'*58}")
+    print(f"  {'-'*(10+35+len(cond_ids)*col_w)}")
     for sc in SCENARIOS:
         sid = sc["id"]
         cells = []
@@ -574,9 +653,33 @@ def print_summary(results: dict):
                  if x["scenario_id"] == sid and x["condition_id"] == cond_id),
                 {},
             )
-            cells.append("Y" if r.get("tool_match") else ("E" if r.get("error") else "N"))
-        print(f"  {sid:<10} {sc['description']:<32} "
-              + "".join(f"{c:>4}" for c in cells))
+            if r.get("error"):
+                cells.append("E")
+            elif sc.get("eval_type") == "cognitive":
+                # Show physical reasoning score (0.0-1.0) for T4
+                score = r.get("physical_reasoning_score")
+                conc = r.get("correct_conclusion", False)
+                cells.append(f"{score:.2f}" if score is not None else "N/A")
+            else:
+                cells.append("Y" if r.get("tool_match") else "N")
+        print(f"  {sid:<10} {sc['description']:<35}"
+              + "".join(f"{c:>{col_w}}" for c in cells))
+
+    # T4 cognitive detail
+    print(f"\n  [T4 Cognitive Detail] physical_reasoning_score / correct_conclusion:")
+    t4_header = f"  {'Cond':<5} {'PhysScore':>10} {'CorrectConc':>12} {'KeywordsFound'}"
+    print(t4_header)
+    print(f"  {'-'*70}")
+    for cond_id, _, cond_name in CONDITIONS:
+        r = next(
+            (x for x in abl["results"]
+             if x["scenario_id"] == "T4" and x["condition_id"] == cond_id),
+            {},
+        )
+        score = r.get("physical_reasoning_score", "N/A")
+        conc = r.get("correct_conclusion", "N/A")
+        kws = ", ".join(r.get("physical_keywords_found", [])) or "none"
+        print(f"  {cond_id:<5} {str(score):>10} {str(conc):>12}   [{kws}]")
 
     # Adversarial robustness
     adv_stats = adv["stats"]

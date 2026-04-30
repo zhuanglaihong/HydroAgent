@@ -45,11 +45,21 @@ DEFAULT_PARAM_RANGES = {
         "x6": [0.0, 20.0],      # Exponential store depletion coefficient
     },
     "xaj": {
-        "binfilt": [0.01, 0.99],  # B exponent for spatial distribution of soil moisture
-        "Dsmax": [0.1, 30.0],     # Maximum subsurface flow rate (mm/d)
-        "Ds": [0.001, 1.0],       # Fraction of Dsmax for non-linear baseflow
-        "Ws": [0.1, 1.0],         # Fraction of maximum soil moisture for non-linear baseflow
-        "soil_d2": [0.1, 3.0],    # Lower zone soil layer depth (m)
+        "K":  [0.1, 1.0],     # Ratio of potential evapotranspiration to pan evaporation
+        "B":  [0.1, 0.4],     # Exponent of soil moisture storage capacity curve
+        "IM": [0.01, 0.1],    # Ratio of impervious area to total area
+        "UM": [0.0, 20.0],    # Upper soil layer tension water storage capacity (mm)
+        "LM": [60.0, 90.0],   # Lower soil layer tension water storage capacity (mm)
+        "DM": [60.0, 120.0],  # Deep soil layer tension water storage capacity (mm)
+        "C":  [0.0, 0.2],     # Coefficient of deep evapotranspiration
+        "SM": [1.0, 100.0],   # Free water storage capacity (mm)
+        "EX": [1.0, 1.5],     # Exponent of free water storage capacity curve
+        "KI": [0.0, 0.7],     # Outflow coefficient of free water to interflow
+        "KG": [0.0, 0.7],     # Outflow coefficient of free water to groundwater
+        "CS": [0.0, 1.0],     # Recession constant of surface water
+        "L":  [1.0, 10.0],    # Lag time of routing (d)
+        "CI": [0.0, 0.9],     # Recession constant of interflow
+        "CG": [0.98, 0.998],  # Recession constant of groundwater
     },
 }
 
@@ -111,6 +121,7 @@ def llm_calibrate(
     algorithm_params: dict | None = None,
     train_period: list[str] | None = None,
     test_period: list[str] | None = None,
+    output_dir: str | None = None,
     _workspace: Path | None = None,
     _cfg: dict | None = None,
     _llm: object | None = None,
@@ -126,11 +137,14 @@ def llm_calibrate(
         model_name: Hydrological model name ("gr4j", "xaj", "gr5j", "gr6j")
         max_rounds: Maximum number of LLM-guided rounds (each runs a full SCE-UA)
         nse_target: Target NSE value for early stopping
-        param_ranges: Initial parameter ranges dict, uses defaults if not given
+        param_ranges: Initial parameter ranges as a JSON OBJECT (dict), e.g.
+            {"K": [0.1, 1.0], "B": [0.1, 0.4]}. Do NOT pass as a string.
+            If omitted, uses default ranges for the model.
         algorithm: Calibration algorithm, default "SCE_UA"
-        algorithm_params: Algorithm parameter overrides as a dict, e.g. {"rep": 500, "ngs": 200}. Must be a dict, NOT a string.
+        algorithm_params: Algorithm overrides as a JSON object, e.g. {"rep": 500, "ngs": 200}
         train_period: Training period ["YYYY-MM-DD", "YYYY-MM-DD"]
         test_period: Testing period ["YYYY-MM-DD", "YYYY-MM-DD"]
+        output_dir: Directory to save calibration results (optional)
 
     Returns:
         {"best_params": {...}, "best_nse": float, "rounds": int, "history": [...]}
@@ -138,6 +152,21 @@ def llm_calibrate(
     if _llm is None:
         return {"error": "LLM client required for LLM calibration", "success": False}
 
+    # Validate param_ranges: must be a dict mapping param_name -> [lo, hi]
+    # Agent sometimes passes a JSON string or list by mistake — catch it early.
+    # output_dir maps to _workspace (public alias for the internal parameter)
+    if output_dir is not None and _workspace is None:
+        _workspace = Path(output_dir)
+
+    if param_ranges is not None and not isinstance(param_ranges, dict):
+        return {
+            "error": (
+                f"param_ranges must be a dict like {{'K': [0.1, 1.0], ...}}, "
+                f"got {type(param_ranges).__name__}. "
+                "Pass the dict directly, not as a JSON string."
+            ),
+            "success": False,
+        }
     current_ranges = dict(param_ranges or DEFAULT_PARAM_RANGES.get(model_name, {}))
     if not current_ranges:
         return {"error": f"No default parameter ranges for model {model_name}", "success": False}
@@ -149,6 +178,7 @@ def llm_calibrate(
     best_nse = -999.0
     best_params = None
     best_result = None
+    _fixed_params: set[str] = set()          # params locked after convergence detection
 
     # Resolve base algorithm params once so we can adapt per round.
     # If not explicitly provided, fall back to config defaults so the adaptive
@@ -249,6 +279,37 @@ def llm_calibrate(
         # Detect which parameters are near their boundaries (<5% of range span)
         boundary_hits = _detect_boundary_hits(round_params, current_ranges)
 
+        # Detect converged (stable) params: value changed < 2% of span vs prev round
+        # Only fix when current round NSE is near the historical best (>= best * 0.97)
+        # to avoid locking params on a regressed round (e.g., best=0.72, current=0.686).
+        newly_fixed: list[str] = []
+        nse_near_best = (
+            isinstance(nse, float) and nse > 0.5
+            and (best_nse <= -998.0 or nse >= best_nse * 0.97)
+        )
+        if round_idx >= 1 and history and nse_near_best:
+            prev_params = history[-1].get("best_params", {})
+            for pname, pval in round_params.items():
+                if pname in _fixed_params or pname not in current_ranges:
+                    continue
+                prev_val = prev_params.get(pname)
+                if prev_val is None:
+                    continue
+                lo, hi = current_ranges[pname]
+                span = hi - lo
+                if span > 0 and abs(pval - prev_val) / span < 0.02:
+                    # Not hitting boundary and stable across rounds: fix it
+                    if not any(h["param"] == pname for h in boundary_hits):
+                        _fixed_params.add(pname)
+                        newly_fixed.append(pname)
+                        # Narrow range to ±1% of span around current value
+                        margin = max(span * 0.01, 1e-6)
+                        current_ranges[pname] = [
+                            max(lo, pval - margin),
+                            min(hi, pval + margin),
+                        ]
+                        logger.info(f"Fixed converged param {pname}={pval:.4f}, range -> {current_ranges[pname]}")
+
         round_record = {
             "round": round_idx + 1,
             "param_ranges": dict(current_ranges),
@@ -257,6 +318,7 @@ def llm_calibrate(
             "nse": nse,
             "boundary_hits": boundary_hits,
             "calibration_dir": cal_dir,
+            "fixed_params": newly_fixed,   # params fixed THIS round
         }
         history.append(round_record)
 
@@ -303,6 +365,12 @@ def llm_calibrate(
     final_boundary_hits = _detect_boundary_hits(
         best_params or {}, current_ranges
     )
+    # Aggregate fixed_params_by_round from history records
+    fixed_params_by_round = {
+        h["round"]: h["fixed_params"]
+        for h in history
+        if h.get("fixed_params")
+    }
     return {
         "best_params": best_params or {},
         "best_nse": best_nse if best_nse > -998.0 else None,
@@ -310,6 +378,7 @@ def llm_calibrate(
         "nse_history": [h.get("nse") for h in history],  # compact, preserved in summary
         "history": history,
         "final_boundary_hits": final_boundary_hits,
+        "fixed_params_by_round": fixed_params_by_round,
         "model_name": model_name,
         "basin_ids": basin_ids,
         "calibration_dir": best_result.get("calibration_dir", "") if best_result else "",

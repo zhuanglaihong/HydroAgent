@@ -339,6 +339,8 @@ def _python_type_to_json(python_type) -> str:
         if non_none:
             return _python_type_to_json(non_none[0])
 
+    if python_type is dict:
+        return "object"
     if python_type is str:
         return "string"
     if python_type is int:

@@ -41,6 +41,14 @@ class SkillRegistry:
             try:
                 text = skill_md.read_text(encoding="utf-8")
                 meta, content = _parse_frontmatter(text)
+                # Store path relative to project root (parent of hydroclaw/)
+                # so it stays valid across machines and directory moves.
+                try:
+                    rel_path = skill_md.relative_to(self.skills_dir.parent.parent)
+                    skill_path = str(rel_path).replace("\\", "/")
+                except ValueError:
+                    skill_path = str(skill_md).replace("\\", "/")
+
                 self.skills[dir_name] = {
                     "name": meta.get("name", dir_name),
                     "description": meta.get("description", ""),
@@ -48,7 +56,11 @@ class SkillRegistry:
                     "tools": meta.get("tools", []),
                     "when_to_use": meta.get("when_to_use", ""),
                     "content": content,
-                    "skill_md_path": str(skill_md),  # absolute path for read_file
+                    "skill_md_path": skill_path,  # relative to project root
+                    # Cognitive skills (type=cognitive, inject=always) are injected
+                    # verbatim into every system prompt, not matched by keyword.
+                    "type": meta.get("type", "task"),
+                    "inject": meta.get("inject", "on_match"),
                 }
                 logger.debug(f"Loaded skill: {dir_name} ({meta.get('name', dir_name)})")
             except Exception as e:
@@ -89,6 +101,27 @@ class SkillRegistry:
 
         return matched
 
+    # Max chars for a single cognitive skill's always-injected content.
+    # Cognitive skills are always present, so keep tighter than task skills.
+    _COGNITIVE_CONTENT_MAX = 3_000
+
+    def get_cognitive_prompt(self) -> str:
+        """Return always-injected content from all cognitive-type skills.
+
+        Cognitive skills (type=cognitive, inject=always) are injected verbatim
+        into every system prompt regardless of the current query.  They encode
+        domain expert reasoning patterns rather than task-specific workflows.
+        """
+        parts = []
+        for dir_name, s in self.skills.items():
+            if s.get("type") == "cognitive" and s.get("inject") == "always":
+                content = s["content"].strip()
+                if len(content) > self._COGNITIVE_CONTENT_MAX:
+                    content = content[:self._COGNITIVE_CONTENT_MAX] + "\n...(see skill.md for full content)"
+                parts.append(content)
+                logger.debug(f"Injecting cognitive skill: {dir_name} ({len(content)} chars)")
+        return "\n\n---\n\n".join(parts)
+
     def list_all(self) -> list[dict]:
         """Return full skill metadata for all skills (used by web UI panel)."""
         return [
@@ -123,6 +156,9 @@ class SkillRegistry:
             "",
         ]
         for dir_name, s in self.skills.items():
+            # Cognitive skills are always injected in full elsewhere; skip in index
+            if s.get("type") == "cognitive":
+                continue
             badge = state_mgr.status_badge(dir_name) if state_mgr else ""
             badge_str = f" {badge}" if badge else ""
             lines.append(f"- **{s['name']}**{badge_str}")
