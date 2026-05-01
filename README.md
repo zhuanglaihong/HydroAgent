@@ -82,26 +82,36 @@ RESULT_DIR      = r"/path/to/results"
 
 ### 运行
 
+HydroAgent 有两种面向用户的交互模式，以及一种面向开发者的脚本模式：
+
+**终端交互模式**（精简输出，适合日常使用）：
+
 ```bash
-# 交互模式
-python -m hydroagent
-
-# 单次查询
-python -m hydroagent "率定 GR4J 模型，流域 12025000，SCE-UA 算法"
-
-# 开发者模式（显示完整工具调用日志）
-python -m hydroagent --dev
-
-# 指定工作目录
-python -m hydroagent -w results/my_experiment
+python -m hydroagent                                          # 进入交互 REPL
+python -m hydroagent "率定 GR4J 模型，流域 12025000"          # 单次查询后退出
+python -m hydroagent -w results/my_experiment                 # 指定工作目录
 ```
 
-**Web 服务**（FastAPI + WebSocket）：
+**Web 前端模式**（浏览器界面，FastAPI + WebSocket）：
 
 ```bash
 python -m hydroagent --server           # 默认 http://localhost:7860
 python -m hydroagent --server --port 8080
 ```
+
+**开发者脚本模式**（论文实验 / 系统测试）：
+
+直接在 Python 脚本中实例化 `HydroAgent`，完整记录工具调用序列和中间结果：
+
+```python
+from hydroagent.agent import HydroAgent
+from hydroagent.interface.ui import ConsoleUI
+
+agent = HydroAgent(workspace=Path("results/exp1"), ui=ConsoleUI(mode="dev"))
+agent.run("率定 GR4J 模型，流域 12025000，SCE-UA 算法")
+```
+
+论文实验脚本均采用此模式，详见 `experiment/` 目录。
 
 ---
 
