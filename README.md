@@ -12,6 +12,26 @@
 
 ---
 
+## 演示视频
+
+<div align="center">
+
+<img src="docs/media/hydroagent_demo_cover.jpg" alt="HydroAgent 演示视频" width="720"/>
+
+<sub><i>演示视频（约 50 秒）— 通过 GitHub 网页编辑器拖拽上传后内联播放</i></sub>
+
+<!-- 上传演示视频步骤（在 GitHub 网页执行，无需修改本地仓库）：
+     1. 仓库页 → 点 README 右上角铅笔图标进入编辑
+     2. 删除上方 <img> 标签（保留 <div> 和 <sub>）
+     3. 把本地 docs/media/hydroagent_demo.mp4 拖入编辑框
+     4. 等待上传，GitHub 自动插入形如 https://github.com/user-attachments/assets/<uuid> 的链接
+     5. 提交保存，README 即在原位置显示内联视频播放器
+-->
+
+</div>
+
+---
+
 ## 项目简介
 
 HydroAgent 是一个基于大语言模型（LLM）Agentic Loop 的水文模型率定系统。用户只需用自然语言描述任务，Agent 自主决定调用哪些工具、以何种顺序执行，最终输出率定参数、评估指标和分析报告。
