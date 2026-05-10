@@ -18,7 +18,7 @@
 
 <img src="docs/media/hydroagent_demo_cover.jpg" alt="HydroAgent 演示视频" width="720"/>
 
-<sub><i>演示视频（约 50 秒）— 通过 GitHub 网页编辑器拖拽上传后内联播放</i></sub>
+<sub><i>演示视频（约 50 秒）</i></sub>
 
 <!-- 上传演示视频步骤（在 GitHub 网页执行，无需修改本地仓库）：
      1. 仓库页 → 点 README 右上角铅笔图标进入编辑
