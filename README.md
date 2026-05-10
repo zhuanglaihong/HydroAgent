@@ -16,7 +16,11 @@
 
 <div align="center">
 
-<img src="docs/media/hydroagent_demo_cover.jpg" alt="HydroAgent 演示视频" width="720"/>
+
+
+https://github.com/user-attachments/assets/fe072849-e3b2-4d0d-8340-a04f46f4a21f
+
+
 
 <sub><i>演示视频（约 50 秒）</i></sub>
 
