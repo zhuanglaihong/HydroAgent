@@ -74,6 +74,14 @@ class HydroAgent:
         self.ui = ui or ConsoleUI(mode="user")
         self._pause_requested = False   # set by request_pause(); checked between turns
         self._stop_requested  = False   # set by request_stop(); stops after current tool
+        self._checkpoint_study_id = None
+        # Research mode keeps scientific calls inside the audited checkpoint tools.
+        if self.cfg.get("checkpoint_experiment", {}).get("enabled"):
+            allowed = {"start_calibration_study", "inspect_calibration_study", "advance_calibration_study",
+                       "probe_calibration_study", "finalize_calibration_study", "validate_basin",
+                       "get_basin_attributes", "read_file", "inspect_dir", "ask_user"}
+            self.tools = {k: v for k, v in self.tools.items() if k in allowed}
+            self.tool_schemas = [s for s in self.tool_schemas if s["function"]["name"] in allowed]
         # Prompt mode: "full" injects domain knowledge + memory + basin profiles.
         # "minimal" keeps only core system prompt + skills + adapter docs — faster
         # and cheaper for sub-agent / batch scenarios where domain context isn't needed.
@@ -164,6 +172,8 @@ class HydroAgent:
         "calibrate_model", "evaluate_model", "validate_basin", "llm_calibrate",
         "run_simulation", "visualize", "create_skill", "run_code", "generate_code",
         "compare_models", "batch_calibrate", "get_basin_attributes",
+        "start_calibration_study", "inspect_calibration_study", "advance_calibration_study",
+        "probe_calibration_study", "finalize_calibration_study",
     }
 
     def _validate_final_response(self, final_response: str) -> str:
@@ -189,8 +199,10 @@ class HydroAgent:
             tool = entry.get("tool")
             if not tool:
                 continue
-            rs = str(entry.get("result_summary", "")).lower()
-            if "success" in rs and "false" in rs:
+            raw_summary = entry.get("result_summary", "")
+            rs = str(raw_summary).lower()
+            if (isinstance(raw_summary, dict) and raw_summary.get('success') is False) or (
+                    not isinstance(raw_summary, dict) and re.search(r"['\"]?success['\"]?\s*:\s*false", rs)):
                 continue  # explicit failure -- don't count
             called_ok.add(tool)
 
@@ -210,8 +222,18 @@ class HydroAgent:
             final_response, re.IGNORECASE
         ))
         eval_ok = "evaluate_model" in called_ok
+        study_status = None
+        if getattr(self, '_checkpoint_study_id', None):
+            from hydroagent.research.service import inspect_study
+            try:
+                study_status = inspect_study(self.workspace, self._checkpoint_study_id)
+                eval_ok = eval_ok or study_status.get('champion') is not None
+            except Exception:
+                pass
 
         issues = []
+        if getattr(self, '_checkpoint_study_id', None) and not (study_status or {}).get('scientific_completed'):
+            issues.append("Checkpoint study is not scientifically completed. Inspect its state and finalize after decisions are frozen; conversation completion does not complete the experiment.")
         if fabricated:
             issues.append(
                 f"Claimed tools not actually invoked in this session: "
@@ -219,8 +241,7 @@ class HydroAgent:
             )
         if metric_claimed and not eval_ok:
             issues.append(
-                "Reported NSE/KGE/RMSE-like metrics, but evaluate_model never "
-                "succeeded in this session — those numbers are not from real tool output."
+                "Reported NSE/KGE/RMSE-like metrics without successful evaluation or a recorded checkpoint candidate."
             )
 
         if not issues:
@@ -296,6 +317,7 @@ class HydroAgent:
                 return msg
 
             messages = self._maybe_compress_history(messages)
+            messages = self._with_checkpoint_memory(messages)
 
             # Per-turn token budget awareness
             est_tokens = estimate_tokens(messages)
@@ -346,6 +368,16 @@ class HydroAgent:
                 self.ui.on_thought(thought, turn + 1)
 
             if response.is_text():
+                if self._checkpoint_study_id:
+                    from hydroagent.research.service import inspect_study
+                    state = inspect_study(self.workspace, self._checkpoint_study_id)
+                    if not state.get('scientific_completed') and not state.get('requires_reconciliation'):
+                        messages.append({'role': 'assistant', 'content': response.text})
+                        messages.append({'role': 'user', 'content':
+                            'The existing study is not scientifically completed. Inspect its checkpoint and supervise the next decision. '
+                            'If ending search, stop and then finalize the SAME study. Do not renew the budget with another start.'})
+                        continue
+                    response.text = self._validate_final_response(response.text)
                 tok = self.llm.tokens.summary()
                 logger.info(
                     f"Completed in {turn + 1} turns | "
@@ -408,7 +440,7 @@ class HydroAgent:
                     for other in list(_consecutive):
                         if other != tc.name:
                             _consecutive[other] = 0
-                    if _consecutive[tc.name] > _MAX_CONSECUTIVE:
+                    if _consecutive[tc.name] > _MAX_CONSECUTIVE and tc.name != 'advance_calibration_study':
                         loop_msg = (
                             f"Tool `{tc.name}` has been called {_consecutive[tc.name]} times "
                             f"consecutively. Stopping to avoid a runaway loop. "
@@ -428,7 +460,8 @@ class HydroAgent:
                         _recent_tools.pop(0)
                     if len(_recent_tools) >= 4:
                         last4 = _recent_tools[-4:]
-                        if (last4[0] == last4[2] and last4[1] == last4[3]
+                        if (not set(last4).issubset({'inspect_calibration_study', 'advance_calibration_study'})
+                                and last4[0] == last4[2] and last4[1] == last4[3]
                                 and last4[0] != last4[1]):
                             loop_msg = (
                                 f"Alternating loop detected: {'->'.join(last4)}. "
@@ -528,7 +561,7 @@ class HydroAgent:
                     for other in list(_consecutive):
                         if other != tc.name:
                             _consecutive[other] = 0
-                    if _consecutive[tc.name] > _MAX_CONSECUTIVE:
+                    if _consecutive[tc.name] > _MAX_CONSECUTIVE and tc.name != 'advance_calibration_study':
                         loop_msg = (
                             f"Tool `{tc.name}` called {_consecutive[tc.name]} times "
                             "consecutively. Stopping loop. Summarize and stop."
@@ -682,21 +715,30 @@ class HydroAgent:
             # Skill.md guides the Agent on which file to read in which situation.
 
             # ── Section 5: Basin profiles (full mode only) ────────────────────────
+            research = self.cfg.get('checkpoint_experiment', {}).get('enabled')
             basin_ids_in_query = re.findall(r'\b\d{8}\b', query)
-            basin_profiles = self.memory.format_basin_profiles_for_context(basin_ids_in_query)
+            basin_profiles = '' if research else self.memory.format_basin_profiles_for_context(basin_ids_in_query)
             if basin_profiles:
                 parts.append(
                     semantic_truncate(basin_profiles, self._MAX_PROFILE_CHARS, "basin profiles")
                 )
 
             # ── Section 6: Cross-session memory (full mode only) ──────────────────
-            memory = self.memory.load_knowledge()
+            memory = '' if research else self.memory.load_knowledge()
             if memory:
                 parts.append(
                     "## Memory (from previous sessions)\n"
                     + semantic_truncate(memory, self._MAX_MEMORY_CHARS, "memory")
                 )
 
+        if self.cfg.get('checkpoint_experiment', {}).get('enabled'):
+            parts.append('Checkpoint research protocol supersedes legacy calibration/evaluation workflow policies. '
+                         'Use one persistent study and the checkpoint tools. The frozen model, data, objective and outer bounds cannot change. '
+                         'Prior basin profiles and cross-session test metrics are not injected in this protocol. '
+                         'Test results are only available AFTER decisions are frozen and finalization completes. '
+                         'Read hydroagent/skills/checkpoint_calibration/skill.md before starting. '
+                         'Before hydrological parameter decisions, read hydroagent/skills/adaptive_calibration/skill.md and its relevant references in full. '
+                         'Do not use a conversation ending as evidence of scientific completion.')
         system_content = "\n\n".join(p for p in parts if p)
 
         if len(system_content) > self._MAX_SYSTEM_CHARS:
@@ -897,6 +939,20 @@ class HydroAgent:
         fn = self.tools.get(name)
         if fn is None:
             return {"error": f"Unknown tool: {name}"}
+        if self.cfg.get('checkpoint_experiment', {}).get('enabled') and name in ('read_file', 'inspect_dir'):
+            requested = Path(arguments.get('path', '')).resolve()
+            package = Path(__file__).parent.resolve()
+            allowed_roots = [package/'skills', package/'knowledge']
+            if self._checkpoint_study_id:
+                from hydroagent.research.session import study_path
+                directory = study_path(self.workspace, self._checkpoint_study_id)
+                allowed_roots.append(directory)
+                if requested.name.startswith('final'):
+                    from hydroagent.research.service import inspect_study
+                    if not inspect_study(self.workspace, self._checkpoint_study_id).get('scientific_completed'):
+                        return {'success': False, 'error': 'Held-out results are unavailable before decisions freeze and finalization'}
+            if not any(requested == root or root in requested.parents for root in allowed_roots):
+                return {'success': False, 'error': 'Research reads are limited to packaged methods and the active study artifacts'}
 
         import inspect
         sig = inspect.signature(fn)
@@ -908,9 +964,13 @@ class HydroAgent:
             arguments["_llm"] = self.llm
         if "_ui" in sig.parameters:
             arguments["_ui"] = self.ui
+        if "_cancelled" in sig.parameters:
+            arguments["_cancelled"] = lambda: self._stop_requested
 
         try:
             result = fn(**arguments)
+            if name.endswith("calibration_study") and isinstance(result, dict) and result.get("study_id"):
+                self._checkpoint_study_id = result["study_id"]
 
             # CC-4: run registered PostToolUse hooks (decoupled from tool functions)
             for hook in self._post_tool_hooks.get(name, []):
@@ -936,6 +996,26 @@ class HydroAgent:
             if self.skill_states.is_generated(name):
                 self.skill_states.record_execution(name, success=False, error=str(e))
             return {"error": f"Tool {name} failed: {e}"}
+
+    def _with_checkpoint_memory(self, messages):
+        """Pin observable basin history AFTER context compression, with no LLM call."""
+        marker = "[Persistent calibration study]"
+        messages = [m for m in messages if not (m.get("role") == "system" and
+                    str(m.get("content", "")).startswith(marker))]
+        if self._checkpoint_study_id:
+            from hydroagent.research.service import inspect_study
+            try:
+                value = inspect_study(self.workspace, self._checkpoint_study_id)
+                pinned = {k: value.get(k) for k in ("study_id", "checkpoint_id", "basin", "calls", "search_remaining",
+                                                  "terminal", "scientific_completed", "requires_reconciliation",
+                                                  "champion", "experiment_memory", "artifacts")}
+                messages.append({"role": "system", "content": marker + "\n" + json.dumps(pinned, ensure_ascii=False) +
+                    "\nContinue supervising THIS study. Read inspect_calibration_study for exact evidence. "
+                    "A checkpoint or final conversation is not scientific completion. Freeze decisions before finalize; "
+                    "do not start a new study to renew the budget. Stored decisions are external records, not hidden reasoning."})
+            except Exception as error:
+                messages.append({"role": "system", "content": marker + f"\nStudy memory unavailable: {error}. Inspect before execution."})
+        return messages
 
 
 

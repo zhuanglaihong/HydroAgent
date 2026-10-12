@@ -207,6 +207,8 @@ hydroclaw_config_override.json
 logs/
 test/results/
 results/
+/result/checkpoint_studies/
+/result/checkpoint_grants/
 plot/
 experiment_results/
 temp_calibration_result/
